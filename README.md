@@ -6,7 +6,9 @@ author: Balazs B Ujfalussy, 2020 `balazs.ujfalussy@gmail.com`
 
 Also includes a script generating the VR in Ogre, which was originally written by Luigs-Neumann (http://www.luigs-neumann.com/) but later modified by BBU. 
 
-Run the Mouse_View.py in the rigth folder to analyse data for a selected mouse. 
+Run the Mouse_View.py in the rigth folder to analyse data for a selected mouse using a user interface.
+
+Mouse_ImView.py contains example scripts that can be run in an interactive python shell to analyse imaging data. Demo.pdf contains a few demo for imaging analysis.
 
 ### Requirements
 

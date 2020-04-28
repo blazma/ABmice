@@ -3,7 +3,7 @@
 Created in Mar 2018
 @author: bbujfalussy - ubalazs317@gmail.com
 A framework for managing behavioral data in in vivo mice experiments
-A dialog for updating, plotting and saving the data
+We define a class - mouse - and the VR environment will interact with this class in each session and trial
 
 """
 from sys import version_info
@@ -167,7 +167,7 @@ class Close_Mouse:
                 return
             else :
                 self.load_session(i_session_anal)
-        i_lap_anal = int(self.e12b.get()) - 1
+        i_lap_anal = int(self.e12b.get())# - 1
         if (i_lap_anal <= self.sessiondata.n_laps):
             self.sessiondata.Laps[i_lap_anal].plot_txv()
         print('\n')

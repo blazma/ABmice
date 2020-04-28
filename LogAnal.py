@@ -392,9 +392,10 @@ class Session:
         maze = np.array(maze_array)
         mode = np.array(mode_array)
         N_0lap = 0 # Counting the non-valid laps
+        self.n_laps = 0
 
-        for i in np.unique(lap):
-            y = lap == i # index for the current lap
+        for i_lap in np.unique(lap):
+            y = lap == i_lap # index for the current lap
 
             mode_lap = np.prod(mode[y]) # 1 if all elements are recorded in 'Go' mode
 
@@ -425,7 +426,7 @@ class Session:
     
     
                 # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
-                self.Laps.append(Lap_Data(self.name, i - N_0lap, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, self.corridor_list))
+                self.Laps.append(Lap_Data(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, self.corridor_list))
                 self.n_laps = self.n_laps + 1
             else:
                 N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1)
