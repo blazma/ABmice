@@ -8,7 +8,7 @@ Also includes a script generating the VR in Ogre, which was originally written b
 
 Run the Mouse_View.py in the rigth folder to analyse data for a selected mouse using a user interface.
 
-Mouse_ImView.py contains example scripts that can be run in an interactive python shell to analyse imaging data. Demo.pdf contains a few demo for imaging analysis.
+Mouse_ImView.py contains example scripts that can be run in an interactive python shell to analyse imaging data. Mouse_ImView_Demo.pdf contains a few demo for imaging analysis.
 
 ### Requirements
 
