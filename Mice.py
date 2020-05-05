@@ -168,7 +168,7 @@ class Session_Data:
         cols_line = np.zeros((num_laps,4)) ## codes the VR
         cols_fill = np.zeros((num_laps,4)) ## codes the choice (left or right) 
 
-        trial = np.arange(num_laps) + 1
+        trial = np.arange(num_laps)
 
         for i in np.arange(num_laps):
             is_valid[i] = int(self.laps[i][3])
