@@ -1519,7 +1519,7 @@ class Lap_ImData:
     def plot_tx(self, fluo=False, th=25):
         colmap = plt.cm.get_cmap('jet')   
         colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
-        fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), gridspec_kw={'height_ratios': [1, 3]})
+        fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), sharex=True, gridspec_kw={'height_ratios': [1, 3]})
 
         ## first, plot position versus time
         ax_top.plot(self.laptime, self.smooth_position, c=colmap(50))
@@ -1600,7 +1600,7 @@ class Lap_ImData:
         colmap = plt.cm.get_cmap('jet')   
         colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
 
-        fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), gridspec_kw={'height_ratios': [1, 3]})
+        fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), sharex=True,  gridspec_kw={'height_ratios': [1, 3]})
         ax_top.plot(self.smooth_position, self.speed, c=colmap(80))
         ax_top.step(self.bincenters, self.ave_speed, where='mid', c=colmap(30))
         ax_top.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, c=colmap(180))
