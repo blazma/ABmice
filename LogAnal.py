@@ -54,6 +54,8 @@ class Lap_Data:
         self.corridor_list = corridor_list # the ID of the corridor in the given stage; This indexes the corridors in the vector called self.corridors
         self.mode = mode # 1 if all elements are recorded in 'Go' mode
         self.actions = actions
+        self.speed_threshold = 5 ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
+        self.speed_factor = 106.5/3500
 
         self.zones = np.vstack([np.array(self.corridor_list.corridors[self.corridor].reward_zone_starts), np.array(self.corridor_list.corridors[self.corridor].reward_zone_ends)])
         self.n_zones = np.shape(self.zones)[1]
@@ -67,22 +69,37 @@ class Lap_Data:
         
         if (len(self.raw_time) > 2):
             F = interp1d(self.raw_time,self.raw_position) 
-            self.laptime = np.arange(np.ceil(self.raw_time.min()/self.dt)*self.dt, np.floor(self.raw_time.max()/self.dt)*self.dt, self.dt)
+            start_time = np.ceil(self.raw_time.min()/self.dt)*self.dt
+            end_time = np.floor(self.raw_time.max()/self.dt)*self.dt
+            Ntimes = int(round((end_time - start_time) / self.dt)) + 1
+            self.laptime = np.linspace(start_time, end_time, Ntimes)
             ppos = F(self.laptime)
     
             self.lick_position = F(self.lick_times)
             self.reward_position = F(self.reward_times)
     
             ## smooth the position data with a 50 ms Gaussian kernel
-            sdfilt = 0.05
-            xfilt = np.arange(-4*sdfilt, 4*sdfilt+self.dt, self.dt)
-            filt = np.exp(-(xfilt ** 2) / (2 * (sdfilt**2)))
-            filt = filt  / sum(filt)
-            pppos = np.hstack([np.repeat(ppos[0], 20), ppos, np.repeat(ppos[-1], 20)])
-            self.smooth_position = np.convolve(pppos, filt, mode='valid')
+            ## smooth the position data with a 50 ms Gaussian kernel
+            # sdfilt = 0.05
+            # xfilt = np.arange(-4*sdfilt, 4*sdfilt+self.dt, self.dt)
+            # filt = np.exp(-(xfilt ** 2) / (2 * (sdfilt**2)))
+            # filt = filt  / sum(filt)
+
+            # dx1 = ppos[1] - ppos[0]
+            # dxx1 = ppos[0] - np.arange(20, 0, -1) * dx1
+
+            # dx2 = ppos[-1] - ppos[-2]
+            # dxx2 = ppos[-1] + np.arange(20, 0, -1) * dx2
+
+            # pppos = np.hstack([dxx1, ppos, dxx2])
+            # pppos = np.hstack([np.repeat(ppos[0], 20), ppos, np.repeat(ppos[-1], 20)])
+            # smooth_position = np.convolve(pppos, filt, mode='valid')
+            self.smooth_position = ppos
             
             ## calculate the smoothed speed 
-            self.speed = np.diff(np.hstack([self.smooth_position[0], self.smooth_position])) / self.dt # roxel [=rotational pixel] / s       
+            speed = np.diff(self.smooth_position) * self.speed_factor  / self.dt # roxel [=rotational pixel] / s       
+            speed_first = 2 * speed[0] - speed[1] # linear extrapolation: x1 - (x2 - x1)
+            self.speed = np.hstack([speed_first, speed])
     
             ####################################################################
             ## calculate the lick-rate and the average speed versus location    
@@ -182,9 +199,10 @@ class Lap_Data:
         fig, ax = plt.subplots(figsize=(6,4))
         plt.plot(self.smooth_position, self.speed, c=cmap(80))
         plt.step(self.bincenters, self.ave_speed, where='mid', c=cmap(30))
-        plt.scatter(self.lick_position, np.repeat(self.speed.min(), len(self.lick_position)), marker="|", s=100, c=cmap(180))
-        plt.scatter(self.reward_position, np.repeat(self.speed.min(), len(self.reward_position)), marker="|", s=100, c=cmap(230))
-        plt.ylabel('speed (roxel/s)')
+        plt.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, c=cmap(180))
+        plt.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, c=cmap(230))
+        plt.ylabel('speed (cm/s)')
+        plt.ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
         plt.xlabel('position')
         plot_title = 'Mouse: ' + self.name + ' speed in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
         plt.title(plot_title)
@@ -207,7 +225,7 @@ class Lap_Data:
         ax2.step(self.bincenters, self.lick_rate, where='mid', c=cmap(200), linewidth=1)
         ax2.set_ylabel('lick rate (lick/s)', color=cmap(200))
         ax2.tick_params(axis='y', labelcolor=cmap(200))
-        ax2.set_ylim([-1,2*max(self.lick_rate)])
+        ax2.set_ylim([-1,max(2*np.nanmax(self.lick_rate), 20)])
 
         plt.show(block=False)       
 
@@ -266,8 +284,8 @@ class Lap_Data:
         ax_top.plot(self.laptime, self.smooth_position, c=cmap(50))
         ax_top.plot(self.raw_time, self.raw_position, c=cmap(90))
 
-        ax_top.scatter(self.lick_times, np.repeat(self.smooth_position.min(), len(self.lick_times)), marker="|", s=100, c=cmap(230))
-        ax_top.scatter(self.reward_times, np.repeat(self.smooth_position.min()+200, len(self.reward_times)), marker="d", s=100, c=cmap(30))
+        ax_top.scatter(self.lick_times, np.repeat(200, len(self.lick_times)), marker="|", s=100, c=cmap(180))
+        ax_top.scatter(self.reward_times, np.repeat(400, len(self.reward_times)), marker="|", s=100, c=cmap(230))
         ax_top.set_ylabel('position')
         ax_top.set_xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position and speed in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
@@ -278,10 +296,11 @@ class Lap_Data:
         ## next, plot speed versus position
         ax_bottom.plot(self.smooth_position, self.speed, c=cmap(80))
         ax_bottom.step(self.bincenters, self.ave_speed, where='mid', c=cmap(30))
-        ax_bottom.scatter(self.lick_position, np.repeat(self.speed.min(), len(self.lick_position)), marker="|", s=100, c=cmap(230))
-        ax_bottom.scatter(self.reward_position, np.repeat(self.speed.min()+200, len(self.reward_position)), marker="d", s=100, c=cmap(30))
-        ax_bottom.set_ylabel('speed (roxel/s)')
+        ax_bottom.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, c=cmap(180))
+        ax_bottom.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, c=cmap(230))
+        ax_bottom.set_ylabel('speed (cm/s)')
         ax_bottom.set_xlabel('position')
+        ax_bottom.set_ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
 
         bottom, top = plt.ylim()
         left = self.zones[0,0] * 3500
@@ -297,10 +316,10 @@ class Lap_Data:
                 ax_bottom.add_patch(polygon)
 
         ax2 = ax_bottom.twinx()
-        ax2.step(self.bincenters, self.lick_rate, where='mid', c=cmap(230), linewidth=1)
-        ax2.set_ylabel('lick rate (lick/s)', color=cmap(230))
-        ax2.tick_params(axis='y', labelcolor=cmap(230))
-        ax2.set_ylim([-1,2*max(self.lick_rate)])
+        ax2.step(self.bincenters, self.lick_rate, where='mid', c=cmap(180), linewidth=1)
+        ax2.set_ylabel('lick rate (lick/s)', color=cmap(180))
+        ax2.tick_params(axis='y', labelcolor=cmap(180))
+        ax2.set_ylim([-1,max(2*np.nanmax(self.lick_rate), 20)])
 
         plt.show(block=False)       
 
@@ -489,14 +508,14 @@ class Session:
                 avespeed = np.zeros(nbins)
                 n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
                 n_laps = np.shape(ids)[1]
-                maxspeed = 200
+                maxspeed = 10
                 for lap in np.nditer(ids):
                     axs[row,0].step(self.Laps[lap].bincenters, self.Laps[lap].ave_speed, where='mid', c=speed_color_trial)
                     nans_lap = np.isnan(self.Laps[lap].ave_speed)
                     avespeed = nan_add(avespeed, self.Laps[lap].ave_speed)
                     n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
                     if (max(self.Laps[lap].ave_speed) > maxspeed): maxspeed = max(self.Laps[lap].ave_speed)
-                maxspeed = min(maxspeed, 2000)
+                maxspeed = min(maxspeed, 60)
                 
                 avespeed = nan_divide(avespeed, n_lap_bins, n_lap_bins > 0)
                 axs[row,0].step(self.Laps[lap].bincenters, avespeed, where='mid', c=speed_color)
@@ -557,7 +576,7 @@ class Session:
 
 
                 if (row==(nrow-1)):
-                    axs[row,0].set_ylabel('speed (roxels/s)', color=speed_color)
+                    axs[row,0].set_ylabel('speed (cm/s)', color=speed_color)
                     axs[row,0].tick_params(axis='y', labelcolor=speed_color)
                     ax2.set_ylabel('lick rate (lick/s)', color=lick_color)
                     ax2.tick_params(axis='y', labelcolor=lick_color)
