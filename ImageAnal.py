@@ -69,7 +69,7 @@ class ImagingSessionData:
         ###############################
 
         beh_folder = datapath + 'data/' + name + '_' + task + '/' + date_time + '/'
-        trigger_log_file_string = beh_folder + date_time + '_rn013_contingency_learning_TriggerLog.txt'
+        trigger_log_file_string = beh_folder + date_time + '_' + name + '_' + task + '_TriggerLog.txt'
                 
         ## matching imaging time with labview time
         self.imstart_time = 0 # the labview time of the first imaging frame
@@ -898,7 +898,7 @@ class ImagingSessionData:
             
             fig.canvas.mpl_connect("motion_notify_event", hover)
         
-            plt.show()
+            plt.show(block=False)
         else :
             plt.show(block=False)
 
@@ -920,11 +920,12 @@ class ImagingSessionData:
 
 
 
-    def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, cellids=np.array([-1])):
+    def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1])):
         ## plot the average event rate of all cells in a given corridor
         ## if corridor == -1 then the first corridor is used
         ## normalisec: each cell ratemap is normalised to have a max = 1
         ## sorted: sorting the ramemaps by their peaks - not yet implemented
+        ## corridor_sort: which corridor to use for sorting the ratemaps
         ## cellids: np array with the indexes of the cells to be plotted. when -1: all cells are plotted
         
         vmax = 0
@@ -944,15 +945,38 @@ class ImagingSessionData:
 
             fig, axs = plt.subplots(1, n_corrid, figsize=(6+n_corrid*2,8), sharex=True, sharey=True)
             ims = []
+
+            if (corridor_sort == -1): # if no corridor is geven for sorting...
+                corridor_sort = corrids[0]
+
+            if (sorted):
+                suptitle_string = 'sorted by corridor ' + str(corridor_sort)
+                i_corrid = np.nonzero(corridor_sort == self.corridors)[0][0] - 1
+                rmp = np.array(self.ratemaps[i_corrid][:,cellids], copy=True)
+                ratemaps_to_sort = np.transpose(rmp)
+                sort_index, rmaps = self.sort_ratemaps(ratemaps_to_sort)
+            else :
+                sort_index = np.arange(len(cellids))
+                suptitle_string = 'unsorted'
+
             for i_corrid in range(n_corrid):
                 if (N_cells_plotted == self.N_cells) :
                     title_string = 'ratemap of all cells in corridor ' + str(corrids[i_corrid])
                 else :
                     title_string = 'ratemap of some cells in corridor ' + str(corrids[i_corrid])
+                rmp = np.array(self.ratemaps[i_corrid][:,cellids], copy=True)
+                ratemaps_to_sort = np.transpose(rmp)
+                ratemaps_to_plot = ratemaps_to_sort[sort_index,:]
                 axs[i_corrid].set_title(title_string)
-                ims.append(axs[i_corrid].matshow(np.transpose(self.ratemaps[i_corrid][:,cellids]), aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary'))
+                ims.append(axs[i_corrid].matshow(ratemaps_to_plot, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary'))
                 axs[i_corrid].set_facecolor(matcols.CSS4_COLORS['palegreen'])
+                axs[i_corrid].set_yticks(np.arange(len(cellids)))
+                if (sorted):
+                    axs[i_corrid].set_yticklabels(cellids[sort_index])
+                else:
+                    axs[i_corrid].set_yticklabels(cellids)
 
+            fig.suptitle(suptitle_string)
             plt.colorbar(ims[i_corrid])
             plt.show(block=False)       
 
@@ -962,12 +986,52 @@ class ImagingSessionData:
             else :
                 title_string = 'ratemap of some cells in corridor ' + str(corridor)
 
-            fig, ax_bottom = plt.subplots(figsize=(6,8))
             i_corrid = int(np.nonzero(np.unique(self.i_corridors)==corridor)[0])
+
+            rmp = np.array(self.ratemaps[i_corrid][:,cellids], copy=True)
+            ratemaps_to_sort = np.transpose(rmp)
+            if (sorted):
+                sort_index, ratemaps_to_plot = self.sort_ratemaps(ratemaps_to_sort)
+                title_string = title_string + ' sorted'
+            else:
+                ratemaps_to_plot = ratemaps_to_sort
+                title_string = title_string + ' unsorted'
+            fig, ax_bottom = plt.subplots(figsize=(6,8))
             ax_bottom.set_title(title_string)
-            im1 = ax_bottom.matshow(np.transpose(self.ratemaps[i_corrid][:,cellids]), aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary')
+            im1 = ax_bottom.matshow(ratemaps_to_plot, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary')
+            ax_bottom.set_yticks(np.arange(len(cellids)))
+            if (sorted):
+                ax_bottom.set_yticklabels(cellids[sort_index])
+            else:
+                ax_bottom.set_yticklabels(cellids)
             plt.colorbar(im1)
             plt.show(block=False)       
+
+
+# fig, ax_bottom = plt.subplots(figsize=(6,8))
+# ax_bottom.set_title(title_string)
+# im1 = ax_bottom.matshow(ratemaps_to_plot, aspect='auto', origin='lower', vmin=0, cmap='binary')
+# ax_bottom.set_yticks(np.arange(len(cellids)))
+# ax_bottom.set_yticklabels(cellids)
+
+# plt.colorbar(im1)
+# plt.show(block=False)       
+
+
+# fig, ax = plt.subplots(figsize=(6,8))
+# im1 = ax.scatter(np.arange(5), (2,5,4,0,3))
+# ax.set_title('title')
+# ax.set_yticks(np.arange(5))
+# ax.set_yticklabels(('Tom', 'Dick', 'Harry', 'Sally', 'Sue'))
+# plt.show(block=False)       
+
+
+
+    def sort_ratemaps(self, rmap):
+        max_loc = np.argmax(rmap, 1)
+        sorted_index = np.argsort(-1*max_loc)
+        sorted_rmap = rmap[sorted_index,:]
+        return sorted_index, sorted_rmap
 
 
     #create title string for the given corridor, cell with added info 

@@ -79,6 +79,10 @@ cellids = np.nonzero(D1.cell_tuning_specificity[0] > 0.5)[0]
 cellids = np.nonzero((D1.cell_tuning_specificity[0] + D1.cell_activelaps[0] > 0.7) + (D1.cell_tuning_specificity[1] + D1.cell_activelaps[1] > 0.7))[0]
 D1.plot_ratemaps(cellids = cellids)
 
+## sorting ratemaps
+D1.plot_ratemaps(cellids = cellids, sorted=True)
+D1.plot_ratemaps(cellids = cellids, corridor=19, sorted=True)
+D1.plot_ratemaps(cellids = cellids, sorted=True, corridor_sort=19)
 
 ## 2. plot properties - you can select interactive mode to be True or False
 D1.plot_properties(cellids=cellids, interactive=True)
@@ -88,10 +92,10 @@ D1.plot_masks(cellids)
 
 # 4. plot the laps of a selected cell - there are two options:
 # 4a) plot the event rates versus space
-D1.plot_cell_laps(cellid=85, signal='rate') ## look at lap 20
+D1.plot_cell_laps(cellid=209, signal='rate') ## look at lap 20
 
 # 4a) plot the dF/F and the spikes versus time
-D1.plot_cell_laps(cellid=85, signal='dF') ## look at lap 20
+D1.plot_cell_laps(cellid=209, signal='dF') ## look at lap 20
 
 # get the index of a lap in a specific corridor
 D1.get_lap_indexes(corridor=16, i_lap=7) # print lap index for the 74th imaging lap in corridor 19
