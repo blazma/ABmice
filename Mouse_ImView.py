@@ -34,7 +34,7 @@ D1 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging
 ## PLOTTING
 #########################################################
 ## 0. plotting the behavioral data in the different corridors
-D1.plot_session()
+D1.plot_session(save_data=True)
 
 ## 1. select cells based on their properties
 ## a) selection based on signal-to noise ratio:
@@ -92,7 +92,7 @@ D1.plot_masks(cellids)
 
 # 4. plot the laps of a selected cell - there are two options:
 # 4a) plot the event rates versus space
-D1.plot_cell_laps(cellid=209, signal='rate') ## look at lap 20
+D1.plot_cell_laps(cellid=209, signal='rate', save_data=True) ## look at lap 20
 
 # 4a) plot the dF/F and the spikes versus time
 D1.plot_cell_laps(cellid=209, signal='dF') ## look at lap 20

@@ -34,6 +34,7 @@ class ImagingSessionData:
     'Base structure for both imaging and behaviour data'
     def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan):
         self.name = name
+        self.date_time = date_time
         self.stage = 0
         self.stages = []
         self.sessionID = sessionID
@@ -1048,7 +1049,7 @@ class ImagingSessionData:
         return(cell_info)
 
 
-    def plot_cell_laps(self, cellid, multipdf_object=-1, signal='dF', corridor=-1, reward=True, write_pdf=False):
+    def plot_cell_laps(self, cellid, multipdf_object=-1, signal='dF', corridor=-1, reward=True, write_pdf=False, save_data=False):
         ## plot the activity of a single cell in all trials in a given corridor
         ## signal can be 
         ##          'dF' when dF/F and spikes are plotted as a function of time
@@ -1066,6 +1067,8 @@ class ImagingSessionData:
                 
         #plotting
         if (signal == 'dF'):
+            if (save_data):
+                print('data saving is only implemented for rate not dF')
             fig, ax = plt.subplots(1,corridor.size,squeeze=False, figsize=(6*corridor.size,8), sharex=True)
             for cor_index in range(corridor.size):
                 if corridor.size==1:
@@ -1203,6 +1206,16 @@ class ImagingSessionData:
                 ax[0,cor_index].set_xlim(0, 51)
                 ax[1,cor_index].set_xlim(0, 51)
                 ax[0,cor_index].set_facecolor(matcols.CSS4_COLORS['palegreen'])
+
+                if (save_data == True):
+                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_rate_corridor' + str(int(corridor_to_plot)) + '_cell' + str(cellid) + '.csv'
+                    with open(filename, mode='w') as rate_file:
+                        file_writer = csv.writer(rate_file, delimiter=',')
+                        for i_col in range(n_laps):
+                            file_writer.writerow(np.round(rate_matrix[:,i_col], 2))
+                    print('ratemap saved into file: ' + filename)
+
+
             #write pdf if asked
             if write_pdf==True and multipdf_object!=-1:
                 plt.savefig(multipdf_object, format='pdf')
@@ -1214,7 +1227,7 @@ class ImagingSessionData:
             
     
 
-    def plot_session(self):
+    def plot_session(self, save_data=False):
         ## find the number of different corridors
         if (self.n_laps > 0):
             corridor_ids = np.zeros(self.n_laps)
@@ -1243,14 +1256,30 @@ class ImagingSessionData:
                 n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
                 n_laps = np.shape(ids)[1]
                 maxspeed = 10
+
+                speed_matrix = np.zeros((len(ids[0]), nbins))
+
+                i_lap = 0
                 for lap in np.nditer(ids):
                     axs[row,0].step(self.ImLaps[lap].bincenters, self.ImLaps[lap].ave_speed, where='mid', c=speed_color_trial)
+                    speed_matrix[i_lap,:] =  np.round(self.ImLaps[lap].ave_speed, 2)
                     nans_lap = np.isnan(self.ImLaps[lap].ave_speed)
                     avespeed = nan_add(avespeed, self.ImLaps[lap].ave_speed)
                     n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
                     if (max(self.ImLaps[lap].ave_speed) > maxspeed): maxspeed = max(self.ImLaps[lap].ave_speed)
+                    i_lap = i_lap + 1
                 maxspeed = min(maxspeed, 60)
                 
+
+                if (save_data == True):
+                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_speed_corridor' + str(int(corridor_types[row])) + '.csv'
+                    with open(filename, mode='w') as speed_file:
+                        file_writer = csv.writer(speed_file, delimiter=',')
+                        for i_row in range(len(ids[0])):
+                            file_writer.writerow(speed_matrix[i_row,:])
+                    print('speed data saved into file: ' + filename)
+
+
                 avespeed = nan_divide(avespeed, n_lap_bins, n_lap_bins > 0)
                 axs[row,0].step(self.ImLaps[lap].bincenters, avespeed, where='mid', c=speed_color)
                 axs[row,0].set_ylim([-1,1.2*maxspeed])
@@ -1296,13 +1325,28 @@ class ImagingSessionData:
                 n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
                 maxrate = 10
                 avelick = np.zeros(nbins)
+
+                lick_matrix = np.zeros((len(ids[0]), nbins))
+                i_lap = 0
+
                 for lap in np.nditer(ids):
                     ax2.step(self.ImLaps[lap].bincenters, self.ImLaps[lap].lick_rate, where='mid', c=lick_color_trial, linewidth=1)
+                    lick_matrix[i_lap,:] =  np.round(self.ImLaps[lap].lick_rate, 2)
                     nans_lap = np.isnan(self.ImLaps[lap].lick_rate)
                     avelick = nan_add(avelick, self.ImLaps[lap].lick_rate)
                     n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
                     if (np.nanmax(self.ImLaps[lap].lick_rate) > maxrate): maxrate = np.nanmax(self.ImLaps[lap].lick_rate)
+                    i_lap = i_lap + 1
                 maxrate = min(maxrate, 20)
+
+                if (save_data == True):
+                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_lick_corridor' + str(int(corridor_types[row])) + '.csv'
+                    with open(filename, mode='w') as lick_file:
+                        file_writer = csv.writer(lick_file, delimiter=',')
+                        for i_row in range(len(ids[0])):
+                            file_writer.writerow(lick_matrix[i_row,:])
+                    print('lick data saved into file: ' + filename)
+
 
                 avelick = nan_divide(avelick, n_lap_bins, n_lap_bins > 0)
                 ax2.step(self.ImLaps[lap].bincenters, avelick, where='mid', c=lick_color)
