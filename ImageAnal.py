@@ -1227,6 +1227,68 @@ class ImagingSessionData:
             
     
 
+    def plot_popact(self, cellids, corridor=-1, save_data=False, name_string='selected_cells'):
+        ## plot the total population activity in all trials in a given corridor
+        
+        #process input corridors
+        if (corridor == -1):
+            corridor = np.unique(self.i_corridors)
+        else:
+            if corridor in np.unique(self.i_corridors):
+                corridor=np.array(corridor)
+            else:
+                print('Warning: specified corridor does not exist in this session!')
+                return
+                
+        ymax = 0              
+        fig, ax = plt.subplots(1,corridor.size, squeeze=False, sharey='row', figsize=(6*corridor.size,4),sharex=True)
+        for cor_index in range(corridor.size):
+            if corridor.size==1:
+                corridor_to_plot=corridor
+            else:
+                corridor_to_plot=corridor[cor_index]
+                        
+            # select the laps in the corridor (these are different indexes from upper ones!)
+            # only laps with imaging data are selected - this will index the activity_tensor
+            i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor_to_plot)[0]               
+            
+            #calculate rate matrix
+            sp_laps = self.activity_tensor[:,:,i_laps]
+            sp = sp_laps[:,cellids,:]
+            total_time = self.activity_tensor_time[:,i_laps]
+            popact_laps = np.sum(sp, 1) / total_time
+            
+
+
+            #calculate for plotting average rates
+            mean_rate=np.sum(popact_laps, axis=1)/i_laps.size
+            se_rate=np.std(popact_laps, axis=1)/np.sqrt(i_laps.size)
+            xmids=np.arange(50)
+            
+            if (max(mean_rate + se_rate) > ymax):
+            	ymax = max(mean_rate + se_rate)
+
+            #plotting
+            title_string = 'total activity in corridor ' + str(corridor_to_plot)
+            ax[0,cor_index].fill_between(xmids,mean_rate+se_rate, mean_rate-se_rate, alpha=0.3)
+            ax[0,cor_index].plot(mean_rate,zorder=0)
+            n_laps = popact_laps.shape[1]
+
+            ax[0,cor_index].set_xlim(0, 51)
+            ax[0,cor_index].set_title(title_string)
+
+            if (save_data == True):
+                filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_popact_corridor' + str(int(corridor_to_plot)) + name_string + '.csv'
+                with open(filename, mode='w') as rate_file:
+                    file_writer = csv.writer(rate_file, delimiter=',')
+                    for i_col in range(n_laps):
+                        file_writer.writerow(np.round(popact_laps[:,i_col], 2))
+                print('ratemap saved into file: ' + filename)
+
+        ax[0,0].set_ylim(0, ymax)
+        plt.show(block=False)
+
+
     def plot_session(self, save_data=False):
         ## find the number of different corridors
         if (self.n_laps > 0):

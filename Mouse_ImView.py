@@ -29,6 +29,8 @@ TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'rn013_TSeries-03132020-0939-003_Cyc
 # 3. load all the data - this taks ~20 secs in my computer
 #    def __init__(self, datapath, date_time, name, task, suite2p_folder, TRIGGER_VOLTAGE_FILENAME):
 D1 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME)
+cellids = np.nonzero((D1.cell_reliability[0] > 0.1) + (D1.cell_reliability[1] > 0.1))[0]
+D1.plot_popact(cellids)
 
 #########################################################
 ## PLOTTING
@@ -92,7 +94,7 @@ D1.plot_masks(cellids)
 
 # 4. plot the laps of a selected cell - there are two options:
 # 4a) plot the event rates versus space
-D1.plot_cell_laps(cellid=209, signal='rate', save_data=True) ## look at lap 20
+D1.plot_cell_laps(cellid=209, signal='rate', save_data=False) ## look at lap 20
 
 # 4a) plot the dF/F and the spikes versus time
 D1.plot_cell_laps(cellid=209, signal='dF') ## look at lap 20
@@ -114,4 +116,7 @@ D1.ImLaps[153].plot_txv()
 # axs[1,1].scatter(D1.cell_reliability[1], D1.cell_skaggs[1], c='C0', alpha=0.5)
 # plt.show(block=False)
 
+
+# 6. plot the total population activity
+D1.plot_popact(cellids)
 
