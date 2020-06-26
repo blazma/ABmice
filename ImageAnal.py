@@ -26,20 +26,26 @@ import pickle
 from xml.dom import minidom
 from matplotlib.backends.backend_pdf import PdfPages
 
+
+from utils import *
 from Stages import *
 from Corridors import *
+from ImShuffle import *
 
 
 class ImagingSessionData:
     'Base structure for both imaging and behaviour data'
     def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan):
-        self.name = name
+        self.datapath = datapath
         self.date_time = date_time
+        self.name = name
+        self.task = task
+
         self.stage = 0
         self.stages = []
         self.sessionID = sessionID
 
-        stagefilename = datapath + task + '_stages.pkl'
+        stagefilename = self.datapath + self.task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
         if version_info.major == 2:
             self.stage_list = pickle.load(input_file)
@@ -47,7 +53,7 @@ class ImagingSessionData:
             self.stage_list = pickle.load(input_file, encoding='latin1')
         input_file.close()
 
-        corridorfilename = datapath + task + '_corridors.pkl'
+        corridorfilename = self.datapath + self.task + '_corridors.pkl'
         input_file = open(corridorfilename, 'rb')
         if version_info.major == 2:
             self.corridor_list = pickle.load(input_file)
@@ -55,7 +61,7 @@ class ImagingSessionData:
             self.corridor_list = pickle.load(input_file, encoding='latin1')
         input_file.close()
 
-        self.get_stage(datapath, date_time, name, task)
+        self.get_stage(self.datapath, self.date_time, self.name, self.task)
         self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])
 
         ##################################################
@@ -69,8 +75,8 @@ class ImagingSessionData:
         ### this all will need to move to the LocateImaging routine to save memory
         ###############################
 
-        beh_folder = datapath + 'data/' + name + '_' + task + '/' + date_time + '/'
-        trigger_log_file_string = beh_folder + date_time + '_' + name + '_' + task + '_TriggerLog.txt'
+        beh_folder = self.datapath + 'data/' + name + '_' + self.task + '/' + date_time + '/'
+        trigger_log_file_string = beh_folder + date_time + '_' + name + '_' + self.task + '_TriggerLog.txt'
                 
         ## matching imaging time with labview time
         self.imstart_time = 0 # the labview time of the first imaging frame
@@ -103,7 +109,7 @@ class ImagingSessionData:
         self.F = self.F_all[self.neuron_index,:]
         self.raw_spks = self.spks_all[self.neuron_index,:]
         self.dF_F = np.copy(self.F)
-        self.spks = np.copy(self.raw_spks) # normalized spikes: spks / F / SD(F)
+        self.spks = np.copy(self.raw_spks) # could be normalized in calc_dF_F: spks / F / SD(F)
         self.N_cells = self.F.shape[0]
         # self.cell_SDs = np.sqrt(np.var(self.dF_F, 1)) - we calculate this later
         self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
@@ -120,7 +126,7 @@ class ImagingSessionData:
         self.i_Laps_ImData = np.zeros(1) # np array with the index of laps with imaging
         self.i_corridors = np.zeros(1) # np array with the index of corridors in each run
 
-        self.get_lapdata(datapath, date_time, name, task) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
+        self.get_lapdata(self.datapath, self.date_time, self.name, self.task) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
         self.N_bins = 50 # self.ImLaps[self.i_Laps_ImData[2]].event_rate.shape[1]
         self.N_ImLaps = len(self.i_Laps_ImData)
 
@@ -671,7 +677,7 @@ class ImagingSessionData:
             self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
 
     def calculate_properties(self, nSD=4):
-        self.cell_rates = [] # we do not append it is already exists...
+        self.cell_rates = [] # we do not append if it already exists...
         self.cell_reliability = []
         self.cell_Fano_factor = []
         self.cell_skaggs=[]
@@ -705,7 +711,7 @@ class ImagingSessionData:
                 ## average firing rate
                 rates = np.sum(total_spikes, axis=0) / np.sum(total_time)
                 rates_pattern = np.sum(total_spikes[5:40,:], axis=0) / np.sum(total_time[5:40])
-                rates_reward = np.sum(total_spikes[40:50], axis=0) / np.sum(total_time[40:50])
+                rates_reward = np.sum(total_spikes[40:50,:], axis=0) / np.sum(total_time[40:50])
                 self.cell_rates.append(np.vstack([rates, rates_pattern, rates_reward]))
 
                 ## reliability and Fano factor
@@ -736,7 +742,7 @@ class ImagingSessionData:
                 print('calculating proportion of active laps...')
                 active_laps = np.zeros((self.N_cells, N_laps_corr))
 
-                icorrids = self.i_corridors[self.i_Laps_ImData] # corridor ids with iage data
+                icorrids = self.i_corridors[self.i_Laps_ImData] # corridor ids with image data
                 i_laps_abs = self.i_Laps_ImData[np.nonzero(icorrids == corridor)[0]]
                 k = 0
                 for i_lap in i_laps_abs:#y=ROI
@@ -902,6 +908,40 @@ class ImagingSessionData:
             plt.show(block=False)
         else :
             plt.show(block=False)
+
+
+    # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
+    def calc_shuffle(self, cellids, n=1000, mode='shift'):
+        raw_spikes = self.raw_spks[cellids,:]
+        self.shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode)
+
+        NN = cellids.size
+        N_corrids = len(self.shuffle_stats.cell_activelaps)
+        sanity_checks_passed = True
+        for i_cor in range(N_corrids):
+            if (sum(np.abs(self.shuffle_stats.cell_reliability[i_cor][:,n] - self.cell_reliability[i_cor][cellids]) > 0.0001) > 0):
+                print ('warning: calculating reliability is different between shuffling and control!')
+                sanity_checks_passed = False
+            if (sum(np.abs(self.shuffle_stats.cell_tuning_specificity[i_cor][:,n] - self.cell_tuning_specificity[i_cor][cellids]) > 0.0001) > 0):
+                print ('warning: calculating specificity is different between shuffling and control!')
+                sanity_checks_passed = False
+            if (sum(np.abs(self.shuffle_stats.cell_activelaps[i_cor][:,n] - self.cell_activelaps[i_cor][cellids]) > 0.0001) > 0):
+                print ('warning: calculating activelaps is different between shuffling and control!')
+                sanity_checks_passed = False
+            if (sum(np.abs(self.shuffle_stats.cell_skaggs[i_cor][:,n] - self.cell_skaggs[i_cor][cellids]) > 0.0001) > 0):
+                print ('warning: calculating Skaggs info is different between shuffling and control!')
+                sanity_checks_passed = False
+            if (sum(np.abs(self.shuffle_stats.cell_Fano_factor[i_cor][:,n] - self.cell_Fano_factor[i_cor][cellids]) > 0.0001) > 0):
+                print ('warning: calculating Fano factor is different between shuffling and control!')
+                sanity_checks_passed = False
+    
+        if (np.sum(np.abs(self.shuffle_stats.cell_corridor_selectivity[:,:,n] - self.cell_corridor_selectivity[:,cellids]) > 0.0001) > 0):
+            print ('warning: calculating corridor selectivity is different between shuffling and control!')
+            sanity_checks_passed = False
+
+        if (sanity_checks_passed):
+            print ('Shuffling stats calculated succesfully')
+
 
     def get_lap_indexes(self, corridor=-1, i_lap=-1):
         ## print the indexes of i_lap (or each lap) in a given corridor
@@ -1266,7 +1306,7 @@ class ImagingSessionData:
             xmids=np.arange(50)
             
             if (max(mean_rate + se_rate) > ymax):
-            	ymax = max(mean_rate + se_rate)
+                ymax = max(mean_rate + se_rate)
 
             #plotting
             title_string = 'total activity in corridor ' + str(corridor_to_plot)
@@ -1487,38 +1527,6 @@ class ImagingSessionData:
 
             plt.show(block=False)
 
-def vcorrcoef(X,y):
-    # correlation between the rows of the matrix X with dimensions (N x k) and a vector y of size (1 x k)
-    # about 200 times faster than calculating correlations row by row
-    Xm = np.reshape(np.nanmean(X,axis=1),(X.shape[0],1))
-    i_nonzero = np.nonzero(Xm[:,0] != 0)[0]
-    X_nz = X[i_nonzero,:]
-    Xm_nz = Xm[i_nonzero,:]
-
-    ym = np.nanmean(y)
-    r_num = np.nansum((X_nz-Xm_nz)*(y-ym),axis=1)
-    r_den = np.sqrt(np.nansum((X_nz-Xm_nz)**2,axis=1)*np.nansum((y-ym)**2))
-    r = r_num/r_den
-    return r
-
-def nan_divide(a, b, where=True):
-    'division function that returns np.nan where the division is not defined'
-    x = np.zeros_like(a)
-    x.fill(np.nan)
-    x = np.divide(a, b, out=x, where=where)
-    return x
-
-def nan_add(a, b):
-    'addition function that handles NANs by replacing them with zero - USE with CAUTION!'
-    a[np.isnan(a)] = 0
-    b[np.isnan(b)] = 0
-    x = np.array(a + b)
-    return x
-
-def pol2cart(rho, phi):
-    x = rho * np.cos(phi)
-    y = rho * np.sin(phi)
-    return(x, y)
 
 class Lap_ImData:
     'common base class for individual laps'
@@ -1554,7 +1562,7 @@ class Lap_ImData:
         self.frames_time = lap_frames_time
         self.min_N_frames = 50 # we analyse imaging data if there are at least 50 frames in the lap
         self.n_cells = 1 # we still create the same np arrays even if there are no cells
-        if (not(np.isnan(self.frames_time).any())): # we real data
+        if (not(np.isnan(self.frames_time).any())): # we have real data
             if (len(self.frames_time) > self.min_N_frames): # we have more than 50 frames
                 self.n_cells = self.frames_dF_F.shape[0]
             

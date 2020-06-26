@@ -29,8 +29,6 @@ TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'rn013_TSeries-03132020-0939-003_Cyc
 # 3. load all the data - this taks ~20 secs in my computer
 #    def __init__(self, datapath, date_time, name, task, suite2p_folder, TRIGGER_VOLTAGE_FILENAME):
 D1 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME)
-cellids = np.nonzero((D1.cell_reliability[0] > 0.1) + (D1.cell_reliability[1] > 0.1))[0]
-D1.plot_popact(cellids)
 
 #########################################################
 ## PLOTTING
@@ -55,7 +53,7 @@ cellids = np.nonzero(D1.cell_corridor_selectivity[2,] > 0.5)[0]
 # rates_reward = np.sum(total_spikes[40:50], axis=0) / np.sum(total_time[40:50])
 
 
-## plot the ratemaps of the selected cells
+## 1.1. plot the ratemaps of the selected cells
 D1.plot_ratemaps(cellids = cellids)
 
 
@@ -81,13 +79,19 @@ cellids = np.nonzero(D1.cell_tuning_specificity[0] > 0.5)[0]
 cellids = np.nonzero((D1.cell_tuning_specificity[0] + D1.cell_activelaps[0] > 0.7) + (D1.cell_tuning_specificity[1] + D1.cell_activelaps[1] > 0.7))[0]
 D1.plot_ratemaps(cellids = cellids)
 
-## sorting ratemaps
+## 1.2 sorting ratemaps
 D1.plot_ratemaps(cellids = cellids, sorted=True)
 D1.plot_ratemaps(cellids = cellids, corridor=19, sorted=True)
 D1.plot_ratemaps(cellids = cellids, sorted=True, corridor_sort=19)
 
+## 1.3 plotting the total population activity
+cellids = np.nonzero((D1.cell_reliability[0] > 0.3) + (D1.cell_reliability[1] > 0.3))[0]
+D1.plot_popact(cellids)
+
+
 ## 2. plot properties - you can select interactive mode to be True or False
-D1.plot_properties(cellids=cellids, interactive=True)
+cellids = np.nonzero(D1.candidate_PCs[0] + D1.candidate_PCs[1])[0]
+D1.plot_properties(cellids=cellids, interactive=False)
 
 # 3. plot masks - only works in python 3
 D1.plot_masks(cellids)
@@ -117,6 +121,27 @@ D1.ImLaps[153].plot_txv()
 # plt.show(block=False)
 
 
-# 6. plot the total population activity
-D1.plot_popact(cellids)
+## 6. calculate shuffle controls
+cellids = np.nonzero(D1.candidate_PCs[0] + D1.candidate_PCs[1])[0]
+D1.plot_properties(cellids=cellids, interactive=False)
+D1.calc_shuffle(cellids, n=100, mode='shift')
+D1.shuffle_stats.plot_properties_shuffle()
 
+
+cellids = np.arange(100) + 600
+D1.calc_shuffle(cellids, n=100, mode='shift')
+D1.shuffle_stats.plot_properties_shuffle(maxNcells=100)
+
+
+D1.calc_shuffle(cellids, n=100, mode='random')
+D1.shuffle_stats.plot_properties_shuffle()
+
+
+cellids = np.nonzero((D1.cell_reliability[0] > 0.25) + (D1.cell_reliability[1] > 0.25))[0]
+D1.calc_shuffle(cellids, n=100, mode='random')
+D1.shuffle_stats.plot_properties_shuffle(cellids[0:10])
+D1.shuffle_stats.plot_properties_shuffle(cellids[10:20])
+
+cellids = np.nonzero((D1.cell_reliability[0] < 0.15) & (D1.cell_activelaps[0] > 0.2))[0]
+D1.calc_shuffle(cellids, n=100, mode='random')
+D1.shuffle_stats.plot_properties_shuffle(cellids, maxNcells=50)
