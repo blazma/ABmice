@@ -98,10 +98,10 @@ D1.plot_masks(cellids)
 
 # 4. plot the laps of a selected cell - there are two options:
 # 4a) plot the event rates versus space
-D1.plot_cell_laps(cellid=209, signal='rate', save_data=False) ## look at lap 20
+D1.plot_cell_laps(cellid=106, signal='rate', save_data=False) ## look at lap 20
 
 # 4a) plot the dF/F and the spikes versus time
-D1.plot_cell_laps(cellid=209, signal='dF') ## look at lap 20
+D1.plot_cell_laps(cellid=106, signal='dF') ## look at lap 20
 
 # get the index of a lap in a specific corridor
 D1.get_lap_indexes(corridor=16, i_lap=7) # print lap index for the 74th imaging lap in corridor 19
@@ -122,26 +122,30 @@ D1.ImLaps[153].plot_txv()
 
 
 ## 6. calculate shuffle controls
+## 6.1. shuffle for candidate place cells
 cellids = np.nonzero(D1.candidate_PCs[0] + D1.candidate_PCs[1])[0]
 D1.plot_properties(cellids=cellids, interactive=False)
 D1.calc_shuffle(cellids, n=100, mode='shift')
 D1.shuffle_stats.plot_properties_shuffle()
 
 
-cellids = np.arange(100) + 600
+## 6.1. shuffle for all cells with high specificity and activity rate
+cellids = np.nonzero((D1.cell_tuning_specificity[0] > 5) & (D1.cell_rates[0][0,:] > 0.2)+ (D1.cell_tuning_specificity[1] > 5) & (D1.cell_rates[1][0,:] > 0.2))[0]
+D1.plot_properties(cellids=cellids, interactive=False)
+D1.calc_shuffle(cellids, n=100, mode='shift')
+D1.shuffle_stats.plot_properties_shuffle(maxNcells=200)
+
+## plot the ratemaps of all significantly specific cells
+cells = cellids[np.where((D1.shuffle_stats.P_tuning_specificity[0] < 0.05) + (D1.shuffle_stats.P_tuning_specificity[1] < 0.05))[0]]
+D1.plot_ratemaps(cellids = cells, sorted=True)
+D1.plot_ratemaps(cellids = cells, sorted=True, corridor_sort=19)
+
+
+## random cells
+cellids = np.arange(100) + 100
 D1.calc_shuffle(cellids, n=100, mode='shift')
 D1.shuffle_stats.plot_properties_shuffle(maxNcells=100)
 
-
-D1.calc_shuffle(cellids, n=100, mode='random')
-D1.shuffle_stats.plot_properties_shuffle()
-
-
-cellids = np.nonzero((D1.cell_reliability[0] > 0.25) + (D1.cell_reliability[1] > 0.25))[0]
-D1.calc_shuffle(cellids, n=100, mode='random')
-D1.shuffle_stats.plot_properties_shuffle(cellids[0:10])
-D1.shuffle_stats.plot_properties_shuffle(cellids[10:20])
-
-cellids = np.nonzero((D1.cell_reliability[0] < 0.15) & (D1.cell_activelaps[0] > 0.2))[0]
-D1.calc_shuffle(cellids, n=100, mode='random')
-D1.shuffle_stats.plot_properties_shuffle(cellids, maxNcells=50)
+cells = cellids[np.where((D1.shuffle_stats.P_tuning_specificity[0] < 0.05) + (D1.shuffle_stats.P_tuning_specificity[1] < 0.05))[0]]
+D1.plot_ratemaps(cellids = cells, sorted=True)
+D1.plot_ratemaps(cellids = cells, sorted=True, corridor_sort=19)

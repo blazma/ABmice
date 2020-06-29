@@ -45,6 +45,10 @@ class ImagingSessionData:
         self.stages = []
         self.sessionID = sessionID
 
+        self.corridor_length_cm = 106.5 # cm
+        self.corridor_length_roxel = 3500 # cm
+        self.speed_factor = self.corridor_length_cm / self.corridor_length_roxel
+
         stagefilename = self.datapath + self.task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
         if version_info.major == 2:
@@ -144,13 +148,13 @@ class ImagingSessionData:
         self.cell_activelaps_df=[] # a list, each element is a vector with the % of significantly active (dF/F) laps of the cells in a corridor
         self.cell_tuning_specificity=[] # a list, each element is a vector with the tuning specificity of the cells in a corridor
         self.cell_corridor_selectivity = np.zeros([3,self.N_cells]) # a matrix with the selectivity of the cells in the maze, corridor, reward area
+        self.ratemaps = [] # a list, each element is an array space x neurons x trials being the ratemaps of the cells in a given corridor
         self.calculate_properties()
 
-        self.ratemaps = [] # a list, each element is an array space x neurons x trials being the ratemaps of the cells in a given corridor
         self.candidate_PCs = [] # a list, each element is a vector of Trues and Falses of candidate place cells with at least 1 place field according to Hainmuller and Bartos 2018
         self.accepted_PCs = [] # a list, each element is a vector of Trues and Falses of accepted place cells after bootstrapping
         self.cell_corridor_similarity = np.zeros([2, self.N_cells]) # a matrix with the pearson R and P value of the correlation between the ratemaps in the two mazes
-        self.calculate_ratemaps()
+        self.Hainmuller_PCs()
 
         self.test_anticipatory()
 
@@ -567,7 +571,8 @@ class ImagingSessionData:
                     lap_frames_pos = np.nan 
                     
                 # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
-                self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list))
+                # Lap_ImData(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, speed_factor=106.5/3500, printout=False):
+                self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_factor=self.speed_factor))
                 self.n_laps = self.n_laps + 1
             else:
                 N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anythin with this...
@@ -605,78 +610,8 @@ class ImagingSessionData:
         self.activity_tensor_time = self.activity_tensor_time[:,i_valid_laps]
 
 
-    def calculate_ratemaps(self):
-        ## ratemaps: similar to the activity tensor, the laps are sorted by the corridors
-        self.ratemaps = [] # a list, each element is an array space x neurons being the ratemaps of the cells in a given corridor
-        self.candidate_PCs = [] # a list, each element is a vector of Trues and Falses of candidate place cells with at least 1 place field according to Hainmuller and Bartos 2018
-        self.accepted_PCs = [] # a list, each element is a vector of Trues and Falses of accepted place cells after bootstrapping
-
-        ## we calculate the rate matrix for all corridors - we need to use the same colors for the images
-        for corrid in np.unique(self.i_corridors):
-            # select the laps in the corridor 
-            # only laps with imaging data are selected - this will index the activity_tensor
-            i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corrid)[0] 
-            N_laps_corr = len(i_laps)
-
-            time_matrix_1 = self.activity_tensor_time[:,i_laps]
-            total_time = np.sum(time_matrix_1, axis=1) # bins x cells -> bins; time spent in each location
-
-            act_tensor_1 = self.activity_tensor[:,:,i_laps] ## bin x cells x laps; all activity in all laps in corridor i
-            total_spikes = np.sum(act_tensor_1, axis=2) ##  bin x cells; total activity of the selected cells in corridor i
-            rate_matrix = np.zeros_like(total_spikes) ## event rate 
-            
-            candidate_cells = np.zeros(self.N_cells)
-            accepted_cells = np.zeros(self.N_cells)
-
-            for i_cell in np.arange(rate_matrix.shape[1]):
-                rate_i = total_spikes[:,i_cell] / total_time
-                rate_matrix[:,i_cell] = rate_i
-
-                ### calculate the baseline, peak and threshold for each cell
-                ## Hainmuller: average of the lowest 25%; 
-                baseline = np.mean(np.sort(rate_i)[:12])
-                peak_rate = np.max(rate_i)
-                threshold = baseline + 0.25 * (peak_rate - baseline)
-
-                ## 1) find the longest contiguous region of above threshold for at least 3 bins...
-                placefield_start = np.nan
-                placefield_length = 0
-                candidate_start = 0
-                candidate_length = 0
-                for k in range(50):
-                    if (rate_i[k] > threshold):
-                        candidate_length = candidate_length + 1
-                        if (candidate_length == 1):
-                            candidate_start = k
-                        elif ((candidate_length > 2) & (candidate_length > placefield_length)):
-                            placefield_length = candidate_length
-                            placefield_start = candidate_start
-                    else:
-                        candidate_length = 0
-
-                if (not(np.isnan(placefield_start))):
-                    ##  2) with average rate at least 7x the average rate outside
-                    index_infield = np.arange(placefield_start,(placefield_start+placefield_length))
-                    index_outfield = np.setdiff1d(np.arange(50), index_infield)
-                    rate_inField = np.mean(rate_i[index_infield])
-                    rate_outField = np.mean(rate_i[index_outfield])
-
-
-                    ## significant (total spike is larger than 0.6) transient in the field in at least 20% of the runs
-                    lapsums = act_tensor_1[index_infield,i_cell,:].sum(0) # only laps in this corridor
-
-                    if ( ( (sum(lapsums > 0.6) / float(N_laps_corr)) > 0.2)  & ( (rate_inField / rate_outField) > 7) ):
-                        # accepted_cells[i_cell] = 1
-                        candidate_cells[i_cell] = 1
-
-            self.ratemaps.append(rate_matrix)
-            self.candidate_PCs.append(candidate_cells)
-            self.accepted_PCs.append(accepted_cells)
-        
-        for i_cell in np.arange(rate_matrix.shape[1]):
-            self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
-
     def calculate_properties(self, nSD=4):
+        self.ratemaps = [] # a list, each element is an array space x neurons being the ratemaps of the cells in a given corridor
         self.cell_rates = [] # we do not append if it already exists...
         self.cell_reliability = []
         self.cell_Fano_factor = []
@@ -706,6 +641,9 @@ class ImagingSessionData:
                 # for i_cell in range(total_spikes.shape[1]):
                     rate_matrix[:,i_cell] = total_spikes[:,i_cell] / total_time
 
+    
+                self.ratemaps.append(rate_matrix)
+    
                 print('calculating rate, reliability and Fano factor...')
 
                 ## average firing rate
@@ -764,32 +702,46 @@ class ImagingSessionData:
                 active_laps_ratio_df = np.sum(active_laps_df, 1) / N_laps_corr
                 self.cell_activelaps_df.append(active_laps_ratio_df)
 
-                ## tuning specificity
-                print('calculating tuning specificity ...')
-                tuning_spec=np.zeros(self.N_cells)
-                r=1
-                deg_d=(2*np.pi)/50
-                x=np.zeros(50)
-                y=np.zeros(50)
-                x_ext=np.zeros((50,len(i_laps)))
-                y_ext=np.zeros((50,len(i_laps)))
+                ## circular tuning specificity
+                # print('calculating circular tuning specificity ...')
+                # tuning_spec=np.zeros(self.N_cells)
+                # r=1
+                # deg_d=(2*np.pi)/50
+                # x=np.zeros(50)
+                # y=np.zeros(50)
+                # x_ext=np.zeros((50,len(i_laps)))
+                # y_ext=np.zeros((50,len(i_laps)))
                 
-                for i in range( 50):
-                   x_i,y_i=pol2cart(r,deg_d*i)
-                   x[i]=round(x_i,5)
-                   y[i]=round(y_i,5)
+                # for i in range( 50):
+                #    x_i,y_i=pol2cart(r,deg_d*i)
+                #    x[i]=round(x_i,5)
+                #    y[i]=round(y_i,5)
                    
-                for i in range(len(i_laps)):
-                    x_ext[:,i]=x
-                    y_ext[:,i]=y
+                # for i in range(len(i_laps)):
+                #     x_ext[:,i]=x
+                #     y_ext[:,i]=y
                     
+                # for i_cell in range(self.N_cells):
+                #     magn_x=nan_divide(self.activity_tensor[:,i_cell,i_laps]*x_ext, self.activity_tensor_time[:,i_laps], self.activity_tensor_time[:,i_laps] > 0)
+                #     magn_y=nan_divide(self.activity_tensor[:,i_cell,i_laps]*y_ext, self.activity_tensor_time[:,i_laps], self.activity_tensor_time[:,i_laps] > 0)
+                #     X = np.nansum(magn_x)
+                #     Y = np.nansum(magn_y)
+                #     Z = np.nansum(np.sqrt(magn_x**2 + magn_y**2))
+                #     tuning_spec[i_cell]=np.sqrt(X**2+Y**2) / Z
+
+                ## linear tuning specificity
+                print('calculating linear tuning specificity ...')
+                tuning_spec = np.zeros(self.N_cells)
+                xbins = (np.arange(50) + 0.5) * self.corridor_length_cm / 50
+                
                 for i_cell in range(self.N_cells):
-                    magn_x=nan_divide(self.activity_tensor[:,i_cell,i_laps]*x_ext, self.activity_tensor_time[:,i_laps], self.activity_tensor_time[:,i_laps] > 0)
-                    magn_y=nan_divide(self.activity_tensor[:,i_cell,i_laps]*y_ext, self.activity_tensor_time[:,i_laps], self.activity_tensor_time[:,i_laps] > 0)
-                    X = np.nansum(magn_x)
-                    Y = np.nansum(magn_y)
-                    Z = np.nansum(np.sqrt(magn_x**2 + magn_y**2))
-                    tuning_spec[i_cell]=np.sqrt(X**2+Y**2) / Z
+                    rr = np.copy(rate_matrix[:,i_cell])
+                    rr[rr < np.mean(rr)] = 0
+                    Px = rr / np.sum(rr)
+                    mu = np.sum(Px * xbins)
+                    sigma = np.sqrt(np.sum(Px * xbins**2) - mu**2)
+                    tuning_spec[i_cell] = self.corridor_length_cm / sigma
+
                 self.cell_tuning_specificity.append(tuning_spec)
 
             # self.cell_rates = [] # a list, each element is a 3 x n_cells matrix with the average rate of the cells in the total corridor, pattern zone and reward zone
@@ -909,11 +861,76 @@ class ImagingSessionData:
         else :
             plt.show(block=False)
 
+    def Hainmuller_PCs(self):
+        ## ratemaps: similar to the activity tensor, the laps are sorted by the corridors
+        self.candidate_PCs = [] # a list, each element is a vector of Trues and Falses of candidate place cells with at least 1 place field according to Hainmuller and Bartos 2018
+        self.accepted_PCs = [] # a list, each element is a vector of Trues and Falses of accepted place cells after bootstrapping
+
+        ## we calculate the rate matrix for all corridors - we need to use the same colors for the images
+        for corrid in np.unique(self.i_corridors):
+            # select the laps in the corridor 
+            i_corrid = int(np.nonzero(self.corridors == corrid)[0] - 1)
+            rate_matrix = self.ratemaps[i_corrid]
+            # only laps with imaging data are selected - this will index the activity_tensor
+
+            candidate_cells = np.zeros(self.N_cells)
+            accepted_cells = np.zeros(self.N_cells)
+            
+            i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corrid)[0] 
+            N_laps_corr = len(i_laps)
+            act_tensor_1 = self.activity_tensor[:,:,i_laps] ## bin x cells x laps; all activity in all laps in corridor i
+
+            for i_cell in np.arange(rate_matrix.shape[1]):
+                rate_i = rate_matrix[:,i_cell]
+
+                ### calculate the baseline, peak and threshold for each cell
+                ## Hainmuller: average of the lowest 25%; 
+                baseline = np.mean(np.sort(rate_i)[:12])
+                peak_rate = np.max(rate_i)
+                threshold = baseline + 0.25 * (peak_rate - baseline)
+
+                ## 1) find the longest contiguous region of above threshold for at least 3 bins...
+                placefield_start = np.nan
+                placefield_length = 0
+                candidate_start = 0
+                candidate_length = 0
+                for k in range(50):
+                    if (rate_i[k] > threshold):
+                        candidate_length = candidate_length + 1
+                        if (candidate_length == 1):
+                            candidate_start = k
+                        elif ((candidate_length > 2) & (candidate_length > placefield_length)):
+                            placefield_length = candidate_length
+                            placefield_start = candidate_start
+                    else:
+                        candidate_length = 0
+
+                if (not(np.isnan(placefield_start))):
+                    ##  2) with average rate at least 7x the average rate outside
+                    index_infield = np.arange(placefield_start,(placefield_start+placefield_length))
+                    index_outfield = np.setdiff1d(np.arange(50), index_infield)
+                    rate_inField = np.mean(rate_i[index_infield])
+                    rate_outField = np.mean(rate_i[index_outfield])
+
+
+                    ## significant (total spike is larger than 0.6) transient in the field in at least 20% of the runs
+                    lapsums = act_tensor_1[index_infield,i_cell,:].sum(0) # only laps in this corridor
+
+                    if ( ( (sum(lapsums > 0.6) / float(N_laps_corr)) > 0.2)  & ( (rate_inField / rate_outField) > 7) ):
+                        # accepted_cells[i_cell] = 1
+                        candidate_cells[i_cell] = 1
+
+            self.candidate_PCs.append(candidate_cells)
+            self.accepted_PCs.append(accepted_cells)
+        
+        for i_cell in np.arange(rate_matrix.shape[1]):
+            self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
 
     # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
     def calc_shuffle(self, cellids, n=1000, mode='shift'):
         raw_spikes = self.raw_spks[cellids,:]
         self.shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode)
+        self.accepted_PCs = self.shuffle_stats.accepted_PCs
 
         NN = cellids.size
         N_corrids = len(self.shuffle_stats.cell_activelaps)
@@ -1531,7 +1548,7 @@ class ImagingSessionData:
 class Lap_ImData:
     'common base class for individual laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, speed_factor=106.5/3500, printout=False):
         self.name = name
         self.lap = lap
 
@@ -1545,7 +1562,7 @@ class Lap_ImData:
         self.mode = mode # 1 if all elements are recorded in 'Go' mode
         self.actions = actions
         self.speed_threshold = 5 ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
-        self.speed_factor = 106.5/3500
+        self.speed_factor = speed_factor
 
         self.zones = np.vstack([np.array(self.corridor_list.corridors[self.corridor].reward_zone_starts), np.array(self.corridor_list.corridors[self.corridor].reward_zone_ends)])
         self.n_zones = np.shape(self.zones)[1]
