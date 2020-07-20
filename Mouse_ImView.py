@@ -87,7 +87,11 @@ D1.plot_ratemaps(cellids = cellids, sorted=True, corridor_sort=19)
 ## 1.3 plotting the total population activity
 cellids = np.nonzero((D1.cell_reliability[0] > 0.3) + (D1.cell_reliability[1] > 0.3))[0]
 D1.plot_popact(cellids)
+D1.plot_popact(cellids, bylaps=True)
 
+cellids = np.nonzero((D1.cell_reliability[0] > 0))[0]
+D1.plot_popact(cellids, bylaps=True)
+D1.plot_popact(cellids, bylaps=False)
 
 ## 2. plot properties - you can select interactive mode to be True or False
 cellids = np.nonzero(D1.candidate_PCs[0] + D1.candidate_PCs[1])[0]
@@ -98,18 +102,18 @@ D1.plot_masks(cellids)
 
 # 4. plot the laps of a selected cell - there are two options:
 # 4a) plot the event rates versus space
-D1.plot_cell_laps(cellid=106, signal='rate', save_data=False) ## look at lap 20
+D1.plot_cell_laps(cellid=110, signal='rate', save_data=False) ## look at lap 20
 
 # 4a) plot the dF/F and the spikes versus time
 D1.plot_cell_laps(cellid=106, signal='dF') ## look at lap 20
 
 # get the index of a lap in a specific corridor
-D1.get_lap_indexes(corridor=16, i_lap=7) # print lap index for the 74th imaging lap in corridor 19
+D1.get_lap_indexes(corridor=16, i_lap=77) # print lap index for the 74th imaging lap in corridor 19
 D1.get_lap_indexes(corridor=19) # print all lap indexes in corridor 19
 
 ## 5. plotting all cells in a single lap, and zoom in to see cell 106 - it actually matches the data well
-D1.ImLaps[152].plot_tx(fluo=True)
-D1.ImLaps[152].plot_xv()
+D1.ImLaps[285].plot_tx(fluo=True)
+D1.ImLaps[285].plot_xv()
 D1.ImLaps[153].plot_xv()
 D1.ImLaps[153].plot_txv()
 
@@ -131,13 +135,21 @@ D1.shuffle_stats.plot_properties_shuffle()
 
 ## 6.1. shuffle for all cells with high specificity and activity rate
 cellids = np.nonzero((D1.cell_tuning_specificity[0] > 5) & (D1.cell_rates[0][0,:] > 0.2)+ (D1.cell_tuning_specificity[1] > 5) & (D1.cell_rates[1][0,:] > 0.2))[0]
+## 6.1. shuffle for the first 100 cells
+cellids = np.arange(100)
+cellids = np.nonzero((D1.cell_activelaps[0] > 0.2) + (D1.cell_activelaps[1] > 0.2))[0]
+
 D1.plot_properties(cellids=cellids, interactive=False)
 D1.calc_shuffle(cellids, n=100, mode='shift')
-D1.shuffle_stats.plot_properties_shuffle(maxNcells=200)
+D1.shuffle_stats.plot_properties_shuffle(maxNcells=100)
 
 ## plot the ratemaps of all significantly specific cells
-cells = cellids[np.where((D1.shuffle_stats.P_tuning_specificity[0] < 0.05) + (D1.shuffle_stats.P_tuning_specificity[1] < 0.05))[0]]
-D1.plot_ratemaps(cellids = cells, sorted=True)
+
+
+cells16 = cellids[np.where((D1.shuffle_stats.P_reliability[0] < 0.01) + (D1.shuffle_stats.P_tuning_specificity[0] < 0.01) + (D1.shuffle_stats.P_skaggs[0] < 0.01))[0]]
+cells19 = cellids[np.where((D1.shuffle_stats.P_reliability[1] < 0.01) + (D1.shuffle_stats.P_tuning_specificity[1] < 0.01) + (D1.shuffle_stats.P_skaggs[1] < 0.01))[0]]
+D1.plot_ratemaps(cellids = cells16, sorted=True, corridor=16)
+D1.plot_ratemaps(cellids = cells19, sorted=True, corridor=19)
 D1.plot_ratemaps(cellids = cells, sorted=True, corridor_sort=19)
 
 
@@ -149,3 +161,41 @@ D1.shuffle_stats.plot_properties_shuffle(maxNcells=100)
 cells = cellids[np.where((D1.shuffle_stats.P_tuning_specificity[0] < 0.05) + (D1.shuffle_stats.P_tuning_specificity[1] < 0.05))[0]]
 D1.plot_ratemaps(cellids = cells, sorted=True)
 D1.plot_ratemaps(cellids = cells, sorted=True, corridor_sort=19)
+
+
+
+D1.shuffle_stats.P_skaggs[0][D1.shuffle_stats.P_skaggs[0] < 1.0/1000] = 1.0/2000
+D1.shuffle_stats.P_skaggs[1][D1.shuffle_stats.P_skaggs[1] < 1.0/1000] = 1.0/2000
+
+D1.shuffle_stats.P_tuning_specificity[0][D1.shuffle_stats.P_tuning_specificity[0] < 1.0/1000] = 1.0/2000
+D1.shuffle_stats.P_tuning_specificity[1][D1.shuffle_stats.P_tuning_specificity[1] < 1.0/1000] = 1.0/2000
+
+D1.shuffle_stats.P_reliability[0][D1.shuffle_stats.P_reliability[0] < 1.0/1000] = 1.0/2000
+D1.shuffle_stats.P_reliability[1][D1.shuffle_stats.P_reliability[1] < 1.0/1000] = 1.0/2000
+
+fig, ax = plt.subplots(1, 3, figsize=(10,5), sharex='col', sharey='col')
+plt.subplots_adjust(wspace=0.35, hspace=0.2)
+
+ax[0].plot(D1.shuffle_stats.P_skaggs[0], D1.shuffle_stats.P_tuning_specificity[0], 'o', alpha=0.5, c='w', markeredgecolor='C1')
+ax[0].plot(D1.shuffle_stats.P_skaggs[1], D1.shuffle_stats.P_tuning_specificity[1], 'o', alpha=0.5, c='w', markeredgecolor='C2')
+ax[0].set_xlabel('Skaggs info P')
+ax[0].set_ylabel('tuning specificity P')
+ax[0].set_xscale('log')
+ax[0].set_yscale('log')
+
+
+ax[1].plot(D1.shuffle_stats.P_skaggs[0], D1.shuffle_stats.P_reliability[0], 'o', alpha=0.5, c='w', markeredgecolor='C1')
+ax[1].plot(D1.shuffle_stats.P_skaggs[1], D1.shuffle_stats.P_reliability[1], 'o', alpha=0.5, c='w', markeredgecolor='C2')
+ax[1].set_xlabel('Skaggs info P')
+ax[1].set_ylabel('reliability P')
+ax[1].set_xscale('log')
+ax[1].set_yscale('log')
+
+ax[2].plot(D1.shuffle_stats.P_reliability[0], D1.shuffle_stats.P_tuning_specificity[0], 'o', alpha=0.5, c='w', markeredgecolor='C1')
+ax[2].plot(D1.shuffle_stats.P_reliability[1], D1.shuffle_stats.P_tuning_specificity[1], 'o', alpha=0.5, c='w', markeredgecolor='C2')
+ax[2].set_xlabel('reliability P')
+ax[2].set_xlabel('tuning specificity P')
+ax[2].set_xscale('log')
+ax[2].set_yscale('log')
+
+plt.show(block=False)

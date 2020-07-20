@@ -1106,12 +1106,13 @@ class ImagingSessionData:
         return(cell_info)
 
 
-    def plot_cell_laps(self, cellid, multipdf_object=-1, signal='dF', corridor=-1, reward=True, write_pdf=False, save_data=False):
+    def plot_cell_laps(self, cellid, multipdf_object=-1, signal='dF', corridor=-1, reward=True, write_pdf=False, save_data=False, plot_laps='all'):
         ## plot the activity of a single cell in all trials in a given corridor
         ## signal can be 
         ##          'dF' when dF/F and spikes are plotted as a function of time
         ##          'rate' when rate vs. position is plotted
-        
+        ## plot_laps can be either 'all', 'correct' or 'error'
+
         #process input corridors
         if (corridor == -1):
             corridor = np.unique(self.i_corridors)
@@ -1235,9 +1236,16 @@ class ImagingSessionData:
                 total_time = self.activity_tensor_time[:,i_laps]
                 rate_matrix = total_spikes / total_time
 
+                if (plot_laps == 'correct'):
+                    i_error = np.nonzero(correct_reward[0,:] == 0)[0]
+                    rate_matrix[:,i_error] = np.nan
+                if (plot_laps == 'error'):
+                    i_correct = np.nonzero(correct_reward[0,:] == 1)[0]
+                    rate_matrix[:,i_correct] = np.nan
+
                 #calculate for plotting average rates
-                average_firing_rate=np.sum(rate_matrix, axis=1)/i_laps.size
-                std=np.std(rate_matrix, axis=1)/np.sqrt(i_laps.size)
+                average_firing_rate=np.nansum(rate_matrix, axis=1)/i_laps.size
+                std=np.nanstd(rate_matrix, axis=1)/np.sqrt(i_laps.size)
                 errorbar_x=np.arange(50)
                 
                 #plotting
@@ -1284,7 +1292,7 @@ class ImagingSessionData:
             
     
 
-    def plot_popact(self, cellids, corridor=-1, save_data=False, name_string='selected_cells'):
+    def plot_popact(self, cellids, corridor=-1, save_data=False, name_string='selected_cells', bylaps=False):
         ## plot the total population activity in all trials in a given corridor
         
         #process input corridors
@@ -1298,7 +1306,7 @@ class ImagingSessionData:
                 return
                 
         ymax = 0              
-        fig, ax = plt.subplots(1,corridor.size, squeeze=False, sharey='row', figsize=(6*corridor.size,4),sharex=True)
+        fig, ax = plt.subplots(1,corridor.size, squeeze=False, sharey='row', figsize=(6*corridor.size,4), sharex=True)
         for cor_index in range(corridor.size):
             if corridor.size==1:
                 corridor_to_plot=corridor
@@ -1316,33 +1324,40 @@ class ImagingSessionData:
             popact_laps = np.sum(sp, 1) / total_time
             
 
-
             #calculate for plotting average rates
-            mean_rate=np.sum(popact_laps, axis=1)/i_laps.size
-            se_rate=np.std(popact_laps, axis=1)/np.sqrt(i_laps.size)
             xmids=np.arange(50)
-            
-            if (max(mean_rate + se_rate) > ymax):
-                ymax = max(mean_rate + se_rate)
-
-            #plotting
             title_string = 'total activity in corridor ' + str(corridor_to_plot)
-            ax[0,cor_index].fill_between(xmids,mean_rate+se_rate, mean_rate-se_rate, alpha=0.3)
-            ax[0,cor_index].plot(mean_rate,zorder=0)
-            n_laps = popact_laps.shape[1]
+            if (bylaps == True):
+                scale_factor = np.round(np.mean(popact_laps))
+                ax[0,cor_index].plot(popact_laps + np.arange(popact_laps.shape[1])*scale_factor)
+                ax[0,cor_index].set_title(title_string)
+                ylab_text = 'lap number x ' + str(scale_factor) + ' / total activity'
+                ax[0,cor_index].set_ylabel(ylab_text)
+                ax[0,cor_index].set_xlabel('position bin')
+            else:
+                mean_rate=np.sum(popact_laps, axis=1)/i_laps.size
+                se_rate=np.std(popact_laps, axis=1)/np.sqrt(i_laps.size)
+            
+                if (max(mean_rate + se_rate) > ymax):
+                    ymax = max(mean_rate + se_rate)
 
-            ax[0,cor_index].set_xlim(0, 51)
-            ax[0,cor_index].set_title(title_string)
+                #plotting
+                ax[0,cor_index].fill_between(xmids,mean_rate+se_rate, mean_rate-se_rate, alpha=0.3)
+                ax[0,cor_index].plot(mean_rate,zorder=0)
+                n_laps = popact_laps.shape[1]
 
-            if (save_data == True):
-                filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_popact_corridor' + str(int(corridor_to_plot)) + name_string + '.csv'
-                with open(filename, mode='w') as rate_file:
-                    file_writer = csv.writer(rate_file, delimiter=',')
-                    for i_col in range(n_laps):
-                        file_writer.writerow(np.round(popact_laps[:,i_col], 2))
-                print('ratemap saved into file: ' + filename)
+                ax[0,cor_index].set_xlim(0, 51)
+                ax[0,cor_index].set_title(title_string)
 
-        ax[0,0].set_ylim(0, ymax)
+                if (save_data == True):
+                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_popact_corridor' + str(int(corridor_to_plot)) + name_string + '.csv'
+                    with open(filename, mode='w') as rate_file:
+                        file_writer = csv.writer(rate_file, delimiter=',')
+                        for i_col in range(n_laps):
+                            file_writer.writerow(np.round(popact_laps[:,i_col], 2))
+                    print('ratemap saved into file: ' + filename)
+
+                ax[0,0].set_ylim(0, ymax)
         plt.show(block=False)
 
 
