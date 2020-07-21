@@ -63,7 +63,7 @@ class ImShuffle:
 
         self.N_frames = self.raw_spikes.shape[1]
         self.N_shuffle = N_shuffle
-        self.mode = mode # random: totalli randomize the spike times; shift: circularly shift spike times 
+        self.mode = mode # random: totally randomize the spike times; shift: circularly shift spike times 
 
         stagefilename = datapath + task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
@@ -148,7 +148,7 @@ class ImShuffle:
         self.P_reliability = [] # a list, each element is a vector with the P value estimated from shuffle control - P(reliability > measured)
         self.P_skaggs=[] # a list, each element is a vector with the the P value estimated from shuffle control - P(Skaggs-info > measured)
         self.P_tuning_specificity=[] # a list, each element is a vector with the the P value estimated from shuffle control - P(specificity > measured)
-        self.P_selectivity = np.zeros((3, self.N_cells, self.N_shuffle+1)) # a matrix with the selectivity of the the P value estimated from shuffle control - P(selectivity > measured)
+        self.P_selectivity = np.zeros((3, self.N_cells)) # a matrix with the selectivity of the the P value estimated from shuffle control - P(selectivity > measured)
 
         self.calculate_properties_shuffle()
 

@@ -140,7 +140,7 @@ class ImagingSessionData:
         self.activity_tensor_time = np.zeros((self.N_bins, self.N_ImLaps)) # same as the activity tensor time spatially smoothed
         self.combine_lapdata() ## fills in the cell_activity tensor
 
-        self.cell_rates = [] # a list, each element is a 3 x n_cells matrix with the average rate of the cells in the total corridor, pattern zone and reward zone
+        self.cell_rates = [] # a list, each element is a 3 x n_cells matrix with the average rate of the cells in the whole corridor, pattern zone and reward zone
         self.cell_reliability = [] # a list, each element is a vector with the reliability of the cells in a corridor
         self.cell_Fano_factor = [] # a list, each element is a vector with the reliability of the cells in a corridor
         self.cell_skaggs=[] # a list, each element is a vector with the skaggs93 spatial info of the cells in a corridor
