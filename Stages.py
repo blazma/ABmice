@@ -232,7 +232,27 @@ class Stage_collection:
 
 # stage_list.write()
 
-# input_path = './TwoMazes_stages.pkl'
+############################################################################
+## Long-Corridor Stages for Imola
+############################################################################
+
+# level		stage 	substage	corridors 		random		next_stage		rule 		condition	name
+# lick&run	0		a			0				pseudo		1				lick&run	either		pretrain
+# diff_1	1		a			1-2				pseudo		2				Pavl/Oper  	both		all-reward		
+# diff_2	2		a			3-4				pseudo		2				Pavl/Oper  	both		1 zone		
+# 			2		b			5-7				pseudo		2				Pavl/Oper  	both		1 zone		
+
+# stage_list = Stage_collection('./', 'NearFarLong')
+
+# stage_list.add_stage(level='pretrain', stage=0, corridors=[0], next_stage=[1], rule='lick&run', condition='either', name='pretrain')
+# stage_list.add_stage(level='diff_1', stage=1, corridors=[1,2], next_stage=[2], rule='Pavlovian', condition='either', name='all_reward')
+# stage_list.add_stage(level='diff_2', stage=2, corridors=[3,4,5,6,7], next_stage=[2], rule='Pavlovian', condition='both', name='1_zone', substages=[0,0,1,1,1])
+
+# stage_list.print_table()
+
+# stage_list.write()
+
+# input_path = './NearFarLong_stages.pkl'
 # if (os.path.exists(input_path)):
 # 	input_file = open(input_path, 'rb')
 # 	stage_list = pickle.load(input_file)

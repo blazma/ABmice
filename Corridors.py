@@ -15,7 +15,7 @@ import pickle
 
 class Corridor:
 	'defining properties of a single corridor'
-	def __init__(self, name, left_image, right_image, end_image, floor_image, ceiling_image, reward_zone_starts, zone_width=470, reward='Right'):
+	def __init__(self, name, left_image, right_image, end_image, floor_image, ceiling_image, reward_zone_starts, zone_width=470, reward='Right', length=7168, height=768, width=1024):
 		self.name = name
 
 		self.left_image = left_image
@@ -24,12 +24,17 @@ class Corridor:
 		self.floor_image = floor_image
 		self.ceiling_image = ceiling_image
 
+		self.length = length
+		self.height = height
+		self.width = width
+		section_length = float(self.length - self.width)
+
 		# zone_shift = 0.0233 # Rita wants the zones to start at the near-edge of the monitor
 		self.reward = reward # currently all zones in a given corridor are identical. In the future, we could have a vector for encoding different zone properties
 		self.N_zones = len(reward_zone_starts)
 		zone_shift = 0 ## 0.05 for Rita
-		self.reward_zone_starts = np.array(reward_zone_starts) / 6144.0 + zone_shift # relative position of reward zone starts [0, 1]
-		self.reward_zone_ends = self.reward_zone_starts + zone_width / 6144.0
+		self.reward_zone_starts = np.array(reward_zone_starts) / section_length + zone_shift # relative position of reward zone starts [0, 1]
+		self.reward_zone_ends = self.reward_zone_starts + zone_width / section_length
 
 		if (self.N_zones > 0):
 			for i in np.arange(self.N_zones):
@@ -60,8 +65,8 @@ class Corridor_list:
 		self.name = experiment_name
 		self.corridors = []
 
-	def add_corridor(self, name, left_image, right_image, end_image, floor_image, ceiling_image, reward_zone_starts, zone_width=470, reward='Right'):
-		self.corridors.append(Corridor(name, left_image, right_image, end_image, floor_image, ceiling_image, reward_zone_starts, zone_width, reward))
+	def add_corridor(self, name, left_image, right_image, end_image, floor_image, ceiling_image, reward_zone_starts, zone_width=470, reward='Right', length=7168, height=768, width=1024):
+		self.corridors.append(Corridor(name, left_image, right_image, end_image, floor_image, ceiling_image, reward_zone_starts, zone_width, reward, length, height, width))
 		self.num_VRs = self.num_VRs + 1
 
 	def print_images(self):
@@ -80,6 +85,25 @@ class Corridor_list:
 
 # # # cc = Corridor('RN_1_cheese_left.png', 'RN_1_cheese_right.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [5380])
 # # # Cors.add_corridor('RN_1_cheese_left.png', 'RN_1_cheese_right.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [5380])
+
+###################################################################
+## default corridor sizes 1:6 ratio
+###################################################################
+##			pixel
+## length: 7168 = 6144 + 1024
+## width: 1024
+## height: 768
+
+###################################################################
+## long corridor sizes 1:9 ratio
+###################################################################
+##			pixel
+## length: 10240 = 9216 + 1024 
+## width: 1024
+## height: 768
+
+
+
 
 ###################################################################
 ## corridors for Rita
@@ -250,3 +274,44 @@ class Corridor_list:
 
 # Cors.write()
 
+
+######################################################################################################
+## Long Corridors for Imola
+######################################################################################################
+## corridor number 		end image 	floor image 	left image 			right image 		number of zones 		reward side
+## 0					grey 		grey 			grey_wall			grey_wall			0						None
+## 1					sine 		sine 			grey_wall			grey_wall			12						Right	
+## 2					square 		square 			grey_wall			grey_wall			12						Right	
+## 3					grey 		grey 			leaves				leaves				1						Right	
+## 4					grey 		grey 			people				people				1						Right	
+## 5					grey 		grey 			leaves				leaves				1						Right	
+## 6					grey 		grey 			people				people				1						Right	
+## 7					grey 		grey 			green people		green people		1						Right	
+
+# Cors = Corridor_list('./', 'NearFarLong')
+# #						 left_image, right_image, end_image, floor_image, ceiling_image
+# Cors.add_corridor('grey', 'grey_wall.png', 'grey_wall.png', 'grey_end_wall.png', 'grey_floor_ceiling.png', 'grey_floor_ceiling.png', [], reward='None')
+
+# Cors.add_corridor('all_sine', 'mABd0LeftRightcorridor.png', 'mABd0LeftRightcorridor.png', 'mAEnd.png', 'mAFloor.png', 'floor_ceiling.png', [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500], zone_width=480)
+# Cors.add_corridor('all_square', 'mABd0LeftRightcorridor.png', 'mABd0LeftRightcorridor.png', 'mBEnd.png', 'mBFloor.png', 'floor_ceiling.png', [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500], zone_width=480)
+
+# # def add_corridor(self, name, left_image, right_image, end_image, floor_image, ceiling_image, reward_zone_starts, zone_width=470, reward='Right', length=7168, height=768, width=1024):
+# Cors.add_corridor('leaf', 'LongLeftA.png', 'LongRightA.png', 'mAEnd.png', 'Long_floor.png', 'Long_floor.png', [6500], zone_width=1179, length=10240)
+# Cors.add_corridor('people', 'LonfLeftB.png', 'LongRightB.png', 'mBEnd.png', 'Long_floor.png', 'Long_floor.png', [8700], zone_width=1179, length=10240)
+
+# Cors.add_corridor('leaf2', 'LongLeftA.png', 'LongRightA.png', 'mAEnd.png', 'Long_floor.png', 'Long_floor.png', [6500], zone_width=1179, length=10240)
+# Cors.add_corridor('people2', 'LonfLeftB.png', 'LongRightB.png', 'mBEnd.png', 'Long_floor.png', 'Long_floor.png', [8700], zone_width=1179, length=10240)
+# Cors.add_corridor('green people', 'LongLeftC.png', 'LongRightC.png', 'mCEnd.png', 'Long_floor.png', 'Long_floor.png', [7600], zone_width=1179, length=10240)
+
+# Cors.print_zones()
+# Cors.print_images()
+
+# Cors.write()
+
+
+
+# input_path = './NearFarLong_corridors.pkl'
+# if (os.path.exists(input_path)):
+# 	input_file = open(input_path, 'rb')
+# 	corridor_list = pickle.load(input_file)
+# 	input_file.close()

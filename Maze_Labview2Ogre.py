@@ -215,17 +215,27 @@ class FrameListener(sf.FrameListener, OIS.MouseListener):
         input_file = open(infilename, 'rb')
         corridor_list = pickle.load(input_file)
         input_file.close()
-#        corridor_list.print_images()        
-        
-    	########### mouse movement
-        self.corridorLength = 240 #248
-        self.SpeedFactor = self.corridorLength / 3499.0
-#        self.SpeedFactor = self.corridorLength / 34990.0
+
+#        corridor_list.print_images()                
 
         ########### Corridor Properties                
         self.numMonitors = 3 #int(ws.cell('C46').value)          # number of monitors
         # self.num_of_VR = ws.cell('C44').value
         self.num_of_VR = stage_list.stages[self.current_stage].N_corridors + 1 # number of VRs - corridors
+
+        corridor_lengths = np.zeros(self.num_of_VR-1) ## no grey zone ...
+        for i in range(self.num_of_VR-1):
+            i_corridor = stage_list.stages[self.current_stage].corridors[i]
+            corridor_lengths[i] = int(round((corridor_list.corridors[i_corridor].length - corridor_list.corridors[i_corridor].width) / 6144.0 * 240))
+
+        if (len(np.unique(corridor_lengths)) > 1):
+            print('corridor lenth is not unique!')
+
+        ########### mouse movement
+        # self.corridorLength = 240 # 6 x 40 (width)
+        self.corridorLength = corridor_lengths[0]
+        self.SpeedFactor = self.corridorLength / 3499.0
+#        self.SpeedFactor = self.corridorLength / 34990.0
 
         self.num_WallTexture = []
         self.num_FloorTexture = []

@@ -6,7 +6,7 @@ A framework for managing behavioral data in in vivo mice experiments
 We define a class - mouse - and the VR environment will interact with this class in each session and trial
 
 initializing mouse parameters for the VR setup
-expects three string inputs: Mouse name, task and experimenter
+expects three string inputs: Mouse name, left color and right color
 provides a dialog for plotting the past behavior and selecting the next stage
 returns the next stage and the corridor properties
 """
@@ -115,11 +115,16 @@ if __name__ == '__main__':
     substages = m1.stage_list.stages[im.stage_selected].substages
     n_corridors = len(VR_ids)
     total_rows = 0
+    corridor_lengths = np.zeros(n_corridors) ## no grey zone ...
     for i in range(n_corridors):
         i_corridor = VR_ids[i]
         n_zones = len(corridor_list.corridors[i_corridor].reward_zone_starts)
         total_rows = total_rows + n_zones
+        corridor_lengths[i] = corridor_list.corridors[i_corridor].length
 
+    if (len(np.unique(corridor_lengths)) > 1):
+        print('corridor lenth is not unique!')
+    corridorLength = int(round(corridor_lengths[0]))
 
     if (m1.stage_list.stages[im.stage_selected].rule == 'correct'):
         grey_zone_active = 1
@@ -127,7 +132,7 @@ if __name__ == '__main__':
         grey_zone_active = 0
             
 
-    return_value = str(im.stage_selected) + '_' + str(int(len(m1.sessions))-1) + '_' + str(total_rows) + '_' + str(grey_zone_active) + '_0\n'
+    return_value = str(im.stage_selected) + '_' + str(int(len(m1.sessions))-1) + '_' + str(total_rows) + '_' + str(grey_zone_active) + '_' + str(corridorLength) + '\n'
     for i in range(n_corridors):
         i_corridor = VR_ids[i]
         i_substage = str(substages[i])
