@@ -66,7 +66,7 @@ class ImagingSessionData:
         input_file.close()
 
         self.get_stage(self.datapath, self.date_time, self.name, self.task)
-        self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])
+        self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])[0:3]
 
         ##################################################
         ## loading the trigger signals to match LabView and Imaging data axis

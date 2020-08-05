@@ -206,12 +206,12 @@ class FrameListener(sf.FrameListener, OIS.MouseListener):
         # wb = load_workbook(file_path)
         # ws = wb.get_sheet_by_name("VR0")
 
-        infilename = 'C:\\Users\\LN-Treadmill\\Desktop\\MouseData\\images\\' + self.task + '_stages.pkl'
+        infilename = 'C:/Users/LN-Treadmill/Desktop/MouseData/' + self.task + '_stages.pkl'
         input_file = open(infilename, 'rb')
         stage_list = pickle.load(input_file)
         input_file.close()
 
-        infilename = 'C:\\Users\\LN-Treadmill\\Desktop\\MouseData\\images\\' + self.task + '_corridors.pkl'
+        infilename = 'C:/Users/LN-Treadmill/Desktop/MouseData/' + self.task + '_corridors.pkl'
         input_file = open(infilename, 'rb')
         corridor_list = pickle.load(input_file)
         input_file.close()
@@ -224,9 +224,11 @@ class FrameListener(sf.FrameListener, OIS.MouseListener):
         self.num_of_VR = stage_list.stages[self.current_stage].N_corridors + 1 # number of VRs - corridors
 
         corridor_lengths = np.zeros(self.num_of_VR-1) ## no grey zone ...
+        print('corridor lengths used:')
         for i in range(self.num_of_VR-1):
             i_corridor = stage_list.stages[self.current_stage].corridors[i]
             corridor_lengths[i] = int(round((corridor_list.corridors[i_corridor].length - corridor_list.corridors[i_corridor].width) / 6144.0 * 240))
+            print(corridor_lengths[i])
 
         if (len(np.unique(corridor_lengths)) > 1):
             print('corridor lenth is not unique!')
@@ -234,7 +236,8 @@ class FrameListener(sf.FrameListener, OIS.MouseListener):
         ########### mouse movement
         # self.corridorLength = 240 # 6 x 40 (width)
         self.corridorLength = corridor_lengths[0]
-        self.SpeedFactor = self.corridorLength / 3499.0
+        # self.SpeedFactor = self.corridorLength / 3499.0
+        self.SpeedFactor = 240 / 3499.0
 #        self.SpeedFactor = self.corridorLength / 34990.0
 
         self.num_WallTexture = []
@@ -378,7 +381,7 @@ class FrameListener(sf.FrameListener, OIS.MouseListener):
             self.VR_Pos = readVR_Position_from_LabView()
             next_maze = int(self.VR_Pos[1:3])            
             if (next_maze != 99):
-                self.Position_From_Labview = int(self.VR_Pos[4:8]) * self.SpeedFactor
+                self.Position_From_Labview = int(self.VR_Pos[4:8]) * self.SpeedFactor # 1-3500 or 1-5250 * 240 / 3499.0 = 0-240 or 0-360
                 #print(self.Position_From_Labview)
                 self.VR_From_Labview = int(self.VR_Pos[1:3])
                 
@@ -691,7 +694,7 @@ class Application (sf.Application):
 #        options['title'] = 'Select experiment parameters'
 #        
         #file_path = tkFileDialog.askopenfilename(**self.openOpt) # asking which experiment to load?
-        # file_path = u'C:\LuigsNeumann_Treadmill\Configurations\\20181001ReducedMazeSet.xlsx'
+        # file_path = u'C:/LuigsNeumann_Treadmill/Configurations/20181001ReducedMazeSet.xlsx'
         # wb = load_workbook(file_path)
         # ws = wb.get_active_sheet()
         

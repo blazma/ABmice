@@ -81,7 +81,7 @@ class ImShuffle:
             self.corridor_list = pickle.load(input_file, encoding='latin1')
         input_file.close()
 
-        self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])
+        self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])[0:3]
 
           
         ##################################################

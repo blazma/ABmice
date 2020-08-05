@@ -123,7 +123,7 @@ if __name__ == '__main__':
         corridor_lengths[i] = corridor_list.corridors[i_corridor].length
 
     if (len(np.unique(corridor_lengths)) > 1):
-        print('corridor lenth is not unique!')
+        print('corridor length is not unique!')
     corridorLength = int(round(corridor_lengths[0]))
 
     if (m1.stage_list.stages[im.stage_selected].rule == 'correct'):

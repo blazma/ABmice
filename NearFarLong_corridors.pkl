@@ -1,11 +1,11 @@
-(iCorridors
+(i__main__
 Corridor_list
 p0
 (dp1
 S'corridors'
 p2
 (lp3
-(iCorridors
+(i__main__
 Corridor
 p4
 (dp5
@@ -100,7 +100,7 @@ g34
 sS'right_image'
 p43
 g30
-sba(iCorridors
+sba(i__main__
 Corridor
 p44
 (dp45
@@ -164,7 +164,7 @@ S'mAFloor.png'
 p63
 sg43
 g55
-sba(iCorridors
+sba(i__main__
 Corridor
 p64
 (dp65
@@ -227,7 +227,7 @@ S'mBFloor.png'
 p82
 sg43
 g74
-sba(iCorridors
+sba(i__main__
 Corridor
 p83
 (dp84
@@ -290,7 +290,7 @@ g94
 sg43
 S'LongRightA.png'
 p101
-sba(iCorridors
+sba(i__main__
 Corridor
 p102
 (dp103
@@ -321,7 +321,7 @@ p111
 sg28
 I10240
 sg29
-S'LonfLeftB.png'
+S'LongLeftB.png'
 p112
 sg31
 I768
@@ -353,7 +353,7 @@ g113
 sg43
 S'LongRightB.png'
 p120
-sba(iCorridors
+sba(i__main__
 Corridor
 p121
 (dp122
@@ -416,7 +416,7 @@ g132
 sg43
 S'LongRightA.png'
 p139
-sba(iCorridors
+sba(i__main__
 Corridor
 p140
 (dp141
@@ -447,7 +447,7 @@ p149
 sg28
 I10240
 sg29
-S'LonfLeftB.png'
+S'LongLeftB.png'
 p150
 sg31
 I768
@@ -479,7 +479,7 @@ g151
 sg43
 S'LongRightB.png'
 p158
-sba(iCorridors
+sba(i__main__
 Corridor
 p159
 (dp160

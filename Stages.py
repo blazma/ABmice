@@ -3,7 +3,7 @@
 Created in May 2019
 @author: bbujfalussy - ubalazs317@gmail.com
 A framework for storing virtual corridor properties for behavioral experiments
-We define a class:Stages - and the collector class: Stage_collection and their print and save methods.
+We define a class - Corridor - and the collector class.
 
 """
 
@@ -232,27 +232,39 @@ class Stage_collection:
 
 # stage_list.write()
 
+
 ############################################################################
-## Long-Corridor Stages for Imola
+## Stages for the morphing experiment of Kata
 ############################################################################
 
 # level		stage 	substage	corridors 		random		next_stage		rule 		condition	name
 # lick&run	0		a			0				pseudo		1				lick&run	either		pretrain
-# diff_1	1		a			1-2				pseudo		2				Pavl/Oper  	both		all-reward		
-# diff_2	2		a			3-4				pseudo		2				Pavl/Oper  	both		1 zone		
-# 			2		b			5-7				pseudo		2				Pavl/Oper  	both		1 zone		
 
-# stage_list = Stage_collection('./', 'NearFarLong')
+# lick_zone	1		a			1				pseudo		1b				Pavl/Oper  	both		9_cheese		
+# 			1		b			2-4				pseudo		1c				Pavl/Oper  	both		7_cheese		
+# 			1		c			5-7				pseudo		1d				Pavl/Oper  	both		5_cheese		
+# 			1		d			8-10			pseudo		1e				Pavl/Oper  	both		3_cheese
+# 			1		e			11				pseudo		2-5				Pavl/Oper  	both		1_cheese
 
-# stage_list.add_stage(level='pretrain', stage=0, corridors=[0], next_stage=[1], rule='lick&run', condition='either', name='pretrain')
-# stage_list.add_stage(level='diff_1', stage=1, corridors=[1,2], next_stage=[2], rule='Pavlovian', condition='either', name='all_reward')
-# stage_list.add_stage(level='diff_2', stage=2, corridors=[3,4,5,6,7], next_stage=[2], rule='Pavlovian', condition='both', name='1_zone', substages=[0,0,1,1,1])
+# base 		2		a			12-13			pseudo		3				Pavl/Oper  	both		1 zone		
+# morph		3		a			12-18			pseudo		2				Pavl/Oper  	both		1 zone		
+
+
+
+# stage_list = Stage_collection('.', 'morphing')
+# stage_list.add_stage(level='lick&run', stage=0, corridors=[0], next_stage=[1], rule='pretrain', condition='either', name='pretrain')
+
+# stage_list.add_stage(level='lick_zone', stage=1, corridors=[1,2,3,4,5,6,7,8,9,10,11], next_stage=[2,3,4,5], rule='Pavlovian', condition='either', name='9 -> 1 lick zone', substages=[0,1,1,1,2,2,2,3,3,3,4])
+
+# stage_list.add_stage(level='base', stage=2, corridors=[12, 13], next_stage=[3], rule='correct', condition='correct', name='base')
+# stage_list.add_stage(level='morph', stage=3, corridors=[12, 13, 14, 15, 16, 17, 18], next_stage=[2], rule='correct', condition='correct', name='morph')
 
 # stage_list.print_table()
 
 # stage_list.write()
 
-# input_path = './NearFarLong_stages.pkl'
+
+# input_path = './TwoMazes_stages.pkl'
 # if (os.path.exists(input_path)):
 # 	input_file = open(input_path, 'rb')
 # 	stage_list = pickle.load(input_file)
