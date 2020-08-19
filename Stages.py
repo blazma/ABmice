@@ -106,9 +106,8 @@ class Stage_collection:
 # RULE:
 # Pavlovian rule: water is always given, even without licking. Total reward consumed is counted.
 # operant rule: water is given for correct licking. Total reward consumed is counted.
-
 # correct: water is given for correct licking. Only correct choices are counted
-
+# float: probability of reward after correct choice
 
 # stage_list = Stage_collection('.', 'contingency_learning')
 # stage_list.add_stage(level='lick&run', stage=0, corridors=[0], next_stage=[1], rule='pretrain', condition='either', name='pretrain')
@@ -240,15 +239,18 @@ class Stage_collection:
 # level		stage 	substage	corridors 		random		next_stage		rule 		condition	name
 # lick&run	0		a			0				pseudo		1				lick&run	either		pretrain
 
-# lick_zone	1		a			1				pseudo		1b				Pavl/Oper  	both		9_cheese		
-# 			1		b			2-4				pseudo		1c				Pavl/Oper  	both		7_cheese		
-# 			1		c			5-7				pseudo		1d				Pavl/Oper  	both		5_cheese		
-# 			1		d			8-10			pseudo		1e				Pavl/Oper  	both		3_cheese
-# 			1		e			11				pseudo		2-5				Pavl/Oper  	both		1_cheese
+# lick_zone	1		a			1				pseudo		1b				operant 	correct		9_cheese		
+# 			1		b			2-4				pseudo		1c				operant 	correct		7_cheese		
+# 			1		c			5-7				pseudo		1d				operant 	correct		5_cheese		
+# 			1		d			8-10			pseudo		1e				operant 	correct		3_cheese
+# 			1		e			11				pseudo		2-5				operant 	correct		1_cheese
 
-# base 		2		a			12-13			pseudo		3				Pavl/Oper  	both		1 zone		
-# morph		3		a			12-18			pseudo		2				Pavl/Oper  	both		1 zone		
-
+# contrast 	2		a			12-13-14-15		6-0-0-6		3				operant 	correct		extreme		
+# 			3		a			16-17-18-19		6-1-1-6		4				operant 	0.9			mid-contrast		
+# 			4		a			20-21-23-24		6-1-1-6		5				operant 	0.9			low-contrast		
+# morph		5		a			20-22-24		6-2-6		6				operant 	0.9			mid-morph		
+# 			6		a			20-21-22-23-24	6-1-1-1-6	7				operant 	0.9			psychometric		
+# 			7		a			20-25-24		6-2-6		5				operant 	0.9			new_corridor		
 
 
 # stage_list = Stage_collection('.', 'morphing')
@@ -256,8 +258,14 @@ class Stage_collection:
 
 # stage_list.add_stage(level='lick_zone', stage=1, corridors=[1,2,3,4,5,6,7,8,9,10,11], next_stage=[2,3,4,5], rule='Pavlovian', condition='either', name='9 -> 1 lick zone', substages=[0,1,1,1,2,2,2,3,3,3,4])
 
-# stage_list.add_stage(level='base', stage=2, corridors=[12, 13], next_stage=[3], rule='correct', condition='correct', name='base')
-# stage_list.add_stage(level='morph', stage=3, corridors=[12, 13, 14, 15, 16, 17, 18], next_stage=[2], rule='correct', condition='correct', name='morph')
+# stage_list.add_stage(level='contrast', stage=2, corridors=[12,13,14,15], next_stage=[3], rule='correct', condition='correct', name='extreme', random=[6,0,0,6])
+# stage_list.add_stage(level='contrast', stage=3, corridors=[16,17,18,19], next_stage=[4], rule=0.9, condition='correct', name='mid-contrast', random=[6,1,1,6])
+# stage_list.add_stage(level='contrast', stage=4, corridors=[20,21,23,24], next_stage=[5], rule=0.9, condition='correct', name='low-contrast', random=[6,1,1,6])
+# stage_list.add_stage(level='morph', stage=5, corridors=[20,22,24], next_stage=[6], rule=0.9, condition='correct', name='morph', random=[6,2,6])
+# stage_list.add_stage(level='morph', stage=6, corridors=[20,21,22,23,24], next_stage=[7], rule=0.9, condition='correct', name='psychometric', random=[6,1,1,1,6])
+# stage_list.add_stage(level='morph', stage=7, corridors=[20,25,24], next_stage=[5], rule=0.9, condition='correct', name='new_corridor', random=[6,2,6])
+
+
 
 # stage_list.print_table()
 

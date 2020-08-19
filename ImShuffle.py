@@ -43,10 +43,6 @@ class ImShuffle:
         self.stages = []
         self.stage = stage
 
-        self.corridor_length_cm = 106.5 # cm
-        self.corridor_length_roxel = 3500 # cm
-        self.speed_factor = self.corridor_length_cm / self.corridor_length_roxel
-
         self.raw_spikes = raw_spikes
         self.frame_times = frame_times
         self.frame_pos = frame_pos
@@ -83,6 +79,9 @@ class ImShuffle:
 
         self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])[0:3]
 
+        self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
+        self.corridor_length_roxel = (self.corridor_list.corridors[self.corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
           
         ##################################################
         ## shuffling the spikes data
@@ -237,7 +236,7 @@ class ImShuffle:
                     lap_frames_pos = np.nan 
                     
                 # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
-                self.shuffle_ImLaps.append(Shuffle_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_factor=self.speed_factor))
+                self.shuffle_ImLaps.append(Shuffle_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list))
                 self.n_laps = self.n_laps + 1
             else:
                 N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anythin with this...
@@ -671,7 +670,7 @@ class ImShuffle:
 class Shuffle_ImData:
     'common base class for shuffled laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, speed_factor=106.5/3500, printout=False):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False):
         self.name = name
         self.lap = lap
 
@@ -685,7 +684,11 @@ class Shuffle_ImData:
         self.mode = mode # 1 if all elements are recorded in 'Go' mode
         self.actions = actions
         self.speed_threshold = 5 ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
-        self.speed_factor = speed_factor
+
+        self.corridor_length_roxel = (self.corridor_list.corridors[self.corridor].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.speed_factor = 106.5 / 3500 ## constant to convert distance from pixel to cm
+        self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
+
 
         self.zones = np.vstack([np.array(self.corridor_list.corridors[self.corridor].reward_zone_starts), np.array(self.corridor_list.corridors[self.corridor].reward_zone_ends)])
         self.n_zones = np.shape(self.zones)[1]
@@ -709,7 +712,8 @@ class Shuffle_ImData:
             
         ####################################################################
         ## resample time and position with a uniform 100 Hz
-        self.bincenters = np.arange(0, 3500, 70) + 70 / 2.0
+        nbins = int(round(self.corridor_length_roxel / 70))
+        self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
         
         if (len(self.raw_time) > 2):
             F = interp1d(self.raw_time,self.raw_position)
@@ -726,7 +730,7 @@ class Shuffle_ImData:
             if (len(self.reward_times) > 0):
                 self.correct = True
             # correct: if no licking in the zone
-            lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * 3500) & (self.lick_position <= self.zones[1] * 3500 + 1))[0]
+            lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * self.corridor_length_roxel) & (self.lick_position <= self.zones[1] * self.corridor_length_roxel + 1))[0]
             if (self.corridor_list.corridors[self.corridor].reward == 'Left'):
                 if (len(lick_in_zone) == 0):
                     self.correct = True

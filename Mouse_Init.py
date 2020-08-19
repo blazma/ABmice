@@ -91,8 +91,8 @@ if __name__ == '__main__':
     task = sys.argv[2]
     experimenter = sys.argv[3]
     # name = 'test'
-    # task = 'contingency_learning'
-    # experimenter = 'Rita'
+    # task = 'morphing'
+    # experimenter = 'Kata'
     datapath = os.getcwd() #current working directory - look for data and strings here!
 
     corridorfilename = datapath + '/'  + task + '_corridors.pkl'
@@ -126,24 +126,32 @@ if __name__ == '__main__':
         print('corridor length is not unique!')
     corridorLength = int(round(corridor_lengths[0]))
 
+    grey_zone_active = 0
+    P_reward = 1
     if (m1.stage_list.stages[im.stage_selected].rule == 'correct'):
         grey_zone_active = 1
-    else :
-        grey_zone_active = 0
-            
+    if (isinstance(m1.stage_list.stages[im.stage_selected].rule, float)):
+        grey_zone_active = 1
+        if ((m1.stage_list.stages[im.stage_selected].rule <= 1) & (m1.stage_list.stages[im.stage_selected].rule > 0)):
+            P_reward = float(m1.stage_list.stages[im.stage_selected].rule)
 
-    return_value = str(im.stage_selected) + '_' + str(int(len(m1.sessions))-1) + '_' + str(total_rows) + '_' + str(grey_zone_active) + '_' + str(corridorLength) + '\n'
+    ### stage;      session number; number of rows; grey_zone_Active;   corridor length (roxel);    Reward probability 
+    ### i_corridor; i_substage;     zone start;     zone end;           reward side;                corridor probability 
+    return_value = str(im.stage_selected) + '_' + str(int(len(m1.sessions))-1) + '_' + str(total_rows) + '_' + str(grey_zone_active) + '_' + str(corridorLength) + '_' + str(P_reward) + '\n'
     for i in range(n_corridors):
         i_corridor = VR_ids[i]
         i_substage = str(substages[i])
         n_zones = len(corridor_list.corridors[i_corridor].reward_zone_starts)
+        P_corridor = 1
+        if (isinstance(m1.stage_list.stages[2].random, list)):
+            P_corridor = m1.stage_list.stages[2].random[i]
         for ii in range(n_zones):
-            zone_start = corridor_list.corridors[i_corridor].reward_zone_starts[ii]
-            zone_end = corridor_list.corridors[i_corridor].reward_zone_ends[ii]
+            zone_start = round(corridor_list.corridors[i_corridor].reward_zone_starts[ii], 5)
+            zone_end = round(corridor_list.corridors[i_corridor].reward_zone_ends[ii], 5)
             reward_side_num = 0
             if (corridor_list.corridors[i_corridor].reward == 'Left'): reward_side_num = -1
             if (corridor_list.corridors[i_corridor].reward == 'Right'): reward_side_num = 1
-            return_value = return_value+str(i+1)+'_'+i_substage+'_'+str(zone_start)+'_'+str(zone_end)+'_'+str(reward_side_num)+'\n'
+            return_value = return_value+str(i+1)+'_'+i_substage+'_'+str(zone_start)+'_'+str(zone_end)+'_'+str(reward_side_num)+'_'+str(P_corridor)+'\n'
     
     return_value = return_value+'\n'
     print (return_value)    

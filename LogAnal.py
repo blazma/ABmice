@@ -51,11 +51,14 @@ class Lap_Data:
         self.lick_times = lick_times
         self.reward_times = reward_times
         self.corridor = corridor # the ID of the corridor in the given stage; This indexes the corridors in the vector called self.corridors
-        self.corridor_list = corridor_list # the ID of the corridor in the given stage; This indexes the corridors in the vector called self.corridors
+        self.corridor_list = corridor_list 
         self.mode = mode # 1 if all elements are recorded in 'Go' mode
         self.actions = actions
         self.speed_threshold = 5 ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
-        self.speed_factor = 106.5/3500
+        self.corridor_length_roxel = (self.corridor_list.corridors[self.corridor].length - 1024.0) / (7168.0 - 1024.0) * 3500
+
+        self.speed_factor = 106.5 / 3500 ## constant to convert distance from pixel to cm
+        self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
 
         self.zones = np.vstack([np.array(self.corridor_list.corridors[self.corridor].reward_zone_starts), np.array(self.corridor_list.corridors[self.corridor].reward_zone_ends)])
         self.n_zones = np.shape(self.zones)[1]
@@ -65,7 +68,8 @@ class Lap_Data:
 
         ####################################################################
         ## resample time and position with a uniform 100 Hz
-        self.bincenters = np.arange(0, 3500, 70) + 70 / 2.0
+        nbins = int(round(self.corridor_length_roxel / 70))
+        self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
         
         if (len(self.raw_time) > 2):
             F = interp1d(self.raw_time,self.raw_position) 
@@ -103,20 +107,20 @@ class Lap_Data:
     
             ####################################################################
             ## calculate the lick-rate and the average speed versus location    
-            bin_counts = np.zeros(50)
+            bin_counts = np.zeros(nbins)
             for pos in self.smooth_position:
                 bin_number = int(pos // 70)
                 bin_counts[bin_number] += 1
             self.T_pos = bin_counts * self.dt
     
-            lbin_counts = np.zeros(50)
+            lbin_counts = np.zeros(nbins)
             for lpos in self.lick_position:
                 lbin_number = int(lpos // 70)
                 lbin_counts[lbin_number] += 1
             self.N_licks = lbin_counts
             self.lick_rate = nan_divide(self.N_licks, self.T_pos, where=(self.T_pos > 0.025))
     
-            total_speed = np.zeros(50)
+            total_speed = np.zeros(nbins)
             for i in range(len(self.smooth_position)):
                 ii = int(self.smooth_position[i] // 70)
                 total_speed[ii] = total_speed[ii] + self.speed[i]
@@ -129,8 +133,8 @@ class Lap_Data:
     
             if (self.n_zones == 1):
     
-                zone_start = int(self.zones[0][0] * 3500)
-                lz_posbins = [0, zone_start-420, zone_start-210, zone_start, 3500]
+                zone_start = int(self.zones[0][0] * self.corridor_length_roxel)
+                lz_posbins = [0, zone_start-420, zone_start-210, zone_start, self.corridor_length_roxel]
     
                 lz_bin_counts = np.zeros(4)
                 for pos in self.smooth_position:
@@ -149,10 +153,10 @@ class Lap_Data:
             self.reward_position = reward_times
             self.smooth_position = position
             self.speed = np.zeros(len(position))
-            self.T_pos = np.zeros(50)
-            self.N_licks = np.zeros(50)
-            self.ave_speed = np.zeros(50)
-            self.lick_rate = np.zeros(50)
+            self.T_pos = np.zeros(nbins)
+            self.N_licks = np.zeros(nbins)
+            self.ave_speed = np.zeros(nbins)
+            self.lick_rate = np.zeros(nbins)
             self.preZoneRate = np.zeros(2)
                 
 
@@ -168,7 +172,7 @@ class Lap_Data:
         plt.xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
         plt.title(plot_title)
-        plt.ylim(0, 3500)
+        plt.ylim(0, self.corridor_length_roxel)
 
         plt.show(block=False)
        
@@ -209,15 +213,15 @@ class Lap_Data:
 
 
         bottom, top = plt.ylim()
-        left = self.zones[0,0] * 3500
-        right = self.zones[1,0] * 3500
+        left = self.zones[0,0] * self.corridor_length_roxel
+        right = self.zones[1,0] * self.corridor_length_roxel
 
         polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
         ax.add_patch(polygon)
         if (self.n_zones > 1):
             for i in range(1, np.shape(self.zones)[1]):
-                left = self.zones[0,i] * 3500
-                right = self.zones[1,i] * 3500
+                left = self.zones[0,i] * self.corridor_length_roxel
+                right = self.zones[1,i] * self.corridor_length_roxel
                 polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                 ax.add_patch(polygon)
 
@@ -290,7 +294,7 @@ class Lap_Data:
         ax_top.set_xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position and speed in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
         ax_top.set_title(plot_title)
-        ax_top.set_ylim(0, 3600)
+        ax_top.set_ylim(0, self.corridor_length_roxel + 100)
 
 
         ## next, plot speed versus position
@@ -303,15 +307,15 @@ class Lap_Data:
         ax_bottom.set_ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
 
         bottom, top = plt.ylim()
-        left = self.zones[0,0] * 3500
-        right = self.zones[1,0] * 3500
+        left = self.zones[0,0] * self.corridor_length_roxel
+        right = self.zones[1,0] * self.corridor_length_roxel
 
         polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
         ax_bottom.add_patch(polygon)
         if (self.n_zones > 1):
             for i in range(1, np.shape(self.zones)[1]):
-                left = self.zones[0,i] * 3500
-                right = self.zones[1,i] * 3500
+                left = self.zones[0,i] * self.corridor_length_roxel
+                right = self.zones[1,i] * self.corridor_length_roxel
                 polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                 ax_bottom.add_patch(polygon)
 
@@ -531,16 +535,16 @@ class Session:
 
                 if (self.Laps[lap].zones.shape[1] > 0):
                     bottom, top = axs[row,0].get_ylim()
-                    left = self.Laps[lap].zones[0,0] * 3500
-                    right = self.Laps[lap].zones[1,0] * 3500
+                    left = self.Laps[lap].zones[0,0] * self.corridor_length_roxel
+                    right = self.Laps[lap].zones[1,0] * self.corridor_length_roxel
 
                     polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                     axs[row,0].add_patch(polygon)
                     n_zones = np.shape(self.Laps[lap].zones)[1]
                     if (n_zones > 1):
                         for i in range(1, np.shape(self.Laps[lap].zones)[1]):
-                            left = self.Laps[lap].zones[0,i] * 3500
-                            right = self.Laps[lap].zones[1,i] * 3500
+                            left = self.Laps[lap].zones[0,i] * self.corridor_length_roxel
+                            right = self.Laps[lap].zones[1,i] * self.corridor_length_roxel
                             polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                             axs[row,0].add_patch(polygon)
                     # else: ## test for lick rate changes before the zone

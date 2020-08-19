@@ -329,13 +329,23 @@ class Corridor_list:
 ## 10					3 cheese			3 cheese			3						Right	
 ## 11					1 cheese			1 cheese			3						Right	
 
-## 12					light star			light star			1						Right	
-## 13					dark circle			dark circle			1						Right	
-## 14					morph 1				morph 1				1						Left	
-## 15					morph 2				morph 2				1							
-## 16					morph 3				morph 3				1							
-## 17					morph 4				morph 4				1							
-## 18					morph 5				morph 5				1							
+## 12					4-0 grid_HC			4-0 grid_HC			1						Right	
+## 13					3-1 grid_HC			3-1 grid_HC			1						Left	
+## 14					1-3 grid_HC			1-3 grid_HC			1						Left	
+## 15					0-4 grid_HC			0-4 grid_HC			1						Right	
+
+## 16					4-0 grid_MidC		4-0 grid_MidC		1						Right	
+## 17					3-1 grid_MidC		3-1 grid_MidC		1						Left	
+## 18					1-3 grid_MidC		1-3 grid_MidC		1						Left	
+## 19					0-4 grid_MidC		0-4 grid_MidC		1						Right	
+
+## 20					4-0 grid_LowC		4-0 grid_LowC		1						Right	
+## 21					3-1 grid_LowC		3-1 grid_LowC		1						Left	
+## 22					2-2 grid_LowC		2-2 grid_LowC		1						Left	
+## 23					1-3 grid_LowC		1-3 grid_LowC		1						Left	
+## 24					0-4 grid_LowC		0-4 grid_LowC		1						Right	
+
+## 25					polka_LowC			polka_LowC			1						Left
 
 # Cors = Corridor_list('./', 'morphing')
 
@@ -357,13 +367,23 @@ class Corridor_list:
 
 # Cors.add_corridor('1_cheese', 'RN_1_cheese_left.png', 'RN_1_cheese_right.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [5250])
 
-# Cors.add_corridor('light_star', 'LightStarLeft.png', 'LightStarRight.png', 'KataEnd.png', 'Kata_floor.png', 'Kata_ceiling.png', [6500], zone_width=1179, length=10240)
-# Cors.add_corridor('dark_circle', 'DarkCircleLeft.png', 'DarkCircleRight.png', 'KataEnd.png', 'Kata_floor.png', 'Kata_ceiling.png', [8500], zone_width=1179, length=10240)
-# Cors.add_corridor('morph_1', '5Star1CircleLeft.png', '5Star1CircleRight.png', 'KataEnd.png', 'Kata_floor.png', 'Kata_ceiling.png', [8500], zone_width=1179, length=10240, reward='Left')
-# Cors.add_corridor('morph_1', '4Star2CircleLeft.png', '4Star2CircleRight.png', 'KataEnd.png', 'Kata_floor.png', 'Kata_ceiling.png', [8500], zone_width=1179, length=10240, reward='Left')
-# Cors.add_corridor('morph_1', '3Star3CircleLeft.png', '3Star3CircleRight.png', 'KataEnd.png', 'Kata_floor.png', 'Kata_ceiling.png', [8500], zone_width=1179, length=10240, reward='Left')
-# Cors.add_corridor('morph_1', '2Star4CircleLeft.png', '2Star4CircleRight.png', 'KataEnd.png', 'Kata_floor.png', 'Kata_ceiling.png', [8500], zone_width=1179, length=10240, reward='Left')
-# Cors.add_corridor('morph_1', '1Star5CircleLeft.png', '1Star5CircleRight.png', 'KataEnd.png', 'Kata_floor.png', 'Kata_ceiling.png', [8500], zone_width=1179, length=10240, reward='Left')
+# Cors.add_corridor('4-0-grid_high_contrast', 'Grid4_0_HC_Left.png', 'Grid4_0_HC_Right.png', 'KataEnd_HC.png', 'Kata_floor_HC.png', 'Kata_ceiling_HC.png', [6000], zone_width=800, length=10240, reward='Right')
+# Cors.add_corridor('3-1-grid_high_contrast', 'Grid3_1_HC_Left.png', 'Grid3_1_HC_Right.png', 'KataEnd_HC.png', 'Kata_floor_HC.png', 'Kata_ceiling_HC.png', [6000], zone_width=800, length=10240, reward='Left')
+# Cors.add_corridor('1-3-grid_high_contrast', 'Grid1_3_HC_Left.png', 'Grid1_3_HC_Right.png', 'KataEnd_HC.png', 'Kata_floor_HC.png', 'Kata_ceiling_HC.png', [7500], zone_width=800, length=10240, reward='Left')
+# Cors.add_corridor('0-4-grid_high_contrast', 'Grid0_4_HC_Left.png', 'Grid0_4_HC_Right.png', 'KataEnd_HC.png', 'Kata_floor_HC.png', 'Kata_ceiling_HC.png', [7500], zone_width=800, length=10240, reward='Right')
+
+# Cors.add_corridor('4-0-grid_mid_contrast', 'Grid4_0_MC_Left.png', 'Grid4_0_MC_Right.png', 'KataEnd_MC.png', 'Kata_floor_MC.png', 'Kata_ceiling_MC.png', [6000], zone_width=800, length=10240, reward='Right')
+# Cors.add_corridor('3-1-grid_mid_contrast', 'Grid3_1_MC_Left.png', 'Grid3_1_MC_Right.png', 'KataEnd_MC.png', 'Kata_floor_MC.png', 'Kata_ceiling_MC.png', [6000], zone_width=800, length=10240, reward='Left')
+# Cors.add_corridor('1-3-grid_mid_contrast', 'Grid1_3_MC_Left.png', 'Grid1_3_MC_Right.png', 'KataEnd_MC.png', 'Kata_floor_MC.png', 'Kata_ceiling_MC.png', [7500], zone_width=800, length=10240, reward='Left')
+# Cors.add_corridor('0-4-grid_mid_contrast', 'Grid0_4_MC_Left.png', 'Grid0_4_MC_Right.png', 'KataEnd_MC.png', 'Kata_floor_MC.png', 'Kata_ceiling_MC.png', [7500], zone_width=800, length=10240, reward='Right')
+
+# Cors.add_corridor('4-0-grid_low_contrast', 'Grid4_0_LC_Left.png', 'Grid4_0_LC_Right.png', 'KataEnd_LC.png', 'Kata_floor_LC.png', 'Kata_ceiling_LC.png', [6000], zone_width=800, length=10240, reward='Right')
+# Cors.add_corridor('3-1-grid_low_contrast', 'Grid3_1_LC_Left.png', 'Grid3_1_LC_Right.png', 'KataEnd_LC.png', 'Kata_floor_LC.png', 'Kata_ceiling_LC.png', [6000], zone_width=800, length=10240, reward='Left')
+# Cors.add_corridor('2-2-grid_low_contrast', 'Grid2_2_LC_Left.png', 'Grid2_2_LC_Right.png', 'KataEnd_LC.png', 'Kata_floor_LC.png', 'Kata_ceiling_LC.png', [5000], zone_width=800, length=10240, reward='Left')
+# Cors.add_corridor('3-1-grid_low_contrast', 'Grid3_1_LC_Left.png', 'Grid3_1_LC_Right.png', 'KataEnd_LC.png', 'Kata_floor_LC.png', 'Kata_ceiling_LC.png', [6000], zone_width=800, length=10240, reward='Left')
+# Cors.add_corridor('0-4-grid_low_contrast', 'Grid0_4_LC_Left.png', 'Grid0_4_LC_Right.png', 'KataEnd_LC.png', 'Kata_floor_LC.png', 'Kata_ceiling_LC.png', [7500], zone_width=800, length=10240, reward='Right')
+
+# Cors.add_corridor('polka_low_contrast', 'polka_LC_Left.png', 'polka_LC_Right.png', 'KataEnd_LC.png', 'Kata_floor_LC.png', 'Kata_ceiling_LC.png', [7500], zone_width=1179, length=10240, reward='Left')
 
 # Cors.print_zones()
 # Cors.print_images()
@@ -372,6 +392,13 @@ class Corridor_list:
 
 
 # input_path = './NearFarLong_corridors.pkl'
+# if (os.path.exists(input_path)):
+# 	input_file = open(input_path, 'rb')
+# 	corridor_list = pickle.load(input_file)
+# 	input_file.close()
+
+
+# input_path = './contingency_learning_corridors.pkl'
 # if (os.path.exists(input_path)):
 # 	input_file = open(input_path, 'rb')
 # 	corridor_list = pickle.load(input_file)

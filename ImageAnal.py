@@ -45,9 +45,6 @@ class ImagingSessionData:
         self.stages = []
         self.sessionID = sessionID
 
-        self.corridor_length_cm = 106.5 # cm
-        self.corridor_length_roxel = 3500 # cm
-        self.speed_factor = self.corridor_length_cm / self.corridor_length_roxel
 
         stagefilename = self.datapath + self.task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
@@ -67,6 +64,11 @@ class ImagingSessionData:
 
         self.get_stage(self.datapath, self.date_time, self.name, self.task)
         self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])[0:3]
+
+
+        self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
+        self.corridor_length_roxel = (self.corridor_list.corridors[self.corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
 
         ##################################################
         ## loading the trigger signals to match LabView and Imaging data axis
@@ -131,7 +133,7 @@ class ImagingSessionData:
         self.i_corridors = np.zeros(1) # np array with the index of corridors in each run
 
         self.get_lapdata(self.datapath, self.date_time, self.name, self.task) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
-        self.N_bins = 50 # self.ImLaps[self.i_Laps_ImData[2]].event_rate.shape[1]
+        self.N_bins = int(round(self.corridor_length_roxel / 70)) # self.ImLaps[self.i_Laps_ImData[2]].event_rate.shape[1]
         self.N_ImLaps = len(self.i_Laps_ImData)
 
         self.raw_activity_tensor = np.zeros((self.N_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
@@ -571,8 +573,8 @@ class ImagingSessionData:
                     lap_frames_pos = np.nan 
                     
                 # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
-                # Lap_ImData(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, speed_factor=106.5/3500, printout=False):
-                self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_factor=self.speed_factor))
+                # Lap_ImData(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False):
+                self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list))
                 self.n_laps = self.n_laps + 1
             else:
                 N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anythin with this...
@@ -1428,16 +1430,16 @@ class ImagingSessionData:
 
                 if (self.ImLaps[lap].zones.shape[1] > 0):
                     bottom, top = axs[row,0].get_ylim()
-                    left = self.ImLaps[lap].zones[0,0] * 3500
-                    right = self.ImLaps[lap].zones[1,0] * 3500
+                    left = self.ImLaps[lap].zones[0,0] * self.corridor_length_roxel
+                    right = self.ImLaps[lap].zones[1,0] * self.corridor_length_roxel
 
                     polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                     axs[row,0].add_patch(polygon)
                     n_zones = np.shape(self.ImLaps[lap].zones)[1]
                     if (n_zones > 1):
                         for i in range(1, np.shape(self.ImLaps[lap].zones)[1]):
-                            left = self.ImLaps[lap].zones[0,i] * 3500
-                            right = self.ImLaps[lap].zones[1,i] * 3500
+                            left = self.ImLaps[lap].zones[0,i] * self.corridor_length_roxel
+                            right = self.ImLaps[lap].zones[1,i] * self.corridor_length_roxel
                             polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                             axs[row,0].add_patch(polygon)
                     # else: ## test for lick rate changes before the zone
@@ -1563,7 +1565,7 @@ class ImagingSessionData:
 class Lap_ImData:
     'common base class for individual laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, speed_factor=106.5/3500, printout=False):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False):
         self.name = name
         self.lap = lap
 
@@ -1576,8 +1578,12 @@ class Lap_ImData:
         self.corridor_list = corridor_list # the ID of the corridor in the given stage; This indexes the corridors in the vector called self.corridors
         self.mode = mode # 1 if all elements are recorded in 'Go' mode
         self.actions = actions
+
         self.speed_threshold = 5 ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
-        self.speed_factor = speed_factor
+        self.corridor_length_roxel = (self.corridor_list.corridors[self.corridor].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.speed_factor = 106.5 / 3500 ## constant to convert distance from pixel to cm
+        self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
+
 
         self.zones = np.vstack([np.array(self.corridor_list.corridors[self.corridor].reward_zone_starts), np.array(self.corridor_list.corridors[self.corridor].reward_zone_ends)])
         self.n_zones = np.shape(self.zones)[1]
@@ -1600,7 +1606,8 @@ class Lap_ImData:
             
         ####################################################################
         ## resample time and position with a uniform 100 Hz
-        self.bincenters = np.arange(0, 3500, 70) + 70 / 2.0
+        nbins = int(round(self.corridor_length_roxel / 70))
+        self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
         
         if (len(self.raw_time) > 2):
             F = interp1d(self.raw_time,self.raw_position)
@@ -1617,7 +1624,7 @@ class Lap_ImData:
             if (len(self.reward_times) > 0):
                 self.correct = True
             # correct: if no licking in the zone
-            lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * 3500) & (self.lick_position <= self.zones[1] * 3500 + 1))[0]
+            lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * self.corridor_length_roxel) & (self.lick_position <= self.zones[1] * self.corridor_length_roxel + 1))[0]
             if (self.corridor_list.corridors[self.corridor].reward == 'Left'):
                 if (len(lick_in_zone) == 0):
                     self.correct = True
@@ -1699,8 +1706,8 @@ class Lap_ImData:
     
             if (self.n_zones == 1):
     
-                zone_start = int(self.zones[0][0] * 3500)
-                lz_posbins = [0, zone_start-420, zone_start-210, zone_start, 3500]
+                zone_start = int(self.zones[0][0] * self.corridor_length_roxel)
+                lz_posbins = [0, zone_start-420, zone_start-210, zone_start, self.corridor_length_roxel]
     
                 lz_bin_counts = np.zeros(4)
                 for pos in self.smooth_position:
@@ -1741,7 +1748,7 @@ class Lap_ImData:
         ax_top.set_xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
         ax_top.set_title(plot_title)
-        ax_top.set_ylim(0, 3500)
+        ax_top.set_ylim(0, self.corridor_length_roxel)
 
         ## next, plot dF/F versus time (or spikes)
         if (self.n_cells > 1):
@@ -1823,15 +1830,15 @@ class Lap_ImData:
 
 
         bottom, top = ax_top.get_ylim()
-        left = self.zones[0,0] * 3500
-        right = self.zones[1,0] * 3500
+        left = self.zones[0,0] * self.corridor_length_roxel
+        right = self.zones[1,0] * self.corridor_length_roxel
 
         polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
         ax_top.add_patch(polygon)
         if (self.n_zones > 1):
             for i in range(1, np.shape(self.zones)[1]):
-                left = self.zones[0,i] * 3500
-                right = self.zones[1,i] * 3500
+                left = self.zones[0,i] * self.corridor_length_roxel
+                right = self.zones[1,i] * self.corridor_length_roxel
                 polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                 ax_top.add_patch(polygon)
 
@@ -1906,7 +1913,7 @@ class Lap_ImData:
         # lick_rate = D1.ImLaps[200].lick_rate
         # ave_speed = D1.ImLaps[200].ave_speed
         # zones = D1.ImLaps[0].zones
-        # bincenters = np.arange(0, 3500, 70) + 70 / 2.0
+        # bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
         # event_rate = D1.ImLaps[200].event_rate
         # n_cells = D1.ImLaps[200].n_cells
 
@@ -1921,15 +1928,15 @@ class Lap_ImData:
         # ax_top.set_title(plot_title)
 
         # bottom, top = ax_top.get_ylim()
-        # left = zones[0,0] * 3500
-        # right = zones[1,0] * 3500
+        # left = zones[0,0] * self.corridor_length_roxel
+        # right = zones[1,0] * self.corridor_length_roxel
 
         # polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
         # ax_top.add_patch(polygon)
         # if (np.shape(zones)[1] > 1):
         #     for i in range(1, np.shape(zones)[1]):
-        #         left = zones[0,i] * 3500
-        #         right = zones[1,i] * 3500
+        #         left = zones[0,i] * self.corridor_length_roxel
+        #         right = zones[1,i] * self.corridor_length_roxel
         #         polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
         #         ax_top.add_patch(polygon)
 
@@ -1981,15 +1988,15 @@ class Lap_ImData:
         ax_bottom.set_ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
 
         bottom, top = plt.ylim()
-        left = self.zones[0,0] * 3500
-        right = self.zones[1,0] * 3500
+        left = self.zones[0,0] * self.corridor_length_roxel
+        right = self.zones[1,0] * self.corridor_length_roxel
 
         polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
         ax_bottom.add_patch(polygon)
         if (self.n_zones > 1):
             for i in range(1, np.shape(self.zones)[1]):
-                left = self.zones[0,i] * 3500
-                right = self.zones[1,i] * 3500
+                left = self.zones[0,i] * self.corridor_length_roxel
+                right = self.zones[1,i] * self.corridor_length_roxel
                 polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                 ax_bottom.add_patch(polygon)
 
