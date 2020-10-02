@@ -210,7 +210,7 @@ class Stage_collection:
 
 
 ############################################################################
-## Stages for Imola
+## Stages for the NearFar task
 ############################################################################
 
 # level		stage 	substage	corridors 		random		next_stage		rule 		condition	name
@@ -231,6 +231,35 @@ class Stage_collection:
 
 # stage_list.write()
 
+
+
+############################################################################
+## Stages for the NearFarLong task
+############################################################################
+
+# level		stage 	substage	corridors 		random		next_stage		rule 		condition	name
+# lick&run	0		a			0				pseudo		1				lick&run	either		pretrain
+# lick_zone	1		a			1				pseudo		1b				Pavl/Oper  	both		9_cheese		
+# 			1		b			2-4				pseudo		1c				Pavl/Oper  	both		7_cheese		
+# 			1		c			5-7				pseudo		1d				Pavl/Oper  	both		5_cheese		
+# 			1		d			8-10			pseudo		1e				Pavl/Oper  	both		3_cheese
+# 			1		e			11				pseudo		2				Pavl/Oper  	both		1_cheese
+
+# diff_1	2		a			12-13			pseudo		3				Pavl/Oper  	both		1 zone		
+# 			2		b			14-15			pseudo		3				Pavl/Oper  	both		1 zone		
+# diff_2	3		a			14-15			pseudo		3				Pavl/Oper  	both		1 zone		
+# 			3		b			16-18			pseudo		3				Pavl/Oper  	both		1 zone		
+
+# stage_list = Stage_collection('.', 'NearFarLong')
+# stage_list.add_stage(level='lick&run', stage=0, corridors=[0], next_stage=[1], rule='pretrain', condition='either', name='pretrain')
+
+# stage_list.add_stage(level='lick_zone', stage=1, corridors=[1,2,3,4,5,6,7,8,9,10,11], next_stage=[2], rule='Pavlovian', condition='either', name='9 -> 1 lick zone', substages=[0,1,1,1,2,2,2,3,3,3,4])
+# stage_list.add_stage(level='diff_1', stage=2, corridors=[12, 13, 14, 15], next_stage=[3], rule='Pavlovian', condition='both', name='1_zone', substages=[0,0,1,1])
+# stage_list.add_stage(level='diff_2', stage=3, corridors=[14,15,16,17,18], next_stage=[3], rule='Pavlovian', condition='both', name='1_zone', substages=[0,0,1,1,1])
+
+# stage_list.print_table()
+
+# stage_list.write()
 
 ############################################################################
 ## Stages for the morphing experiment of Kata
