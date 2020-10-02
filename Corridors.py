@@ -288,27 +288,27 @@ class Corridor_list:
 ## 6					grey 		grey 			people				people				1						Right	
 ## 7					grey 		grey 			green people		green people		1						Right	
 
-# Cors = Corridor_list('./', 'NearFarLong')
+#Cors = Corridor_list('./', 'NearFarLong')
 # #						 left_image, right_image, end_image, floor_image, ceiling_image
-# Cors.add_corridor('grey', 'grey_wall.png', 'grey_wall.png', 'grey_end_wall.png', 'grey_floor_ceiling.png', 'grey_floor_ceiling.png', [], reward='None')
-
-# Cors.add_corridor('all_sine', 'mABd0LeftRightcorridor.png', 'mABd0LeftRightcorridor.png', 'mAEnd.png', 'mAFloor.png', 'floor_ceiling.png', [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500], zone_width=480)
-# Cors.add_corridor('all_square', 'mABd0LeftRightcorridor.png', 'mABd0LeftRightcorridor.png', 'mBEnd.png', 'mBFloor.png', 'floor_ceiling.png', [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500], zone_width=480)
-
+#Cors.add_corridor('grey', 'grey_wall.png', 'grey_wall.png', 'grey_end_wall.png', 'grey_floor_ceiling.png', 'grey_floor_ceiling.png', [], reward='None')
+#
+#Cors.add_corridor('all_sine', 'mABd0LeftRightcorridor.png', 'mABd0LeftRightcorridor.png', 'mAEnd.png', 'mAFloor.png', 'floor_ceiling.png', [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500], zone_width=480)
+#Cors.add_corridor('all_square', 'mABd0LeftRightcorridor.png', 'mABd0LeftRightcorridor.png', 'mBEnd.png', 'mBFloor.png', 'floor_ceiling.png', [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500], zone_width=480)
+#
 # # def add_corridor(self, name, left_image, right_image, end_image, floor_image, ceiling_image, reward_zone_starts, zone_width=470, reward='Right', length=7168, height=768, width=1024):
-# Cors.add_corridor('leaf', 'LongLeftA.png', 'LongRightA.png', 'mAEnd.png', 'Long_floor.png', 'Long_floor.png', [6500], zone_width=1179, length=10240)
-# Cors.add_corridor('people', 'LongLeftB.png', 'LongRightB.png', 'mBEnd.png', 'Long_floor.png', 'Long_floor.png', [8700], zone_width=1179, length=10240)
-
-# Cors.add_corridor('leaf2', 'LongLeftA.png', 'LongRightA.png', 'mAEnd.png', 'Long_floor.png', 'Long_floor.png', [6500], zone_width=1179, length=10240)
-# Cors.add_corridor('people2', 'LongLeftB.png', 'LongRightB.png', 'mBEnd.png', 'Long_floor.png', 'Long_floor.png', [8700], zone_width=1179, length=10240)
-# Cors.add_corridor('green people', 'LongLeftC.png', 'LongRightC.png', 'mCEnd.png', 'Long_floor.png', 'Long_floor.png', [7600], zone_width=1179, length=10240)
-
-# Cors.print_zones()
-# Cors.print_images()
-
-# Cors.write()
-
-
+#Cors.add_corridor('leaf', 'LongLeftA.png', 'LongRightA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [6500], zone_width=1000, length=10240) 
+#Cors.add_corridor('people', 'LongLeftB.png', 'LongRightB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [4350], zone_width=1000, length=10240)# 2500-3000
+#
+#Cors.add_corridor('people2', 'LongLeftB.png', 'LongRightB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [4350], zone_width=1000, length=10240)
+#Cors.add_corridor('green people', 'LongLeftC.png', 'LongRightC.png', 'mCEnd.png', 'Long_floorC.png', 'Long_ceiling.png', [7500], zone_width=1000, length=10240)
+#Cors.add_corridor('leaf2', 'LongLeftA.png', 'LongRightA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [6500], zone_width=1000, length=10240)
+#
+#Cors.print_zones()
+#Cors.print_images()
+#
+#Cors.write()
+#
+#
 
 
 #####################################################################################################

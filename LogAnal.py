@@ -345,10 +345,13 @@ class anticipatory_Licks:
         else:
             greater = False
         self.corridor = int(corridor)
-        self.test = scipy.stats.wilcoxon(self.baseline, self.anti_rate)
         self.anti = False
-        if ((self.test[1] < 0.01 ) & (greater == True)):
-            self.anti = True
+        if ((self.m_base > 0) & (self.m_anti > 0)):
+            self.test = scipy.stats.wilcoxon(self.baseline, self.anti_rate)
+            if ((self.test[1] < 0.01 ) & (greater == True)):
+                self.anti = True
+        else:
+            self.test = [0, 1]
 
 
 class Session:
@@ -475,7 +478,7 @@ class Session:
             ids = np.where(corridor_ids == corridor_types[row])
             n_laps = np.shape(ids)[1]
             n_zones = np.shape(self.Laps[ids[0][0]].zones)[1]
-            if (n_zones == 1):
+            if ((n_zones == 1) & (n_laps > 2)):
                 lick_rates = np.zeros([2,n_laps])
                 k = 0
                 for lap in np.nditer(ids):
@@ -535,16 +538,16 @@ class Session:
 
                 if (self.Laps[lap].zones.shape[1] > 0):
                     bottom, top = axs[row,0].get_ylim()
-                    left = self.Laps[lap].zones[0,0] * self.corridor_length_roxel
-                    right = self.Laps[lap].zones[1,0] * self.corridor_length_roxel
+                    left = self.Laps[lap].zones[0,0] * self.Laps[lap].corridor_length_roxel
+                    right = self.Laps[lap].zones[1,0] * self.Laps[lap].corridor_length_roxel
 
                     polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                     axs[row,0].add_patch(polygon)
                     n_zones = np.shape(self.Laps[lap].zones)[1]
                     if (n_zones > 1):
                         for i in range(1, np.shape(self.Laps[lap].zones)[1]):
-                            left = self.Laps[lap].zones[0,i] * self.corridor_length_roxel
-                            right = self.Laps[lap].zones[1,i] * self.corridor_length_roxel
+                            left = self.Laps[lap].zones[0,i] * self.Laps[lap].corridor_length_roxel
+                            right = self.Laps[lap].zones[1,i] * self.Laps[lap].corridor_length_roxel
                             polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                             axs[row,0].add_patch(polygon)
                     # else: ## test for lick rate changes before the zone

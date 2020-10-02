@@ -143,8 +143,8 @@ if __name__ == '__main__':
         i_substage = str(substages[i])
         n_zones = len(corridor_list.corridors[i_corridor].reward_zone_starts)
         P_corridor = 1
-        if (isinstance(m1.stage_list.stages[2].random, list)):
-            P_corridor = m1.stage_list.stages[2].random[i]
+        if (isinstance(m1.stage_list.stages[im.stage_selected].random, list)):
+            P_corridor = m1.stage_list.stages[im.stage_selected].random[i]
         for ii in range(n_zones):
             zone_start = round(corridor_list.corridors[i_corridor].reward_zone_starts[ii], 5)
             zone_end = round(corridor_list.corridors[i_corridor].reward_zone_ends[ii], 5)

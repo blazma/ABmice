@@ -203,7 +203,7 @@ if __name__ == '__main__':
 #     left_color = 'No'
 #     right_color = 'No'
     datapath = os.getcwd() #current working directory - look for data and strings here!
-    m1 = Read_Mouse(name, task, datapath, False).sessiondata
+    m1 = Read_Mouse(name, task, datapath, False).mm
     cm = Close_Mouse(m1)
 
     #ss = 'saving data of mouse ' + name + ' finished, file closed.'
