@@ -338,20 +338,20 @@ class ImagingSessionData:
                 log_reference_index=candidate_log_indexes[i]
                 difs=[]
                 if len(trigger_log_starts)>log_reference_index+n_extra_indexes:
-	                for j in range(n_extra_indexes):
-	                    dif_log=(float(trigger_log_starts[log_reference_index+j])-float(trigger_log_starts[log_reference_index]))*1000
-	                    dif_mes=trigger_data_voltage[used_index+j,0]-trigger_data_voltage[used_index,0]
-	                    delta=abs(dif_log-dif_mes)
-	                    difs.append(delta)
-	#                    print(self.trigger_log_lengths[candidate_log_indexes[i]],'log',dif_log,'mes', dif_mes,'dif', delta)
-	                if max(difs) < 9:
-	                    if match_found==False:                      
-	                        lap_time_of_first_frame=float(trigger_log_starts[log_reference_index])-trigger_data_voltage[used_index,0]/1000
-	                        print('relevant behavior located, lap time of the first frame:',lap_time_of_first_frame)
-	                        match_found=True
-	                    else:
-	                        print('Warning! More than one trigger matches found!')
-	            else:
+                    for j in range(n_extra_indexes):
+                        dif_log=(float(trigger_log_starts[log_reference_index+j])-float(trigger_log_starts[log_reference_index]))*1000
+                        dif_mes=trigger_data_voltage[used_index+j,0]-trigger_data_voltage[used_index,0]
+                        delta=abs(dif_log-dif_mes)
+                        difs.append(delta)
+    #                    print(self.trigger_log_lengths[candidate_log_indexes[i]],'log',dif_log,'mes', dif_mes,'dif', delta)
+                    if max(difs) < 9:
+                        if match_found==False:                      
+                            lap_time_of_first_frame=float(trigger_log_starts[log_reference_index])-trigger_data_voltage[used_index,0]/1000
+                            print('relevant behavior located, lap time of the first frame:',lap_time_of_first_frame)
+                            match_found=True
+                        else:
+                            print('Warning! More than one trigger matches found!')
+                else:
                     print('testing last candidate failed')
 
             if match_found==True:
