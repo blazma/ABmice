@@ -28,13 +28,21 @@ TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'rn013_TSeries-03132020-0939-003_Cyc
 
 # 3. load all the data - this taks ~20 secs in my computer
 #    def __init__(self, datapath, date_time, name, task, suite2p_folder, TRIGGER_VOLTAGE_FILENAME):
-D1 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME)
+D1 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME)#, startendlap=[27, 99])
+
+D1.i_Laps_ImData
+
+D2 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, selected_laps=np.arange(100, 200))
+D2.i_Laps_ImData
 
 #########################################################
 ## PLOTTING
 #########################################################
 ## 0. plotting the behavioral data in the different corridors
-D1.plot_session(save_data=True)
+D1.plot_session(save_data=False)
+D1.plot_session(save_data=False, selected_laps=np.arange(0, 139))
+D1.plot_session(save_data=False, selected_laps=np.arange(139, 316))
+D1.plot_session(save_data=False, selected_laps=np.arange(316, 350))
 
 ## 1. select cells based on their properties
 ## a) selection based on signal-to noise ratio:
@@ -54,7 +62,14 @@ cellids = np.nonzero(D1.cell_corridor_selectivity[2,] > 0.5)[0]
 
 
 ## 1.1. plot the ratemaps of the selected cells
+cellids = np.nonzero(D1.candidate_PCs[0] + D1.candidate_PCs[1])[0]
+
 D1.plot_ratemaps(cellids = cellids)
+D2.plot_ratemaps(cellids = cellids)
+
+D1.plot_cell_laps(cellid=110, signal='rate', save_data=False) ## look at lap 20
+D2.plot_cell_laps(cellid=110, signal='rate', save_data=False) ## look at lap 20
+
 
 
 ## d) corridor selectivity - whether the ratemaps are similar in the two corridors
@@ -76,7 +91,7 @@ D1.plot_ratemaps(cellids = cellids)
 cellids = np.nonzero(D1.cell_tuning_specificity[0] > 0.5)[0]
 
 # a combination of multiple criteria can be specified like this:
-cellids = np.nonzero((D1.cell_tuning_specificity[0] + D1.cell_activelaps[0] > 0.7) + (D1.cell_tuning_specificity[1] + D1.cell_activelaps[1] > 0.7))[0]
+cellids = np.nonzero(((D1.cell_tuning_specificity[0]/40 + D1.cell_activelaps[0]) > 0.5) + ((D1.cell_tuning_specificity[1]/40 + D1.cell_activelaps[1]) > 0.5))[0]
 D1.plot_ratemaps(cellids = cellids)
 
 ## 1.2 sorting ratemaps

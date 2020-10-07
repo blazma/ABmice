@@ -35,7 +35,7 @@ from ImShuffle import *
 
 class ImagingSessionData:
     'Base structure for both imaging and behaviour data'
-    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan):
+    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None):
         self.datapath = datapath
         self.date_time = date_time
         self.name = name
@@ -132,7 +132,7 @@ class ImagingSessionData:
         self.i_Laps_ImData = np.zeros(1) # np array with the index of laps with imaging
         self.i_corridors = np.zeros(1) # np array with the index of corridors in each run
 
-        self.get_lapdata(self.datapath, self.date_time, self.name, self.task) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
+        self.get_lapdata(self.datapath, self.date_time, self.name, self.task, selected_laps=selected_laps) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
         self.N_bins = int(round(self.corridor_length_roxel / 70)) # self.ImLaps[self.i_Laps_ImData[2]].event_rate.shape[1]
         self.N_ImLaps = len(self.i_Laps_ImData)
 
@@ -488,7 +488,7 @@ class ImagingSessionData:
     ## separating data into laps
     ##############################################################
 
-    def get_lapdata(self, datapath, date_time, name, task):
+    def get_lapdata(self, datapath, date_time, name, task, selected_laps=None):
 
         time_array=[]
         lap_array=[]
@@ -535,6 +535,12 @@ class ImagingSessionData:
         i_ImData = [] # index of laps with imaging data
         i_corrids = [] # ID of corridor for the current lap
 
+        ### include only a subset of laps
+        if selected_laps is None:
+            select_laps = False
+        else:
+            select_laps = True
+
         for i_lap in np.unique(lap):
             y = lap == i_lap # index for the current lap
 
@@ -566,9 +572,16 @@ class ImagingSessionData:
                     if not((action_lap[j]) in ['No', 'TrialReward']):
                         actions.append([t_lap[j], action_lap[j]])
 
+                ### include only a subset of laps
+                add_lap = True
+                if (select_laps):
+                    add_lap = False
+                    if (self.n_laps in selected_laps):
+                        add_lap = True
+
                 ### imaging data    
                 iframes = np.where(self.frame_laps == i_lap)[0]
-                if (len(iframes) > 0): # there is imaging data belonging to this lap...
+                if ((len(iframes) > 0) & (add_lap == True)): # there is imaging data belonging to this lap...
                     # print(i, min(iframes), max(iframes))
                     lap_frames_dF_F = self.dF_F[:,iframes]
                     lap_frames_spikes = self.spks[:,iframes]
@@ -1374,13 +1387,20 @@ class ImagingSessionData:
         plt.show(block=False)
 
 
-    def plot_session(self, save_data=False):
+    def plot_session(self, save_data=False, selected_laps=None):
         ## find the number of different corridors
+        if (selected_laps is None):
+            selected_laps = np.arange(self.n_laps)
+            add_anticipatory_test = True
+        else:
+            add_anticipatory_test = False
+
         if (self.n_laps > 0):
             corridor_ids = np.zeros(self.n_laps)
+
             for i in range(self.n_laps):
                 corridor_ids[i] = self.ImLaps[i].corridor
-            corridor_types = np.unique(corridor_ids)
+            corridor_types = np.unique(corridor_ids[selected_laps])
             nrow = len(corridor_types)
             nbins = len(self.ImLaps[0].bincenters)
             cmap = plt.cm.get_cmap('jet')   
@@ -1398,16 +1418,18 @@ class ImagingSessionData:
 
             for row in range(nrow):
                 # ax = plt.subplot(nrow, 1, row+1)
-                ids = np.where(corridor_ids == corridor_types[row])
+                ids_all = np.where(corridor_ids == corridor_types[row])
+                ids = np.intersect1d(ids_all, selected_laps)
+
                 avespeed = np.zeros(nbins)
                 n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
-                n_laps = np.shape(ids)[1]
+                n_laps = len(ids)
                 maxspeed = 10
 
-                speed_matrix = np.zeros((len(ids[0]), nbins))
+                speed_matrix = np.zeros((len(ids), nbins))
 
                 i_lap = 0
-                for lap in np.nditer(ids):
+                for lap in ids:
                     axs[row,0].step(self.ImLaps[lap].bincenters, self.ImLaps[lap].ave_speed, where='mid', c=speed_color_trial)
                     speed_matrix[i_lap,:] =  np.round(self.ImLaps[lap].ave_speed, 2)
                     nans_lap = np.isnan(self.ImLaps[lap].ave_speed)
@@ -1422,7 +1444,7 @@ class ImagingSessionData:
                     filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_speed_corridor' + str(int(corridor_types[row])) + '.csv'
                     with open(filename, mode='w') as speed_file:
                         file_writer = csv.writer(speed_file, delimiter=',')
-                        for i_row in range(len(ids[0])):
+                        for i_row in range(len(ids)):
                             file_writer.writerow(speed_matrix[i_row,:])
                     print('speed data saved into file: ' + filename)
 
@@ -1453,18 +1475,13 @@ class ImagingSessionData:
                             right = self.ImLaps[lap].zones[1,i] * self.corridor_length_roxel
                             polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                             axs[row,0].add_patch(polygon)
-                    # else: ## test for lick rate changes before the zone
-                    #     self.anticipatory = np.zeros([2,n_laps])
-                    #     k = 0
-                    #     for lap in np.nditer(ids):
-                    #         self.anticipatory[:,k] = self.ImLaps[lap].preZoneRate
-                    #         k = k + 1
                     else: # we look for anticipatory licking tests
                         P_statement = ', anticipatory P value not tested'
                         for k in range(len(self.anticipatory)):
                             if (self.anticipatory[k].corridor == corridor_types[row]):
                                 P_statement = ', anticipatory P = ' + str(round(self.anticipatory[k].test[1],5))
-                        plot_title = plot_title + P_statement
+                        if (add_anticipatory_test == True):
+                            plot_title = plot_title + P_statement
 
                 axs[row,0].set_title(plot_title)
 
@@ -1473,10 +1490,10 @@ class ImagingSessionData:
                 maxrate = 10
                 avelick = np.zeros(nbins)
 
-                lick_matrix = np.zeros((len(ids[0]), nbins))
+                lick_matrix = np.zeros((len(ids), nbins))
                 i_lap = 0
 
-                for lap in np.nditer(ids):
+                for lap in ids:
                     ax2.step(self.ImLaps[lap].bincenters, self.ImLaps[lap].lick_rate, where='mid', c=lick_color_trial, linewidth=1)
                     lick_matrix[i_lap,:] =  np.round(self.ImLaps[lap].lick_rate, 2)
                     nans_lap = np.isnan(self.ImLaps[lap].lick_rate)
@@ -1490,7 +1507,7 @@ class ImagingSessionData:
                     filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_lick_corridor' + str(int(corridor_types[row])) + '.csv'
                     with open(filename, mode='w') as lick_file:
                         file_writer = csv.writer(lick_file, delimiter=',')
-                        for i_row in range(len(ids[0])):
+                        for i_row in range(len(ids)):
                             file_writer.writerow(lick_matrix[i_row,:])
                     print('lick data saved into file: ' + filename)
 
