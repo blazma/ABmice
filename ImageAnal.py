@@ -322,7 +322,7 @@ class ImagingSessionData:
         #4)find the candidate trigger times
         candidate_log_indexes=[]
         for i in range(len(trigger_log_lengths)):
-            if abs(float(trigger_log_lengths[i])-trigger_data_voltage[used_index][2])<5:
+            if abs(float(trigger_log_lengths[i])-trigger_data_voltage[used_index][2])<7:
                 candidate_log_indexes.append(i)
         print('candidate log indexes',candidate_log_indexes)
     
