@@ -953,9 +953,10 @@ class ImagingSessionData:
             self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
 
     # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
-    def calc_shuffle(self, cellids, n=1000, mode='shift'):
+    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None, randseed=123):
         raw_spikes = self.raw_spks[cellids,:]
-        self.shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode)
+        np.random.seed(randseed)
+        self.shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode, batchsize=batchsize)
         self.accepted_PCs = self.shuffle_stats.accepted_PCs
 
         NN = cellids.size
@@ -964,18 +965,6 @@ class ImagingSessionData:
         for i_cor in range(N_corrids):
             if (sum(np.abs(self.shuffle_stats.cell_reliability[i_cor][:,n] - self.cell_reliability[i_cor][cellids]) > 0.0001) > 0):
                 print ('warning: calculating reliability is different between shuffling and control!')
-                sanity_checks_passed = False
-            if (sum(np.abs(self.shuffle_stats.cell_tuning_specificity[i_cor][:,n] - self.cell_tuning_specificity[i_cor][cellids]) > 0.0001) > 0):
-                print ('warning: calculating specificity is different between shuffling and control!')
-                sanity_checks_passed = False
-            if (sum(np.abs(self.shuffle_stats.cell_activelaps[i_cor][:,n] - self.cell_activelaps[i_cor][cellids]) > 0.0001) > 0):
-                print ('warning: calculating activelaps is different between shuffling and control!')
-                sanity_checks_passed = False
-            if (sum(np.abs(self.shuffle_stats.cell_skaggs[i_cor][:,n] - self.cell_skaggs[i_cor][cellids]) > 0.0001) > 0):
-                print ('warning: calculating Skaggs info is different between shuffling and control!')
-                sanity_checks_passed = False
-            if (sum(np.abs(self.shuffle_stats.cell_Fano_factor[i_cor][:,n] - self.cell_Fano_factor[i_cor][cellids]) > 0.0001) > 0):
-                print ('warning: calculating Fano factor is different between shuffling and control!')
                 sanity_checks_passed = False
     
         if (np.sum(np.abs(self.shuffle_stats.cell_corridor_selectivity[:,:,n] - self.cell_corridor_selectivity[:,cellids]) > 0.0001) > 0):

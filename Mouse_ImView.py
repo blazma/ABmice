@@ -7,6 +7,14 @@ Created on Tue Apr 21 18:14:19 2020
 @author: luko.balazs
 """
 
+# function to save a vector
+def save_vec(vec, filename):
+   with open(filename, mode='w') as outfile:
+       file_writer = csv.writer(outfile, delimiter=',')
+       file_writer.writerow(vec)
+   print('vector saved into file: ' + filename)
+
+
 # 1. load the class definitions
 from ImageAnal import *
 
@@ -29,10 +37,10 @@ TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'rn013_TSeries-03132020-0939-003_Cyc
 # 3. load all the data - this taks ~20 secs in my computer
 #    def __init__(self, datapath, date_time, name, task, suite2p_folder, TRIGGER_VOLTAGE_FILENAME):
 D1 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME)#, startendlap=[27, 99])
-
 D1.i_Laps_ImData
 
-D2 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, selected_laps=np.arange(100, 200))
+# D2 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, selected_laps=np.array([140, 141, 142, 143, 144, 145]))
+D2 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, selected_laps=np.arange(140, 225))
 D2.i_Laps_ImData
 
 #########################################################
@@ -143,9 +151,20 @@ D1.ImLaps[153].plot_txv()
 ## 6. calculate shuffle controls
 ## 6.1. shuffle for candidate place cells
 cellids = np.nonzero(D1.candidate_PCs[0] + D1.candidate_PCs[1])[0]
-D1.plot_properties(cellids=cellids, interactive=False)
 D1.calc_shuffle(cellids, n=100, mode='shift')
 D1.shuffle_stats.plot_properties_shuffle()
+
+## if you need to shuffle many calls and want to use a large number of shuffles, then you may want to speed up the computation using minibatchses
+## the batchsize parameter allows you to select the number of cells used within each iteration
+## always use the largest batchsize that is still fast
+## the randseed parameter allows zou to replicate the results by selecting the same random seed for the shuffling
+## it is ideally a random integer number, different for each analysis
+D1.calc_shuffle(cellids, n=100, mode='shift', batchsize=5, randseed=124)
+D1.shuffle_stats.plot_properties_shuffle()
+
+
+
+D1.plot_properties(cellids=cellids, interactive=False)
 
 
 ## 6.1. shuffle for all cells with high specificity and activity rate
@@ -159,8 +178,6 @@ D1.calc_shuffle(cellids, n=100, mode='shift')
 D1.shuffle_stats.plot_properties_shuffle(maxNcells=100)
 
 ## plot the ratemaps of all significantly specific cells
-
-
 cells16 = cellids[np.where((D1.shuffle_stats.P_reliability[0] < 0.01) + (D1.shuffle_stats.P_tuning_specificity[0] < 0.01) + (D1.shuffle_stats.P_skaggs[0] < 0.01))[0]]
 cells19 = cellids[np.where((D1.shuffle_stats.P_reliability[1] < 0.01) + (D1.shuffle_stats.P_tuning_specificity[1] < 0.01) + (D1.shuffle_stats.P_skaggs[1] < 0.01))[0]]
 D1.plot_ratemaps(cellids = cells16, sorted=True, corridor=16)
