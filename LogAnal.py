@@ -386,6 +386,9 @@ class Session:
         self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])
 
         self.get_lapdata(datapath, date_time, name, task)
+        if (self.n_laps == -1):
+            print('Error: missing laps are found in the ExpStateMachineLog file! No analysis was performed, check the logfiles!')
+            return            
         self.test_anticipatory()
 
     def get_lapdata(self, datapath, date_time, name, task):
@@ -418,6 +421,22 @@ class Session:
         maze = np.array(maze_array)
         mode = np.array(mode_array)
         N_0lap = 0 # Counting the non-valid laps
+
+        time_breaks = np.where(np.diff(laptime) > 1)[0]
+        if (len(time_breaks) > 0):
+            print('ExpStateMachineLog time interval > 1s: ', len(time_breaks), ' times')
+            print(laptime[time_breaks])
+
+        logged_laps = np.unique(lap)
+        all_laps = np.arange(max(lap)) + 1
+        missing_laps = np.setdiff1d(all_laps, logged_laps)
+
+        if (len(missing_laps) > 0):
+            print('Some laps are not logged. Number of missing laps: ', len(missing_laps))
+            print(missing_laps)
+            self.n_laps = -1
+            return 
+
         self.n_laps = 0
 
         for i_lap in np.unique(lap):

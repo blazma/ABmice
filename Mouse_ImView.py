@@ -160,7 +160,7 @@ D1.shuffle_stats.plot_properties_shuffle()
 ## the randseed parameter allows zou to replicate the results by selecting the same random seed for the shuffling
 ## it is ideally a random integer number, different for each analysis
 D1.calc_shuffle(cellids, n=100, mode='shift', batchsize=5, randseed=124)
-D1.shuffle_stats.plot_properties_shuffle()
+D1.shuffle_stats.plot_properties_shuffle(cellids=cellids)
 
 
 

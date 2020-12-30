@@ -133,6 +133,10 @@ class ImagingSessionData:
         self.i_corridors = np.zeros(1) # np array with the index of corridors in each run
 
         self.get_lapdata(self.datapath, self.date_time, self.name, self.task, selected_laps=selected_laps) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
+        if (self.n_laps == -1):
+            print('Error: missing laps are found in the ExpStateMachineLog file! No analysis was performed, check the logfiles!')
+            return
+
         self.N_bins = int(round(self.corridor_length_roxel / 70)) # self.ImLaps[self.i_Laps_ImData[2]].event_rate.shape[1]
         self.N_ImLaps = len(self.i_Laps_ImData)
 
@@ -235,124 +239,127 @@ class ImagingSessionData:
 
     ##########################################################
     def LocateImaging(self, trigger_log_file_string, TRIGGER_VOLTAGE_FILENAME):
-        # 1. trigger_data_voltage  = np.array, 4 x N_triggers, each row is the 1. start time, 2, end time, duration, ITT
+        # 1. TRIGGER_DATA  = np.array, 4 x N_triggers, each row is the 1. start time, 2, end time, duration, ITT
         # 2. select only trigger data with ITT > 10 ms
         # 3. find the shortest trigger
         # 4. find candidate trigger times in the log_trigger by matching trigger duration
         # 5. check the next ITTS in voltage recording and log trigger
         # intputs: 
-        #   self.trigger_log_starts, 
+        #   self.trigger_log_starts,        normal LETTERS: variables defined with LabView time axis
         #   self.trigger_log_lengths, 
-        #   self.TRIGGER_VOLTAGE_VALUE, 
+        #   self.TRIGGER_VOLTAGE_VALUE,      CAPITAL LETTERS: variables defined with IMAGING time axis
         #   self.TRIGGER_VOLTAGE_TIMES
+        #
         # output:
-        #   self.imstart_time: singe scalar [s]: Labview time of the start of voltage recordings
+        #   self.imstart_time: singe scalar [s]: Labview time of the start of voltage-imaging recordings
         #
         # only works for 1 imaging session...
         # self.imstart_time = 537.133055 # Bazsi's best guess
         # print('Imaging time axis guessed by Bazsi...')
         
         #0)load recorded trigger 
-        trigger_log_starts = []
+        trigger_log_starts = [] ## s
         trigger_log_lengths = []      
         trigger_log_file=open(trigger_log_file_string)
         log_file_reader=csv.reader(trigger_log_file, delimiter=',')
         next(log_file_reader, None)#skip the headers
         for line in log_file_reader:             
-            trigger_log_starts.append(line[0])
-            trigger_log_lengths.append(line[1])
+            trigger_log_starts.append(float(line[0])) # seconds
+            trigger_log_lengths.append(float(line[1]) / 1000) # convert to seconds from ms
         print('trigger logfile loaded')
+        trigger_starts = np.array(trigger_log_starts)
+        trigger_lengths = np.array(trigger_log_lengths)
 
 
         TRIGGER_VOLTAGE_VALUE = [] 
-        TRIGGER_VOLTAGE_TIMES = []
+        TRIGGER_VOLTAGE_TIMES = [] ## ms
         trigger_signal_file=open(TRIGGER_VOLTAGE_FILENAME, 'r')
         trigger_reader=csv.reader(trigger_signal_file, delimiter=',')
         next(trigger_reader, None)
         for line in trigger_reader:
-            TRIGGER_VOLTAGE_VALUE.append(float(line[1]))
-            TRIGGER_VOLTAGE_TIMES.append(float(line[0]))        
-        v=np.array(TRIGGER_VOLTAGE_VALUE)
-        x=np.array(TRIGGER_VOLTAGE_TIMES)
+            TRIGGER_VOLTAGE_VALUE.append(float(line[1])) 
+            TRIGGER_VOLTAGE_TIMES.append(float(line[0]) / 1000) # converting it to seconds
+        TRIGGER_VOLTAGE=np.array(TRIGGER_VOLTAGE_VALUE)
+        TRIGGER_TIMES=np.array(TRIGGER_VOLTAGE_TIMES)
         print('trigger voltage signal loaded')
         
         ## find trigger start and end times
-        rise_index=np.nonzero((v[0:-1] < 1)&(v[1:]>= 1))[0]+1#+1 needed otherwise we are pointing to the index just before the trigger
-        RISE_X=x[rise_index]
+        rise_index=np.nonzero((TRIGGER_VOLTAGE[0:-1] < 1)&(TRIGGER_VOLTAGE[1:]>= 1))[0]+1#+1 needed otherwise we are pointing to the index just before the trigger
+        RISE_T=TRIGGER_TIMES[rise_index]
         
-        fall_index=np.nonzero((v[0:-1] > 1)&(v[1:]<= 1))[0]+1
-        FALL_X=x[fall_index]
+        fall_index=np.nonzero((TRIGGER_VOLTAGE[0:-1] > 1)&(TRIGGER_VOLTAGE[1:]<= 1))[0]+1
+        FALL_T=TRIGGER_TIMES[fall_index]
         
         # pairing rises with falls
-        if (RISE_X[0]>FALL_X[0]):
+        if (RISE_T[0]>FALL_T[0]):
             print('deleting first fall')
-            FALL_X = np.delete(FALL_X,0)
-        if (RISE_X[-1] > FALL_X[-1]):
+            FALL_T = np.delete(FALL_T,0)
+        if (RISE_T[-1] > FALL_T[-1]):
             print('deleting last rise')
-            RISE_X=np.delete(RISE_X,-1)
+            RISE_T=np.delete(RISE_T,-1)
 
-        if np.size(RISE_X)!=np.size(FALL_X):
-            print(np.size(RISE_X),np.size(FALL_X))
+        if np.size(RISE_T)!=np.size(FALL_T):
+            print(np.size(RISE_T),np.size(FALL_T))
             print('trigger ascending and desending edges do not match! unable to locate imaging part')
             self.imstart_time = np.nan
             return
 
-        #1) filling up trigger_data_voltage array:
-        #trigger_data_voltage: 1. start time, 2. end time, 3. duration, 4.ITT, 5. index
-        trigger_data_voltage=np.zeros((np.size(RISE_X),5))
-        trigger_data_voltage[:,0]=RISE_X
-        trigger_data_voltage[:,1]=FALL_X
-        trigger_data_voltage[:,2]=FALL_X-RISE_X
-        TEMP_FALL=np.concatenate([[0],FALL_X])
-        TEMP_FALL=np.delete(TEMP_FALL,-1)
-        trigger_data_voltage[:,3]=RISE_X-TEMP_FALL
-        trigger_data_voltage[:,4]=np.arange(0,np.size(RISE_X))
+        #1) filling up TRIGGER_DATA array:
+        #TRIGGER_DATA: 0. start time, 1. end time, 2. duration, 3.ITT, 4. index
+        TRIGGER_DATA = np.zeros((np.size(RISE_T),5))
+        TRIGGER_DATA[:,0] = RISE_T
+        TRIGGER_DATA[:,1] = FALL_T
+        TRIGGER_DATA[:,2]=FALL_T-RISE_T # duration
+        TEMP_FALL = np.concatenate([[0],FALL_T]) 
+        TEMP_FALL = np.delete(TEMP_FALL,-1)
+        TRIGGER_DATA[:,3] = RISE_T - TEMP_FALL # previous down duration - Inter Trigger Time
+        TRIGGER_DATA[:,4] = np.arange(0,np.size(RISE_T))
             
-        #2) keeping only triggers with ITT>10    
-        valid_indexes=np.nonzero(trigger_data_voltage[:,3]>10)[0]
-        trigger_data_voltage_sub=trigger_data_voltage[valid_indexes,:]
+        #2) keeping only triggers with ITT > 10 ms    
+        valid_indexes=np.nonzero(TRIGGER_DATA[:,3] > 0.010)[0]
+        TRIGGER_DATA_sub=TRIGGER_DATA[valid_indexes,:]
         
         #3) find the valid shortest trigger
-        minindex=np.argmin(trigger_data_voltage_sub[:,2])
-        used_index=int(trigger_data_voltage_sub[minindex][4])
-        n_extra_indexes=min(5,trigger_data_voltage.shape[0]-used_index)
-        print('triggers after:',trigger_data_voltage.shape[0]-used_index)
+        minindex = np.argmin(TRIGGER_DATA_sub[:,2])
+        used_index = int(TRIGGER_DATA_sub[minindex][4])
+        n_extra_indexes = min(5,TRIGGER_DATA.shape[0]-used_index)
+        print('triggers after:',TRIGGER_DATA.shape[0]-used_index)
         print('n_extra_indexes',n_extra_indexes)
     
         #4)find the candidate trigger times
-        candidate_log_indexes=[]
-        for i in range(len(trigger_log_lengths)):
-            if abs(float(trigger_log_lengths[i])-trigger_data_voltage[used_index][2])<7:
+        candidate_log_indexes = []
+        for i in range(len(trigger_lengths)):
+            if (abs(trigger_lengths[i] - TRIGGER_DATA[used_index][2]) < 0.007):
                 candidate_log_indexes.append(i)
         print('candidate log indexes',candidate_log_indexes)
     
         #5)check the next ITT-s, locate relevant behavior
-        print('min trigger length:',trigger_data_voltage[used_index,2])
-        if trigger_data_voltage[used_index,2]>600:
+        print('min recorded trigger length:',TRIGGER_DATA[used_index,2])
+        if TRIGGER_DATA[used_index,2] > 0.600:
             print('Warning! No short enough trigger in this recording! Unable to locate imaging')
             self.imstart_time = np.nan
-            return
+            # return
         else:
-            match_found=False
+            match_found = False
             for i in range(len(candidate_log_indexes)):    
                 log_reference_index=candidate_log_indexes[i]
                 difs=[]
-                if len(trigger_log_starts)>log_reference_index+n_extra_indexes:
+                if len(trigger_starts) > log_reference_index + n_extra_indexes:
                     for j in range(n_extra_indexes):
-                        dif_log=(float(trigger_log_starts[log_reference_index+j])-float(trigger_log_starts[log_reference_index]))*1000
-                        dif_mes=trigger_data_voltage[used_index+j,0]-trigger_data_voltage[used_index,0]
-                        delta=abs(dif_log-dif_mes)
+                        dif_log = trigger_starts[log_reference_index + j] - trigger_starts[log_reference_index]
+                        dif_mes = TRIGGER_DATA[used_index+j,0] - TRIGGER_DATA[used_index,0]
+                        delta = abs(dif_log - dif_mes)
                         difs.append(delta)
     #                    print(self.trigger_log_lengths[candidate_log_indexes[i]],'log',dif_log,'mes', dif_mes,'dif', delta)
-                    if max(difs) < 9:
+                    if max(difs) < 0.009:
                         if match_found==False:                      
-                            lap_time_of_first_frame=float(trigger_log_starts[log_reference_index])-trigger_data_voltage[used_index,0]/1000
-                            print('relevant behavior located, lap time of the first frame:',lap_time_of_first_frame)
+                            lap_time_of_first_frame = trigger_starts[log_reference_index] - TRIGGER_DATA[used_index,0]
+                            print('relevant behavior located, lap time of the first frame:',lap_time_of_first_frame, ', log reference index:', log_reference_index)
                             match_found=True
                         else:
                             print('Warning! More than one trigger matches found!')
                 else:
-                    print('testing last candidate failed')
+                    print('slight warning - testing some late candidates failed')
 
             if match_found==True:
                 self.imstart_time = lap_time_of_first_frame
@@ -512,9 +519,24 @@ class ImagingSessionData:
             action.append(str(line[14]))
 
         laptime = np.array(time_array)
+        time_breaks = np.where(np.diff(laptime) > 1)[0]
+        if (len(time_breaks) > 0):
+            print('ExpStateMachineLog time interval > 1s: ', len(time_breaks), ' times')
+            print(laptime[time_breaks])
+
+        lap = np.array(lap_array)
+        logged_laps = np.unique(lap)
+        all_laps = np.arange(max(lap)) + 1
+        missing_laps = np.setdiff1d(all_laps, logged_laps)
+
+        if (len(missing_laps) > 0):
+            print('Some laps are not logged. Number of missing laps: ', len(missing_laps))
+            print(missing_laps)
+            self.n_laps = -1
+            return 
+            
         pos = np.array(position_array)
         lick = np.array(lick_array)
-        lap = np.array(lap_array)
         maze = np.array(maze_array)
         mode = np.array(mode_array)
         N_0lap = 0 # Counting the non-valid laps
