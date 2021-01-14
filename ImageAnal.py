@@ -146,14 +146,14 @@ class ImagingSessionData:
         self.activity_tensor_time = np.zeros((self.N_bins, self.N_ImLaps)) # same as the activity tensor time spatially smoothed
         self.combine_lapdata() ## fills in the cell_activity tensor
 
-        self.cell_rates = [] # a list, each element is a 3 x n_cells matrix with the average rate of the cells in the whole corridor, pattern zone and reward zone
+        self.cell_rates = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the whole corridor, pattern zones 1-3 and reward zone
         self.cell_reliability = [] # a list, each element is a vector with the reliability of the cells in a corridor
         self.cell_Fano_factor = [] # a list, each element is a vector with the reliability of the cells in a corridor
         self.cell_skaggs=[] # a list, each element is a vector with the skaggs93 spatial info of the cells in a corridor
         self.cell_activelaps=[] # a list, each element is a vector with the % of significantly spiking laps of the cells in a corridor
         self.cell_activelaps_df=[] # a list, each element is a vector with the % of significantly active (dF/F) laps of the cells in a corridor
         self.cell_tuning_specificity=[] # a list, each element is a vector with the tuning specificity of the cells in a corridor
-        self.cell_corridor_selectivity = np.zeros([3,self.N_cells]) # a matrix with the selectivity of the cells in the maze, corridor, reward area
+        self.cell_corridor_selectivity = np.zeros([5,self.N_cells]) # a matrix with the selectivity of the cells in the maze, corridor1, corridor2, corridor3 and reward area
         self.ratemaps = [] # a list, each element is an array space x neurons x trials being the ratemaps of the cells in a given corridor
         self.calculate_properties()
 
@@ -695,9 +695,11 @@ class ImagingSessionData:
 
                     ## average firing rate
                     rates = np.sum(total_spikes, axis=0) / np.sum(total_time)
-                    rates_pattern = np.sum(total_spikes[5:40,:], axis=0) / np.sum(total_time[5:40])
-                    rates_reward = np.sum(total_spikes[40:50,:], axis=0) / np.sum(total_time[40:50])
-                    self.cell_rates.append(np.vstack([rates, rates_pattern, rates_reward]))
+                    rates_pattern1 = np.sum(total_spikes[0:14,:], axis=0) / np.sum(total_time[0:14])
+                    rates_pattern2 = np.sum(total_spikes[14:28,:], axis=0) / np.sum(total_time[14:28])
+                    rates_pattern3 = np.sum(total_spikes[28:42,:], axis=0) / np.sum(total_time[28:42])
+                    rates_reward = np.sum(total_spikes[42:47,:], axis=0) / np.sum(total_time[42:47])
+                    self.cell_rates.append(np.vstack([rates, rates_pattern1, rates_pattern2, rates_pattern3, rates_reward]))
 
                     ## reliability and Fano factor
                     reliability = np.zeros(self.N_cells)
@@ -791,10 +793,12 @@ class ImagingSessionData:
 
                     self.cell_tuning_specificity.append(tuning_spec)
 
-            # self.cell_rates = [] # a list, each element is a 3 x n_cells matrix with the average rate of the cells in the total corridor, pattern zone and reward zone
+            # self.cell_rates = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the total corridor, pattern zone 1-3 and reward zone
             self.cell_corridor_selectivity[0,:] = (self.cell_rates[0][0,:] - self.cell_rates[1][0,:]) / (self.cell_rates[0][0,:] + self.cell_rates[1][0,:])
             self.cell_corridor_selectivity[1,:] = (self.cell_rates[0][1,:] - self.cell_rates[1][1,:]) / (self.cell_rates[0][1,:] + self.cell_rates[1][1,:])
             self.cell_corridor_selectivity[2,:] = (self.cell_rates[0][2,:] - self.cell_rates[1][2,:]) / (self.cell_rates[0][2,:] + self.cell_rates[1][2,:])
+            self.cell_corridor_selectivity[3,:] = (self.cell_rates[0][3,:] - self.cell_rates[1][3,:]) / (self.cell_rates[0][3,:] + self.cell_rates[1][3,:])
+            self.cell_corridor_selectivity[4,:] = (self.cell_rates[0][4,:] - self.cell_rates[1][4,:]) / (self.cell_rates[0][4,:] + self.cell_rates[1][4,:])
 
 
     def plot_properties(self, cellids=np.array([-1]), interactive=False):

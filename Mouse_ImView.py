@@ -150,9 +150,29 @@ D1.ImLaps[153].plot_txv()
 
 ## 6. calculate shuffle controls
 ## 6.1. shuffle for candidate place cells
-cellids = np.nonzero(D1.candidate_PCs[0] + D1.candidate_PCs[1])[0]
+# cellids = np.nonzero(D1.candidate_PCs[0] + D1.candidate_PCs[1])[0]
+## 6.1. shuffle for all active cells
+cellids = np.nonzero((D1.cell_activelaps[0]>0.2) + (D1.cell_activelaps[1]>0.2))[0]
 D1.calc_shuffle(cellids, n=100, mode='shift')
 D1.shuffle_stats.plot_properties_shuffle()
+
+
+## corridor selective cells
+selective_cells = cellids[np.where((D1.shuffle_stats.P_selectivity[0] < 0.025))[0]]
+selective_cells_corr = cellids[np.where((D1.shuffle_stats.P_selectivity[1] < 0.025))[0]]
+selective_cells_rew = cellids[np.where((D1.shuffle_stats.P_selectivity[2] < 0.025))[0]]
+
+Nselective_cells = cellids[np.where((D1.shuffle_stats.P_selectivity[0] > 0.975))[0]]
+Nselective_cells_corr = cellids[np.where((D1.shuffle_stats.P_selectivity[1] > 0.975))[0]]
+Nselective_cells_rew = cellids[np.where((D1.shuffle_stats.P_selectivity[2] > 0.975))[0]]
+
+D1.shuffle_stats.plot_properties_shuffle(cellids=Nselective_cells_corr)
+D1.plot_ratemaps(cellids = Nselective_cells_corr)
+D1.cell_corridor_selectivity.shape[:,Nselective_cells_corr]
+
+D1.plot_ratemaps(cellids = selective_cells_rew)
+D1.plot_ratemaps(cellids = Nselective_cells_rew)
+
 
 ## if you need to shuffle many calls and want to use a large number of shuffles, then you may want to speed up the computation using minibatchses
 ## the batchsize parameter allows you to select the number of cells used within each iteration
