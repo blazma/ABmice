@@ -1439,6 +1439,7 @@ class ImagingSessionData:
                 avespeed = np.zeros(nbins)
                 n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
                 n_laps = len(ids)
+                n_correct = 0
                 maxspeed = 10
 
                 speed_matrix = np.zeros((len(ids), nbins))
@@ -1451,9 +1452,10 @@ class ImagingSessionData:
                     avespeed = nan_add(avespeed, self.ImLaps[lap].ave_speed)
                     n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
                     if (max(self.ImLaps[lap].ave_speed) > maxspeed): maxspeed = max(self.ImLaps[lap].ave_speed)
+                    n_correct = n_correct + self.ImLaps[lap].correct
                     i_lap = i_lap + 1
                 maxspeed = min(maxspeed, 60)
-                
+                P_correct = np.round(np.float(n_correct) / np.float(n_laps), 3)
 
                 if (save_data == True):
                     filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_speed_corridor' + str(int(corridor_types[row])) + '.csv'
@@ -1470,11 +1472,11 @@ class ImagingSessionData:
 
                 if (row == 0):
                     if (self.sessionID >= 0):
-                        plot_title = 'session:' + str(self.sessionID) + ': ' + str(int(n_laps)) + ' laps in corridor ' + str(int(corridor_types[row]))
+                        plot_title = 'session:' + str(self.sessionID) + ': ' + str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
                     else:
-                        plot_title = str(int(n_laps)) + ' laps in corridor ' + str(int(corridor_types[row]))                    
+                        plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
                 else:
-                    plot_title = str(int(n_laps)) + ' laps in corridor ' + str(int(corridor_types[row]))
+                    plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
 
                 if (self.ImLaps[lap].zones.shape[1] > 0):
                     bottom, top = axs[row,0].get_ylim()
