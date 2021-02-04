@@ -33,6 +33,7 @@ from Corridors import *
 from ImShuffle import *
 
 
+
 class ImagingSessionData:
     'Base structure for both imaging and behaviour data'
     def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None):
@@ -979,7 +980,7 @@ class ImagingSessionData:
             self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
 
     # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
-    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None, randseed=123):
+    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None, randseed=123, print_binom_test=True, Holmes_Bonferroni=True):
         raw_spikes = self.raw_spks[cellids,:]
         np.random.seed(randseed)
         self.shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode, batchsize=batchsize)
@@ -999,6 +1000,71 @@ class ImagingSessionData:
 
         if (sanity_checks_passed):
             print ('Shuffling stats calculated succesfully')
+
+        if (print_binom_test):
+            N_skaggs0 = len(np.where(self.shuffle_stats.P_skaggs[0] < 0.05)[0])
+            N_skaggs1 = len(np.where(self.shuffle_stats.P_skaggs[1] < 0.05)[0])
+
+            N_TunSpec0 = len(np.where(self.shuffle_stats.P_tuning_specificity[0] < 0.05)[0])
+            N_TunSpec1 = len(np.where(self.shuffle_stats.P_tuning_specificity[1] < 0.05)[0])
+
+            N_rel0 = len(np.where(self.shuffle_stats.P_reliability[0] < 0.05)[0])
+            N_rel1 = len(np.where(self.shuffle_stats.P_reliability[1] < 0.05)[0])
+
+            N_sel0_cor0 = len(np.where(self.shuffle_stats.P_selectivity[0,] < 0.05)[0])
+            N_sel1_cor0 = len(np.where(self.shuffle_stats.P_selectivity[1,] < 0.05)[0])
+            N_sel2_cor0 = len(np.where(self.shuffle_stats.P_selectivity[2,] < 0.05)[0])
+            N_sel3_cor0 = len(np.where(self.shuffle_stats.P_selectivity[3,] < 0.05)[0])
+            N_sel4_cor0 = len(np.where(self.shuffle_stats.P_selectivity[4,] < 0.05)[0])
+
+            N_sel0_cor1 = len(np.where(self.shuffle_stats.P_selectivity[0,] > 0.95)[0])
+            N_sel1_cor1 = len(np.where(self.shuffle_stats.P_selectivity[1,] > 0.95)[0])
+            N_sel2_cor1 = len(np.where(self.shuffle_stats.P_selectivity[2,] > 0.95)[0])
+            N_sel3_cor1 = len(np.where(self.shuffle_stats.P_selectivity[3,] > 0.95)[0])
+            N_sel4_cor1 = len(np.where(self.shuffle_stats.P_selectivity[4,] > 0.95)[0])
+
+            print(str(N_skaggs0) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_skaggs1) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_TunSpec0) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_TunSpec1) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_rel0) + ' of ' + str(NN) + ' cells reliability significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_rel0) + ' of ' + str(NN) + ' cells reliability significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel0_cor0) + ' of ' + str(NN) + ' cells selective for the whole corridor in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel0_cor0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel1_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 1 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel1_cor0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel2_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 2 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel2_cor0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel3_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel4_cor0) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel0_cor1) + ' of ' + str(NN) + ' cells selective for the whole corridor in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel0_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel1_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 1 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel1_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel2_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 2 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel2_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel3_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel4_cor1) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+
+        if (Holmes_Bonferroni):
+            Ps = np.vstack((self.shuffle_stats.P_skaggs[0], self.shuffle_stats.P_skaggs[1]))
+            Ps = np.vstack((Ps, self.shuffle_stats.P_tuning_specificity[0], self.shuffle_stats.P_tuning_specificity[1]))
+            Ps = np.vstack((Ps, self.shuffle_stats.P_reliability[0], self.shuffle_stats.P_reliability[1]))
+            Ps = np.vstack((Ps, self.shuffle_stats.P_selectivity, 1-self.shuffle_stats.P_selectivity))
+            ii_tuned_cells = HolmBonfMat(Ps, 0.05)
+
+            self.tuned_cells=dict(cells_Skaggs_0 = cellids[np.where(ii_tuned_cells[0,:])[0]], 
+                cells_Skaggs_1 = cellids[np.where(ii_tuned_cells[1,:])[0]], 
+                cells_spec_0 = cellids[np.where(ii_tuned_cells[2,:])[0]], 
+                cells_spec_1 = cellids[np.where(ii_tuned_cells[3,:])[0]], 
+                cells_reli_0 = cellids[np.where(ii_tuned_cells[4,:])[0]], 
+                cells_reli_1 = cellids[np.where(ii_tuned_cells[5,:])[0]], 
+                cells_spec_all_0 = cellids[np.where(ii_tuned_cells[6,:])[0]], 
+                cells_spec_all_1 = cellids[np.where(ii_tuned_cells[7,:])[0]], 
+                cells_spec_pat1_0 = cellids[np.where(ii_tuned_cells[8,:])[0]], 
+                cells_spec_pat1_1 = cellids[np.where(ii_tuned_cells[9,:])[0]], 
+                cells_spec_pat2_0 = cellids[np.where(ii_tuned_cells[10,:])[0]], 
+                cells_spec_pat2_1 = cellids[np.where(ii_tuned_cells[11,:])[0]], 
+                cells_spec_pat3_0 = cellids[np.where(ii_tuned_cells[12,:])[0]], 
+                cells_spec_pat3_1 = cellids[np.where(ii_tuned_cells[13,:])[0]], 
+                cells_spec_rew_0 = cellids[np.where(ii_tuned_cells[14,:])[0]], 
+                cells_spec_rew_1 = cellids[np.where(ii_tuned_cells[15,:])[0]])
+        else:
+            self.tuned_cells=[]
 
 
     def get_lap_indexes(self, corridor=-1, i_lap=-1):
@@ -1228,8 +1294,8 @@ class ImagingSessionData:
         if (signal == 'rate'):
             if corridor.size > 1:
                 #finding colormap ranges
-                min_intensity=1000
-                max_intensity=-1
+                min_intensity=0
+                max_intensity=100
                 for cor_index in range(corridor.size):
                     corridor_to_plot=corridor[cor_index]
                     
@@ -1248,6 +1314,19 @@ class ImagingSessionData:
                         min_intensity = loc_min
                         
             #main part of ratemap plotting
+            # colormap: grey for 0-100 and red for higher
+            # max_intensity: 100 or higher, the highest rate
+            # min_intensity: 0 or lower, the lowest rate
+
+            colors1 = plt.cm.binary(np.linspace(0., 1, 100)) 
+            n_col2 = int(np.round(max_intensity - 100))
+            max_col2 = min(0.75, 0.25 + n_col2 * 0.5 / 100)
+            colors2 = plt.cm.gist_heat_r(np.linspace(0.25, max_col2, n_col2))
+
+            # combine them and build a new colormap
+            colors = np.vstack((colors1, colors2))
+            mymap = matcols.LinearSegmentedColormap.from_list('my_colormap', colors)
+
             fig, ax = plt.subplots(2,corridor.size, squeeze=False, sharey='row', figsize=(6*corridor.size,8),sharex=True)
             for cor_index in range(corridor.size):
                 if corridor.size==1:
@@ -1284,7 +1363,7 @@ class ImagingSessionData:
                     i_correct = np.nonzero(correct_reward[0,:] == 1)[0]
                     rate_matrix[:,i_correct] = np.nan
 
-                #calculate for plotting average rates
+                #calculate average rates for plotting
                 average_firing_rate=np.nansum(rate_matrix, axis=1)/i_laps.size
                 std=np.nanstd(rate_matrix, axis=1)/np.sqrt(i_laps.size)
                 errorbar_x=np.arange(50)
@@ -1297,9 +1376,9 @@ class ImagingSessionData:
                 n_laps = rate_matrix.shape[1]
 
                 if corridor.size>1:
-                    im1 = ax[0,cor_index].imshow(np.transpose(rate_matrix), aspect='auto', origin='lower',vmin=min_intensity, vmax=max_intensity, cmap='binary')
+                    im1 = ax[0,cor_index].imshow(np.transpose(rate_matrix), aspect='auto', origin='lower',vmin=min_intensity, vmax=max_intensity, cmap=mymap)
                 else:
-                    im1 = ax[0,cor_index].imshow(np.transpose(rate_matrix), aspect='auto', origin='lower', cmap='binary')
+                    im1 = ax[0,cor_index].imshow(np.transpose(rate_matrix), aspect='auto', origin='lower', cmap='mymap')
                 if (reward == True):
                     i_cor = np.nonzero(correct_reward[0,:])[0]
                     n_cor = len(i_cor)
@@ -2076,4 +2155,25 @@ class anticipatory_Licks:
         self.anti = False
         if ((self.test[1] < 0.01 ) & (greater == True)):
             self.anti = True
+
+
+def HolmBonfMat(P_mat, p_val):
+    m = P_mat.shape[0]
+    n_cells = P_mat.shape[1]
+    i_significant = np.zeros_like(P_mat)
+    for i_cell in np.arange(n_cells):
+        i_significant[:,i_cell] = HolmBonf(P_mat[:,i_cell], 0.05)
+    return i_significant
+
+def HolmBonf(P_vec, p_val):
+    m = len(P_vec)
+    Pindex = np.argsort(P_vec)
+    i_significant = np.zeros(m)
+    for i_test in np.arange(m):
+        if ( P_vec[Pindex[i_test]] < p_val / (m - i_test)):
+            i_significant[Pindex[i_test]] = 1
+        else:
+            break
+
+    return i_significant
 

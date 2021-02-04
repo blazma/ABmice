@@ -156,6 +156,15 @@ cellids = np.nonzero((D1.cell_activelaps[0]>0.2) + (D1.cell_activelaps[1]>0.2))[
 D1.calc_shuffle(cellids, n=100, mode='shift')
 D1.shuffle_stats.plot_properties_shuffle()
 
+D1.plot_ratemaps(cellids=D1.tuned_cells['cells_reli_0'], corridor=19, sorted=True)
+
+for i_cell in D1.tuned_cells['cells_reli_0']:
+	D1.plot_cell_laps(cellid=i_cell, signal='rate', save_data=False)
+
+# > 200:  1076, 351, 269
+# > 150:  785, 4
+# > 100:  10, 14, 24, 28, 34, 36, 41
+# < 100: 24
 
 ## corridor selective cells
 selective_cells = cellids[np.where((D1.shuffle_stats.P_selectivity[0] < 0.025))[0]]
@@ -203,6 +212,9 @@ cells19 = cellids[np.where((D1.shuffle_stats.P_reliability[1] < 0.01) + (D1.shuf
 D1.plot_ratemaps(cellids = cells16, sorted=True, corridor=16)
 D1.plot_ratemaps(cellids = cells19, sorted=True, corridor=19)
 D1.plot_ratemaps(cellids = cells, sorted=True, corridor_sort=19)
+
+
+
 
 
 ## random cells
