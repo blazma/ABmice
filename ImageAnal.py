@@ -1024,21 +1024,21 @@ class ImagingSessionData:
             N_sel4_cor1 = len(np.where(self.shuffle_stats.P_selectivity[4,] > 0.95)[0])
 
             print(str(N_skaggs0) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_skaggs1) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_skaggs1) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs1, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_TunSpec0) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec0, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_TunSpec1) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec1, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_rel0) + ' of ' + str(NN) + ' cells reliability significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_rel0) + ' of ' + str(NN) + ' cells reliability significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_rel1) + ' of ' + str(NN) + ' cells reliability significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel1, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel0_cor0) + ' of ' + str(NN) + ' cells selective for the whole corridor in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel0_cor0, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel1_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 1 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel1_cor0, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel2_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 2 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel2_cor0, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel3_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor0, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel4_cor0) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel0_cor1) + ' of ' + str(NN) + ' cells selective for the whole corridor in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel0_cor1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel1_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 1 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel1_cor1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel2_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 2 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel2_cor1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel3_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel4_cor1) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel0_cor1) + ' of ' + str(NN) + ' cells selective for the whole corridor in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel0_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel1_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 1 in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel1_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel2_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 2 in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel2_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel3_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_sel4_cor1) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor1, n=NN, p=0.05, alternative='greater'), 5)))
 
         if (Holmes_Bonferroni):
             Ps = np.vstack((self.shuffle_stats.P_skaggs[0], self.shuffle_stats.P_skaggs[1]))
@@ -1046,6 +1046,11 @@ class ImagingSessionData:
             Ps = np.vstack((Ps, self.shuffle_stats.P_reliability[0], self.shuffle_stats.P_reliability[1]))
             Ps = np.vstack((Ps, self.shuffle_stats.P_selectivity, 1-self.shuffle_stats.P_selectivity))
             ii_tuned_cells = HolmBonfMat(Ps, 0.05)
+
+            self.shuffle_stats.P_all = Ps
+            self.shuffle_stats.P_all_names = ['Skaggs_0', 'Skaggs_1', 'spec_0', 'spec_1', 'reli_0', 'reli_1', 
+            	'spec_all_0', 'spec_all_1', 'spec_pat1_0', 'spec_pat1_1', 'spec_pat2_0', 'spec_pat2_1', 'spec_pat3_0', 'spec_pat3_1', 'spec_rew_0', 'cells_spec_rew_1']
+
 
             self.tuned_cells=dict(cells_Skaggs_0 = cellids[np.where(ii_tuned_cells[0,:])[0]], 
                 cells_Skaggs_1 = cellids[np.where(ii_tuned_cells[1,:])[0]], 

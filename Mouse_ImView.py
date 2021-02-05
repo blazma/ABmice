@@ -15,7 +15,12 @@ def save_vec(vec, filename):
    print('vector saved into file: ' + filename)
 
 
-# 1. load the class definitions
+# use this function to save data into file
+# np.savetxt("mat.csv", mat, delimiter=",",fmt='%10.5f', header='col1, col2')
+# see docs here: https://numpy.org/doc/stable/reference/generated/numpy.savetxt.html
+# mat can be any numpy array or vector
+
+# 1. load t[]he class definitions
 from ImageAnal import *
 
 # 2. tell python where the data is 
@@ -154,6 +159,12 @@ D1.ImLaps[153].plot_txv()
 ## 6.1. shuffle for all active cells
 cellids = np.nonzero((D1.cell_activelaps[0]>0.2) + (D1.cell_activelaps[1]>0.2))[0]
 D1.calc_shuffle(cellids, n=100, mode='shift')
+
+### this is how you save the P values into file:
+np.savetxt("Pvals.csv", np.transpose(np.vstack((cellids, D1.shuffle_stats.P_all))), delimiter=",",fmt='%10.5f', header='cellid' + str(D1.shuffle_stats.P_all_names))
+
+
+
 D1.shuffle_stats.plot_properties_shuffle()
 
 D1.plot_ratemaps(cellids=D1.tuned_cells['cells_reli_0'], corridor=19, sorted=True)
