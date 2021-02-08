@@ -1049,7 +1049,7 @@ class ImagingSessionData:
 
             self.shuffle_stats.P_all = Ps
             self.shuffle_stats.P_all_names = ['Skaggs_0', 'Skaggs_1', 'spec_0', 'spec_1', 'reli_0', 'reli_1', 
-            	'spec_all_0', 'spec_all_1', 'spec_pat1_0', 'spec_pat1_1', 'spec_pat2_0', 'spec_pat2_1', 'spec_pat3_0', 'spec_pat3_1', 'spec_rew_0', 'cells_spec_rew_1']
+            	'spec_all_0', 'spec_pat1_0', 'spec_pat2_0', 'spec_pat3_0', 'spec_rew_0', 'spec_all_1', 'spec_pat1_1', 'spec_pat2_1', 'spec_pat3_1', 'cells_spec_rew_1']
 
 
             self.tuned_cells=dict(cells_Skaggs_0 = cellids[np.where(ii_tuned_cells[0,:])[0]], 
@@ -1059,14 +1059,14 @@ class ImagingSessionData:
                 cells_reli_0 = cellids[np.where(ii_tuned_cells[4,:])[0]], 
                 cells_reli_1 = cellids[np.where(ii_tuned_cells[5,:])[0]], 
                 cells_spec_all_0 = cellids[np.where(ii_tuned_cells[6,:])[0]], 
-                cells_spec_all_1 = cellids[np.where(ii_tuned_cells[7,:])[0]], 
-                cells_spec_pat1_0 = cellids[np.where(ii_tuned_cells[8,:])[0]], 
-                cells_spec_pat1_1 = cellids[np.where(ii_tuned_cells[9,:])[0]], 
-                cells_spec_pat2_0 = cellids[np.where(ii_tuned_cells[10,:])[0]], 
-                cells_spec_pat2_1 = cellids[np.where(ii_tuned_cells[11,:])[0]], 
-                cells_spec_pat3_0 = cellids[np.where(ii_tuned_cells[12,:])[0]], 
-                cells_spec_pat3_1 = cellids[np.where(ii_tuned_cells[13,:])[0]], 
-                cells_spec_rew_0 = cellids[np.where(ii_tuned_cells[14,:])[0]], 
+                cells_spec_pat1_0 = cellids[np.where(ii_tuned_cells[7,:])[0]], 
+                cells_spec_pat2_0 = cellids[np.where(ii_tuned_cells[8,:])[0]], 
+                cells_spec_pat3_0 = cellids[np.where(ii_tuned_cells[9,:])[0]], 
+                cells_spec_rew_0 = cellids[np.where(ii_tuned_cells[10,:])[0]], 
+                cells_spec_all_1 = cellids[np.where(ii_tuned_cells[11,:])[0]], 
+                cells_spec_pat1_1 = cellids[np.where(ii_tuned_cells[12,:])[0]], 
+                cells_spec_pat2_1 = cellids[np.where(ii_tuned_cells[13,:])[0]], 
+                cells_spec_pat3_1 = cellids[np.where(ii_tuned_cells[14,:])[0]], 
                 cells_spec_rew_1 = cellids[np.where(ii_tuned_cells[15,:])[0]])
         else:
             self.tuned_cells=[]
