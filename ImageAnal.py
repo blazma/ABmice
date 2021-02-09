@@ -1325,8 +1325,8 @@ class ImagingSessionData:
 
             colors1 = plt.cm.binary(np.linspace(0., 1, 100)) 
             n_col2 = int(np.round(max_intensity - 100))
-            max_col2 = min(0.75, 0.25 + n_col2 * 0.5 / 100)
-            colors2 = plt.cm.gist_heat_r(np.linspace(0.25, max_col2, n_col2))
+            max_col2 = min(0.65, 0.25 + n_col2 / 100)
+            colors2 = plt.cm.autumn(np.linspace(0, max_col2, n_col2))
 
             # combine them and build a new colormap
             colors = np.vstack((colors1, colors2))
