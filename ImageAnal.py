@@ -1068,6 +1068,9 @@ class ImagingSessionData:
                 cells_spec_pat2_1 = cellids[np.where(ii_tuned_cells[13,:])[0]], 
                 cells_spec_pat3_1 = cellids[np.where(ii_tuned_cells[14,:])[0]], 
                 cells_spec_rew_1 = cellids[np.where(ii_tuned_cells[15,:])[0]])
+
+            self.tuned_cells['tuned_cells_0'] = np.unique(np.concatenate((self.tuned_cells['cells_Skaggs_0'], self.tuned_cells['cells_spec_0'], self.tuned_cells['cells_reli_0'])))
+            self.tuned_cells['tuned_cells_1'] = np.unique(np.concatenate((self.tuned_cells['cells_Skaggs_1'], self.tuned_cells['cells_spec_1'], self.tuned_cells['cells_reli_1'])))
         else:
             self.tuned_cells=[]
 
