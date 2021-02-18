@@ -138,6 +138,12 @@ class ImagingSessionData:
             print('Error: missing laps are found in the ExpStateMachineLog file! No analysis was performed, check the logfiles!')
             return
 
+        ## in certain tasks, the same corridor may appear multiple times in different substages
+        ## we need to keep this corridor in the list self.corridors for running self.get_lapdata()
+        ## but we should remove the redundancy after the data is loaded
+        self.corridors = np.unique(self.corridors)
+        self.N_corridors = len(self.corridors)
+
         self.N_bins = int(round(self.corridor_length_roxel / 70)) # self.ImLaps[self.i_Laps_ImData[2]].event_rate.shape[1]
         self.N_ImLaps = len(self.i_Laps_ImData)
 
@@ -147,6 +153,7 @@ class ImagingSessionData:
         self.activity_tensor_time = np.zeros((self.N_bins, self.N_ImLaps)) # same as the activity tensor time spatially smoothed
         self.combine_lapdata() ## fills in the cell_activity tensor
 
+        ## warning: self.cell_rates assumes a single reward zone at the end of the corridor
         self.cell_rates = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the whole corridor, pattern zones 1-3 and reward zone
         self.cell_reliability = [] # a list, each element is a vector with the reliability of the cells in a corridor
         self.cell_Fano_factor = [] # a list, each element is a vector with the reliability of the cells in a corridor
@@ -154,12 +161,14 @@ class ImagingSessionData:
         self.cell_activelaps=[] # a list, each element is a vector with the % of significantly spiking laps of the cells in a corridor
         self.cell_activelaps_df=[] # a list, each element is a vector with the % of significantly active (dF/F) laps of the cells in a corridor
         self.cell_tuning_specificity=[] # a list, each element is a vector with the tuning specificity of the cells in a corridor
+        ## warning: cell_corridor_selectivity assumes 2 corridors and a single reward zone at the end of the corridor
         self.cell_corridor_selectivity = np.zeros([5,self.N_cells]) # a matrix with the selectivity of the cells in the maze, corridor1, corridor2, corridor3 and reward area
         self.ratemaps = [] # a list, each element is an array space x neurons x trials being the ratemaps of the cells in a given corridor
         self.calculate_properties()
 
         self.candidate_PCs = [] # a list, each element is a vector of Trues and Falses of candidate place cells with at least 1 place field according to Hainmuller and Bartos 2018
         self.accepted_PCs = [] # a list, each element is a vector of Trues and Falses of accepted place cells after bootstrapping
+        ## warning: self.cell_corridor_similarity assumes 2 corridors
         self.cell_corridor_similarity = np.zeros([2, self.N_cells]) # a matrix with the pearson R and P value of the correlation between the ratemaps in the two mazes
         self.Hainmuller_PCs()
 
@@ -667,9 +676,8 @@ class ImagingSessionData:
         self.cell_activelaps_df=[]
         self.cell_tuning_specificity=[]
 
-        N_corridors = len(self.corridors)
-        if (N_corridors > 1):
-            for i_corridor in (np.arange(N_corridors-1)+1):
+        if (self.N_corridors > 1):
+            for i_corridor in (np.arange(self.N_corridors-1)+1):
                 corridor = self.corridors[i_corridor]
                 if (sum(self.i_corridors == corridor) > 10):
                     # select the laps in the corridor 
@@ -696,11 +704,15 @@ class ImagingSessionData:
 
                     ## average firing rate
                     rates = np.sum(total_spikes, axis=0) / np.sum(total_time)
-                    rates_pattern1 = np.sum(total_spikes[0:14,:], axis=0) / np.sum(total_time[0:14])
-                    rates_pattern2 = np.sum(total_spikes[14:28,:], axis=0) / np.sum(total_time[14:28])
-                    rates_pattern3 = np.sum(total_spikes[28:42,:], axis=0) / np.sum(total_time[28:42])
-                    rates_reward = np.sum(total_spikes[42:47,:], axis=0) / np.sum(total_time[42:47])
-                    self.cell_rates.append(np.vstack([rates, rates_pattern1, rates_pattern2, rates_pattern3, rates_reward]))
+                    if (self.task == 'contingency_learning'):
+                        rates_pattern1 = np.sum(total_spikes[0:14,:], axis=0) / np.sum(total_time[0:14])
+                        rates_pattern2 = np.sum(total_spikes[14:28,:], axis=0) / np.sum(total_time[14:28])
+                        rates_pattern3 = np.sum(total_spikes[28:42,:], axis=0) / np.sum(total_time[28:42])
+                        rates_reward = np.sum(total_spikes[42:47,:], axis=0) / np.sum(total_time[42:47])
+                        self.cell_rates.append(np.vstack([rates, rates_pattern1, rates_pattern2, rates_pattern3, rates_reward]))
+                    else :
+                        self.cell_rates.append(np.expand_dims(rates, axis=0))
+
 
                     ## reliability and Fano factor
                     reliability = np.zeros(self.N_cells)
@@ -795,11 +807,12 @@ class ImagingSessionData:
                     self.cell_tuning_specificity.append(tuning_spec)
 
             # self.cell_rates = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the total corridor, pattern zone 1-3 and reward zone
-            self.cell_corridor_selectivity[0,:] = (self.cell_rates[0][0,:] - self.cell_rates[1][0,:]) / (self.cell_rates[0][0,:] + self.cell_rates[1][0,:])
-            self.cell_corridor_selectivity[1,:] = (self.cell_rates[0][1,:] - self.cell_rates[1][1,:]) / (self.cell_rates[0][1,:] + self.cell_rates[1][1,:])
-            self.cell_corridor_selectivity[2,:] = (self.cell_rates[0][2,:] - self.cell_rates[1][2,:]) / (self.cell_rates[0][2,:] + self.cell_rates[1][2,:])
-            self.cell_corridor_selectivity[3,:] = (self.cell_rates[0][3,:] - self.cell_rates[1][3,:]) / (self.cell_rates[0][3,:] + self.cell_rates[1][3,:])
-            self.cell_corridor_selectivity[4,:] = (self.cell_rates[0][4,:] - self.cell_rates[1][4,:]) / (self.cell_rates[0][4,:] + self.cell_rates[1][4,:])
+            if ((self.task == 'contingency_learning') & (self.N_corridors == 2)):
+                self.cell_corridor_selectivity[0,:] = (self.cell_rates[0][0,:] - self.cell_rates[1][0,:]) / (self.cell_rates[0][0,:] + self.cell_rates[1][0,:])
+                self.cell_corridor_selectivity[1,:] = (self.cell_rates[0][1,:] - self.cell_rates[1][1,:]) / (self.cell_rates[0][1,:] + self.cell_rates[1][1,:])
+                self.cell_corridor_selectivity[2,:] = (self.cell_rates[0][2,:] - self.cell_rates[1][2,:]) / (self.cell_rates[0][2,:] + self.cell_rates[1][2,:])
+                self.cell_corridor_selectivity[3,:] = (self.cell_rates[0][3,:] - self.cell_rates[1][3,:]) / (self.cell_rates[0][3,:] + self.cell_rates[1][3,:])
+                self.cell_corridor_selectivity[4,:] = (self.cell_rates[0][4,:] - self.cell_rates[1][4,:]) / (self.cell_rates[0][4,:] + self.cell_rates[1][4,:])
 
 
     def plot_properties(self, cellids=np.array([-1]), interactive=False):
@@ -976,8 +989,9 @@ class ImagingSessionData:
                 self.candidate_PCs.append(candidate_cells)
                 self.accepted_PCs.append(accepted_cells)
         
-        for i_cell in np.arange(rate_matrix.shape[1]):
-            self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
+        if (self.N_corridors == 2):
+            for i_cell in np.arange(rate_matrix.shape[1]):
+                self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
 
     # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
     def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None, randseed=123, print_binom_test=True, Holmes_Bonferroni=True):
@@ -989,19 +1003,23 @@ class ImagingSessionData:
         NN = cellids.size
         N_corrids = len(self.shuffle_stats.cell_activelaps)
         sanity_checks_passed = True
+        if (N_corrids != self.N_corridors):
+                print ('warning: number of corridors is different between shuffling and control!')
+                sanity_checks_passed = False            
         for i_cor in range(N_corrids):
             if (sum(np.abs(self.shuffle_stats.cell_reliability[i_cor][:,n] - self.cell_reliability[i_cor][cellids]) > 0.0001) > 0):
                 print ('warning: calculating reliability is different between shuffling and control!')
                 sanity_checks_passed = False
     
-        if (np.sum(np.abs(self.shuffle_stats.cell_corridor_selectivity[:,:,n] - self.cell_corridor_selectivity[:,cellids]) > 0.0001) > 0):
-            print ('warning: calculating corridor selectivity is different between shuffling and control!')
-            sanity_checks_passed = False
+        if ((self.task == 'contingency_learning') & (self.N_corridors == 2)):
+            if (np.sum(np.abs(self.shuffle_stats.cell_corridor_selectivity[:,:,n] - self.cell_corridor_selectivity[:,cellids]) > 0.0001) > 0):
+                print ('warning: calculating corridor selectivity is different between shuffling and control!')
+                sanity_checks_passed = False
 
         if (sanity_checks_passed):
             print ('Shuffling stats calculated succesfully')
 
-        if (print_binom_test):
+        if ((print_binom_test) & (self.N_corridors == 2)):
             N_skaggs0 = len(np.where(self.shuffle_stats.P_skaggs[0] < 0.05)[0])
             N_skaggs1 = len(np.where(self.shuffle_stats.P_skaggs[1] < 0.05)[0])
 
@@ -1010,6 +1028,13 @@ class ImagingSessionData:
 
             N_rel0 = len(np.where(self.shuffle_stats.P_reliability[0] < 0.05)[0])
             N_rel1 = len(np.where(self.shuffle_stats.P_reliability[1] < 0.05)[0])
+
+            print(str(N_skaggs0) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_skaggs1) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_TunSpec0) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_TunSpec1) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec1, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_rel0) + ' of ' + str(NN) + ' cells reliability significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel0, n=NN, p=0.05, alternative='greater'), 5)))
+            print(str(N_rel1) + ' of ' + str(NN) + ' cells reliability significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel1, n=NN, p=0.05, alternative='greater'), 5)))
 
             N_sel0_cor0 = len(np.where(self.shuffle_stats.P_selectivity[0,] < 0.05)[0])
             N_sel1_cor0 = len(np.where(self.shuffle_stats.P_selectivity[1,] < 0.05)[0])
@@ -1023,12 +1048,6 @@ class ImagingSessionData:
             N_sel3_cor1 = len(np.where(self.shuffle_stats.P_selectivity[3,] > 0.95)[0])
             N_sel4_cor1 = len(np.where(self.shuffle_stats.P_selectivity[4,] > 0.95)[0])
 
-            print(str(N_skaggs0) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_skaggs1) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_TunSpec0) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_TunSpec1) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_rel0) + ' of ' + str(NN) + ' cells reliability significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_rel1) + ' of ' + str(NN) + ' cells reliability significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel1, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel0_cor0) + ' of ' + str(NN) + ' cells selective for the whole corridor in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel0_cor0, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel1_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 1 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel1_cor0, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel2_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 2 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel2_cor0, n=NN, p=0.05, alternative='greater'), 5)))
@@ -1040,7 +1059,7 @@ class ImagingSessionData:
             print(str(N_sel3_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor1, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel4_cor1) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor1, n=NN, p=0.05, alternative='greater'), 5)))
 
-        if (Holmes_Bonferroni):
+        if (Holmes_Bonferroni & (self.N_corridors == 2) & (self.task == 'contingency_learning')):
             Ps = np.vstack((self.shuffle_stats.P_skaggs[0], self.shuffle_stats.P_skaggs[1]))
             Ps = np.vstack((Ps, self.shuffle_stats.P_tuning_specificity[0], self.shuffle_stats.P_tuning_specificity[1]))
             Ps = np.vstack((Ps, self.shuffle_stats.P_reliability[0], self.shuffle_stats.P_reliability[1]))
@@ -1049,7 +1068,7 @@ class ImagingSessionData:
 
             self.shuffle_stats.P_all = Ps
             self.shuffle_stats.P_all_names = ['Skaggs_0', 'Skaggs_1', 'spec_0', 'spec_1', 'reli_0', 'reli_1', 
-            	'spec_all_0', 'spec_pat1_0', 'spec_pat2_0', 'spec_pat3_0', 'spec_rew_0', 'spec_all_1', 'spec_pat1_1', 'spec_pat2_1', 'spec_pat3_1', 'cells_spec_rew_1']
+            	'select_all_0', 'select_pat1_0', 'select_pat2_0', 'select_pat3_0', 'select_rew_0', 'select_all_1', 'select_pat1_1', 'select_pat2_1', 'select_pat3_1', 'cells_select_rew_1']
 
 
             self.tuned_cells=dict(cells_Skaggs_0 = cellids[np.where(ii_tuned_cells[0,:])[0]], 
@@ -1058,16 +1077,16 @@ class ImagingSessionData:
                 cells_spec_1 = cellids[np.where(ii_tuned_cells[3,:])[0]], 
                 cells_reli_0 = cellids[np.where(ii_tuned_cells[4,:])[0]], 
                 cells_reli_1 = cellids[np.where(ii_tuned_cells[5,:])[0]], 
-                cells_spec_all_0 = cellids[np.where(ii_tuned_cells[6,:])[0]], 
-                cells_spec_pat1_0 = cellids[np.where(ii_tuned_cells[7,:])[0]], 
-                cells_spec_pat2_0 = cellids[np.where(ii_tuned_cells[8,:])[0]], 
-                cells_spec_pat3_0 = cellids[np.where(ii_tuned_cells[9,:])[0]], 
-                cells_spec_rew_0 = cellids[np.where(ii_tuned_cells[10,:])[0]], 
-                cells_spec_all_1 = cellids[np.where(ii_tuned_cells[11,:])[0]], 
-                cells_spec_pat1_1 = cellids[np.where(ii_tuned_cells[12,:])[0]], 
-                cells_spec_pat2_1 = cellids[np.where(ii_tuned_cells[13,:])[0]], 
-                cells_spec_pat3_1 = cellids[np.where(ii_tuned_cells[14,:])[0]], 
-                cells_spec_rew_1 = cellids[np.where(ii_tuned_cells[15,:])[0]])
+                cells_select_all_0 = cellids[np.where(ii_tuned_cells[6,:])[0]], 
+                cells_select_pat1_0 = cellids[np.where(ii_tuned_cells[7,:])[0]], 
+                cells_select_pat2_0 = cellids[np.where(ii_tuned_cells[8,:])[0]], 
+                cells_select_pat3_0 = cellids[np.where(ii_tuned_cells[9,:])[0]], 
+                cells_select_rew_0 = cellids[np.where(ii_tuned_cells[10,:])[0]], 
+                cells_select_all_1 = cellids[np.where(ii_tuned_cells[11,:])[0]], 
+                cells_select_pat1_1 = cellids[np.where(ii_tuned_cells[12,:])[0]], 
+                cells_select_pat2_1 = cellids[np.where(ii_tuned_cells[13,:])[0]], 
+                cells_select_pat3_1 = cellids[np.where(ii_tuned_cells[14,:])[0]], 
+                cells_select_rew_1 = cellids[np.where(ii_tuned_cells[15,:])[0]])
 
             self.tuned_cells['tuned_cells_0'] = np.unique(np.concatenate((self.tuned_cells['cells_Skaggs_0'], self.tuned_cells['cells_spec_0'], self.tuned_cells['cells_reli_0'])))
             self.tuned_cells['tuned_cells_1'] = np.unique(np.concatenate((self.tuned_cells['cells_Skaggs_1'], self.tuned_cells['cells_spec_1'], self.tuned_cells['cells_reli_1'])))
@@ -1096,23 +1115,27 @@ class ImagingSessionData:
     def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1])):
         ## plot the average event rate of all cells in a given corridor
         ## if corridor == -1 then the first corridor is used
-        ## normalisec: each cell ratemap is normalised to have a max = 1
+        ## normalized: each cell ratemap is normalized to have a max = 1
         ## sorted: sorting the ramemaps by their peaks - not yet implemented
         ## corridor_sort: which corridor to use for sorting the ratemaps
         ## cellids: np array with the indexes of the cells to be plotted. when -1: all cells are plotted
         
-        vmax = 0
-
         if (cellids[0] == -1):
             cellids = np.array(range(self.activity_tensor.shape[1]))
         N_cells_plotted = len(cellids)
 
+        nbins = self.activity_tensor.shape[0]
         corrids = np.unique(self.i_corridors)
         n_corrid = len(corrids)
         ## we calculate the rate matrix for all corridors - we need to use the same colors for the images
-        for i_corrid in range(n_corrid):
-            if (np.max(self.ratemaps[i_corrid]) > vmax):
-                vmax = np.max(self.ratemaps[i_corrid])
+        
+        vmax = 0
+        if (normalized):
+            vmax = 1
+        else: 
+            for i_corrid in range(n_corrid):
+                if (np.max(self.ratemaps[i_corrid]) > vmax):
+                    vmax = np.max(self.ratemaps[i_corrid])
 
         if (corridor == -1):
 
@@ -1140,6 +1163,11 @@ class ImagingSessionData:
                 rmp = np.array(self.ratemaps[i_corrid][:,cellids], copy=True)
                 ratemaps_to_sort = np.transpose(rmp)
                 ratemaps_to_plot = ratemaps_to_sort[sort_index,:]
+                if (normalized):
+                    for i in range(ratemaps_to_plot.shape[0]):
+                        rate_range = max(ratemaps_to_plot[i,:]) - min(ratemaps_to_plot[i,:])
+                        ratemaps_to_plot[i,:] = (ratemaps_to_plot[i,:] - min(ratemaps_to_plot[i,:])) / rate_range
+
                 axs[i_corrid].set_title(title_string)
                 ims.append(axs[i_corrid].matshow(ratemaps_to_plot, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary'))
                 axs[i_corrid].set_facecolor(matcols.CSS4_COLORS['palegreen'])
@@ -1148,9 +1176,22 @@ class ImagingSessionData:
                     axs[i_corrid].set_yticklabels(cellids[sort_index])
                 else:
                     axs[i_corrid].set_yticklabels(cellids)
+                plt.colorbar(ims[i_corrid], orientation='horizontal',ax=axs[i_corrid])
+
+                ## add reward zones
+                zone_starts = self.corridor_list.corridors[self.corridors[i_corrid+1]].reward_zone_starts
+                if (len(zone_starts) > 0):
+                    zone_ends = self.corridor_list.corridors[self.corridors[i_corrid+1]].reward_zone_ends
+                    bottom, top = axs[i_corrid].get_ylim()
+                    for i_zone in range(len(zone_starts)):
+                        left = zone_starts[i_zone] * nbins             
+                        right = zone_ends[i_zone] * nbins              
+                        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                        axs[i_corrid].add_patch(polygon)
+                        print('adding reward zone to the ', i_corrid, 'th corridor, ', self.corridors[i_corrid+1])
 
             fig.suptitle(suptitle_string)
-            plt.colorbar(ims[i_corrid])
+            fig.tight_layout()
             plt.show(block=False)       
 
         else:
@@ -1177,7 +1218,7 @@ class ImagingSessionData:
                 ax_bottom.set_yticklabels(cellids[sort_index])
             else:
                 ax_bottom.set_yticklabels(cellids)
-            plt.colorbar(im1)
+            plt.colorbar(im1, orientation='horizontal')
             plt.show(block=False)       
 
 
@@ -1334,6 +1375,7 @@ class ImagingSessionData:
             # combine them and build a new colormap
             colors = np.vstack((colors1, colors2))
             mymap = matcols.LinearSegmentedColormap.from_list('my_colormap', colors)
+            nbins = self.activity_tensor.shape[0]
 
             fig, ax = plt.subplots(2,corridor.size, squeeze=False, sharey='row', figsize=(6*corridor.size,8),sharex=True)
             for cor_index in range(corridor.size):
@@ -1390,14 +1432,14 @@ class ImagingSessionData:
                 if (reward == True):
                     i_cor = np.nonzero(correct_reward[0,:])[0]
                     n_cor = len(i_cor)
-                    ax[0, cor_index].scatter(np.ones(n_cor)*50, i_cor, marker="_", c='C0')
+                    ax[0, cor_index].scatter(np.ones(n_cor)*nbins, i_cor, marker="_", c='C0')
                     i_rew = np.nonzero(correct_reward[1,:])[0]
                     n_cor = len(i_rew)
-                    ax[0, cor_index].scatter(np.ones(n_cor)*50.5, i_rew, marker="_", c='C1')
+                    ax[0, cor_index].scatter(np.ones(n_cor)*(nbins+0.5), i_rew, marker="_", c='C1')
 
                 plt.colorbar(im1, orientation='horizontal',ax=ax[1,cor_index])
-                ax[0,cor_index].set_xlim(0, 51)
-                ax[1,cor_index].set_xlim(0, 51)
+                ax[0,cor_index].set_xlim(0, nbins+1)
+                ax[1,cor_index].set_xlim(0, nbins+1)
                 ax[0,cor_index].set_facecolor(matcols.CSS4_COLORS['palegreen'])
 
                 if (save_data == True):
@@ -1408,11 +1450,24 @@ class ImagingSessionData:
                             file_writer.writerow(np.round(rate_matrix[:,i_col], 2))
                     print('ratemap saved into file: ' + filename)
 
+            ## add reward zones
+            for cor_index in range(corridor.size):
+                zone_starts = self.corridor_list.corridors[self.corridors[cor_index+1]].reward_zone_starts
+                if (len(zone_starts) > 0):
+                    zone_ends = self.corridor_list.corridors[self.corridors[cor_index+1]].reward_zone_ends
+                    bottom, top = ax[0,cor_index].get_ylim()
+                    for i_zone in range(len(zone_starts)):
+                        left = zone_starts[i_zone] * nbins             
+                        right = zone_ends[i_zone] * nbins              
+                        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                        ax[0,cor_index].add_patch(polygon)
+                        # print('adding reward zone to the ', cor_index, 'th corridor, ', self.corridors[cor_index+1])
 
             #write pdf if asked
             if write_pdf==True and multipdf_object!=-1:
                 plt.savefig(multipdf_object, format='pdf')
-            
+
+            fig.tight_layout()
             plt.show(block=False)
             
             if write_pdf==True:
@@ -1432,6 +1487,7 @@ class ImagingSessionData:
             else:
                 print('Warning: specified corridor does not exist in this session!')
                 return
+        nbins = self.activity_tensor.shape[0]
                 
         ymax = 0              
         fig, ax = plt.subplots(1,corridor.size, squeeze=False, sharey='row', figsize=(6*corridor.size,4), sharex=True)
@@ -1449,14 +1505,15 @@ class ImagingSessionData:
             sp_laps = self.activity_tensor[:,:,i_laps]
             sp = sp_laps[:,cellids,:]
             total_time = self.activity_tensor_time[:,i_laps]
-            popact_laps = np.sum(sp, 1) / total_time
+            popact_laps = np.nansum(sp, 1) / total_time
             
 
             #calculate for plotting average rates
             xmids=np.arange(50)
             title_string = 'total activity in corridor ' + str(corridor_to_plot)
             if (bylaps == True):
-                scale_factor = np.round(np.mean(popact_laps))
+                if (cor_index==0):
+                    scale_factor = np.round(np.mean(popact_laps))
                 ax[0,cor_index].plot(popact_laps + np.arange(popact_laps.shape[1])*scale_factor)
                 ax[0,cor_index].set_title(title_string)
                 ylab_text = 'lap number x ' + str(scale_factor) + ' / total activity'
@@ -1486,6 +1543,18 @@ class ImagingSessionData:
                     print('ratemap saved into file: ' + filename)
 
                 ax[0,0].set_ylim(0, ymax)
+                    ## add reward zones
+        for cor_index in range(corridor.size):
+            zone_starts = self.corridor_list.corridors[self.corridors[cor_index+1]].reward_zone_starts
+            if (len(zone_starts) > 0):
+                zone_ends = self.corridor_list.corridors[self.corridors[cor_index+1]].reward_zone_ends
+                bottom, top = ax[0,cor_index].get_ylim()
+                for i_zone in range(len(zone_starts)):
+                    left = zone_starts[i_zone] * nbins             
+                    right = zone_ends[i_zone] * nbins              
+                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                    ax[0,cor_index].add_patch(polygon)
+
         plt.show(block=False)
 
 
@@ -1706,8 +1775,8 @@ class Lap_ImData:
         self.raw_position = position
         self.lick_times = lick_times
         self.reward_times = reward_times
-        self.corridor = corridor # the ID of the corridor in the given stage; This indexes the corridors in the vector called self.corridors
-        self.corridor_list = corridor_list # the ID of the corridor in the given stage; This indexes the corridors in the vector called self.corridors
+        self.corridor = corridor # the ID of the corridor in the given stage; This indexes the corridors in the list called self.corridor_list.corridors
+        self.corridor_list = corridor_list # a list containing the corridor properties in the given stage
         self.mode = mode # 1 if all elements are recorded in 'Go' mode
         self.actions = actions
 
@@ -1730,7 +1799,9 @@ class Lap_ImData:
         self.frames_spikes = lap_frames_spikes
         self.frames_pos = lap_frames_pos
         self.frames_time = lap_frames_time
-        self.min_N_frames = 50 # we analyse imaging data if there are at least 50 frames in the lap
+
+        nbins = int(round(self.corridor_length_roxel / 70))
+        self.min_N_frames = nbins # we analyse imaging data if there are at least 1 frame in every spatial bin, on average
         self.n_cells = 1 # we still create the same np arrays even if there are no cells
         if (not(np.isnan(self.frames_time).any())): # we have real data
             if (len(self.frames_time) > self.min_N_frames): # we have more than 50 frames
@@ -1738,7 +1809,6 @@ class Lap_ImData:
             
         ####################################################################
         ## resample time and position with a uniform 100 Hz
-        nbins = int(round(self.corridor_length_roxel / 70))
         self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
         
         if (len(self.raw_time) > 2):

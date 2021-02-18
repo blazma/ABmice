@@ -78,11 +78,10 @@ cellids = np.nonzero(D1.cell_corridor_selectivity[2,] > 0.5)[0]
 cellids = np.nonzero(D1.candidate_PCs[0] + D1.candidate_PCs[1])[0]
 
 D1.plot_ratemaps(cellids = cellids)
-D2.plot_ratemaps(cellids = cellids)
 
-D1.plot_cell_laps(cellid=110, signal='rate', save_data=False) ## look at lap 20
-D2.plot_cell_laps(cellid=110, signal='rate', save_data=False) ## look at lap 20
+D1.plot_cell_laps(cellid=1076, signal='rate', save_data=False) ## look at lap 20
 
+# > 200:  1076, 351, 269
 
 
 ## d) corridor selectivity - whether the ratemaps are similar in the two corridors
@@ -159,6 +158,9 @@ D1.ImLaps[153].plot_txv()
 ## 6.1. shuffle for all active cells
 cellids = np.nonzero((D1.cell_activelaps[0]>0.2) + (D1.cell_activelaps[1]>0.2))[0]
 D1.calc_shuffle(cellids, n=100, mode='shift')
+
+
+
 
 ### this is how you save the P values into file:
 np.savetxt("Pvals.csv", np.transpose(np.vstack((cellids, D1.shuffle_stats.P_all))), delimiter=",",fmt='%10.5f', header='cellid' + str(D1.shuffle_stats.P_all_names))
