@@ -207,7 +207,7 @@ class ImShuffle:
                 self.P_tuning_specificity = self.P_tuning_specificity_batch
                 self.accepted_PCs = self.accepted_PCs_batch
 
-                if ((self.task == 'contingency_learning') & (self.N_corridors == 2)):
+                if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
                     self.cell_corridor_selectivity = self.cell_corridor_selectivity_batch
                     self.P_selectivity = self.P_selectivity_batch
             else:
@@ -221,7 +221,7 @@ class ImShuffle:
                     self.P_tuning_specificity[i_cor] = np.hstack((self.P_tuning_specificity[i_cor], self.P_tuning_specificity_batch[i_cor]))
                     self.accepted_PCs[i_cor] = np.hstack((self.accepted_PCs[i_cor], self.accepted_PCs_batch[i_cor]))
 
-                if ((self.task == 'contingency_learning') & (self.N_corridors == 2)):
+                if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
                     self.cell_corridor_selectivity = np.concatenate((self.cell_corridor_selectivity, self.cell_corridor_selectivity_batch), axis=1)
                     self.P_selectivity = np.hstack((self.P_selectivity, self.P_selectivity_batch))
 
@@ -512,7 +512,7 @@ class ImShuffle:
                     self.P_tuning_specificity_batch.append(P_tuning_specificity_batch)
 
             # self.cell_rates = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the total corridor, pattern zones 1-3 and reward zone
-            if ((self.task == 'contingency_learning') & (self.N_corridors == 2)):
+            if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
                 self.cell_corridor_selectivity_batch[0,:,:] = (self.cell_rates[0][0,:,:] - self.cell_rates[1][0,:,:]) / (self.cell_rates[0][0,:,:] + self.cell_rates[1][0,:,:])
                 self.cell_corridor_selectivity_batch[1,:,:] = (self.cell_rates[0][1,:,:] - self.cell_rates[1][1,:,:]) / (self.cell_rates[0][1,:,:] + self.cell_rates[1][1,:,:])
                 self.cell_corridor_selectivity_batch[2,:,:] = (self.cell_rates[0][2,:,:] - self.cell_rates[1][2,:,:]) / (self.cell_rates[0][2,:,:] + self.cell_rates[1][2,:,:])
@@ -646,7 +646,7 @@ class ImShuffle:
 
         ###########################
         ## plots of corridor selectivity
-        if ((self.task == 'contingency_learning') & (self.N_corridors == 2)):
+        if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
 
             fig, ax = plt.subplots(1, 5, figsize=(7,3), sharex='all', sharey='all')
             plt.subplots_adjust(wspace=0.35, hspace=0.2)
@@ -772,7 +772,7 @@ class ImShuffle:
                 self.candidate_PCs_batch.append(candidate_cells)
                 self.accepted_PCs_batch.append(accepted_cells.astype(int))
         
-        if (self.N_corridors == 2):
+        if (self.N_corridors == 3):
             for i_cell in np.arange(rate_matrix.shape[1]):
                 for i_shuffle in np.arange(rate_matrix.shape[2]):
                     self.cell_corridor_similarity[:,i_cell, i_shuffle] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell,i_shuffle], self.ratemaps[1][:,i_cell,i_shuffle])

@@ -49,6 +49,24 @@ D2 = ImagingSessionData(datapath, date_time, name, task, suite2p_folder, imaging
 D2.i_Laps_ImData
 
 #########################################################
+## quick access to plotting functions...
+#########################################################
+cellids = np.nonzero((D1.cell_activelaps[0]>0.4) + (D1.cell_activelaps[1]>0.4))[0]
+D1.calc_shuffle(cellids, n=100, mode='shift')
+D1.shuffle_stats.plot_properties_shuffle(maxNcells=30)
+
+D1.plot_session(save_data=False, selected_laps=np.arange(139, 316))
+
+D1.plot_cell_laps(cellid=194, signal='rate', save_data=False) ## look at lap 20
+D1.plot_cell_laps(cellid=19, signal='dF') ## look at lap 20
+
+D1.plot_ratemaps(cellids = cellids, sorted=True, corridor_sort=19)
+
+D1.plot_popact(cellids, bylaps=True)
+D1.plot_popact(cellids, bylaps=False)
+
+
+#########################################################
 ## PLOTTING
 #########################################################
 ## 0. plotting the behavioral data in the different corridors

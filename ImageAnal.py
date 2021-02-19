@@ -807,7 +807,7 @@ class ImagingSessionData:
                     self.cell_tuning_specificity.append(tuning_spec)
 
             # self.cell_rates = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the total corridor, pattern zone 1-3 and reward zone
-            if ((self.task == 'contingency_learning') & (self.N_corridors == 2)):
+            if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
                 self.cell_corridor_selectivity[0,:] = (self.cell_rates[0][0,:] - self.cell_rates[1][0,:]) / (self.cell_rates[0][0,:] + self.cell_rates[1][0,:])
                 self.cell_corridor_selectivity[1,:] = (self.cell_rates[0][1,:] - self.cell_rates[1][1,:]) / (self.cell_rates[0][1,:] + self.cell_rates[1][1,:])
                 self.cell_corridor_selectivity[2,:] = (self.cell_rates[0][2,:] - self.cell_rates[1][2,:]) / (self.cell_rates[0][2,:] + self.cell_rates[1][2,:])
@@ -989,7 +989,7 @@ class ImagingSessionData:
                 self.candidate_PCs.append(candidate_cells)
                 self.accepted_PCs.append(accepted_cells)
         
-        if (self.N_corridors == 2):
+        if (self.N_corridors == 3):
             for i_cell in np.arange(rate_matrix.shape[1]):
                 self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
 
@@ -1003,7 +1003,7 @@ class ImagingSessionData:
         NN = cellids.size
         N_corrids = len(self.shuffle_stats.cell_activelaps)
         sanity_checks_passed = True
-        if (N_corrids != self.N_corridors):
+        if ((N_corrids + 1) != self.N_corridors):
                 print ('warning: number of corridors is different between shuffling and control!')
                 sanity_checks_passed = False            
         for i_cor in range(N_corrids):
@@ -1011,7 +1011,7 @@ class ImagingSessionData:
                 print ('warning: calculating reliability is different between shuffling and control!')
                 sanity_checks_passed = False
     
-        if ((self.task == 'contingency_learning') & (self.N_corridors == 2)):
+        if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
             if (np.sum(np.abs(self.shuffle_stats.cell_corridor_selectivity[:,:,n] - self.cell_corridor_selectivity[:,cellids]) > 0.0001) > 0):
                 print ('warning: calculating corridor selectivity is different between shuffling and control!')
                 sanity_checks_passed = False
@@ -1019,7 +1019,7 @@ class ImagingSessionData:
         if (sanity_checks_passed):
             print ('Shuffling stats calculated succesfully')
 
-        if ((print_binom_test) & (self.N_corridors == 2)):
+        if ((print_binom_test) & (self.N_corridors == 3)):
             N_skaggs0 = len(np.where(self.shuffle_stats.P_skaggs[0] < 0.05)[0])
             N_skaggs1 = len(np.where(self.shuffle_stats.P_skaggs[1] < 0.05)[0])
 
@@ -1059,7 +1059,7 @@ class ImagingSessionData:
             print(str(N_sel3_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor1, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel4_cor1) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor1, n=NN, p=0.05, alternative='greater'), 5)))
 
-        if (Holmes_Bonferroni & (self.N_corridors == 2) & (self.task == 'contingency_learning')):
+        if (Holmes_Bonferroni & (self.N_corridors == 3) & (self.task == 'contingency_learning')):
             Ps = np.vstack((self.shuffle_stats.P_skaggs[0], self.shuffle_stats.P_skaggs[1]))
             Ps = np.vstack((Ps, self.shuffle_stats.P_tuning_specificity[0], self.shuffle_stats.P_tuning_specificity[1]))
             Ps = np.vstack((Ps, self.shuffle_stats.P_reliability[0], self.shuffle_stats.P_reliability[1]))
