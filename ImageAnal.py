@@ -66,6 +66,14 @@ class ImagingSessionData:
         self.get_stage(self.datapath, self.date_time, self.name, self.task)
         self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])#[0:3]
 
+        self.last_zone_start = 0
+        self.last_zone_end = 0
+        for i_corridor in self.corridors:
+            if (i_corridor > 0):
+                if (max(self.corridor_list.corridors[i_corridor].reward_zone_starts) > self.last_zone_start):
+                    self.last_zone_start = max(self.corridor_list.corridors[i_corridor].reward_zone_starts)
+                if (max(self.corridor_list.corridors[i_corridor].reward_zone_ends) > self.last_zone_end):
+                    self.last_zone_end = max(self.corridor_list.corridors[i_corridor].reward_zone_ends)
 
         self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
         self.corridor_length_roxel = (self.corridor_list.corridors[self.corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
@@ -227,22 +235,22 @@ class ImagingSessionData:
         return data
 
     def test_anticipatory(self):
-        corridor_ids = np.zeros(self.n_laps)
-        for i in range(self.n_laps):
-            corridor_ids[i] = self.ImLaps[i].corridor # the true corridor ID
-        corridor_types = np.unique(corridor_ids)
+        corridor_types = np.unique(self.i_corridors)
         nrow = len(corridor_types)
         self.anticipatory = []
 
         for row in range(nrow):
-            ids = np.where(corridor_ids == corridor_types[row])
+            ids = np.where(self.i_corridors == corridor_types[row])
             n_laps = np.shape(ids)[1]
             n_zones = np.shape(self.ImLaps[ids[0][0]].zones)[1]
             if (n_zones == 1):
                 lick_rates = np.zeros([2,n_laps])
                 k = 0
                 for lap in np.nditer(ids):
-                    lick_rates[:,k] = self.ImLaps[lap].preZoneRate
+                    if (self.ImLaps[lap].mode == 1):
+                        lick_rates[:,k] = self.ImLaps[lap].preZoneRate
+                    else:
+                        lick_rates[:,k] = np.nan
                     k = k + 1
                 self.anticipatory.append(anticipatory_Licks(lick_rates[0,:], lick_rates[1,:], corridor_types[row]))
 
@@ -514,6 +522,8 @@ class ImagingSessionData:
         mode_array=[]
         lick_array=[]
         action=[]
+        substage=[]
+
 
         data_log_file_string=datapath + 'data/' + name + '_' + task + '/' + date_time + '/' + date_time + '_' + name + '_' + task + '_ExpStateMashineLog.txt'
         data_log_file=open(data_log_file_string)
@@ -527,6 +537,7 @@ class ImagingSessionData:
             mode_array.append(line[6] == 'Go')
             lick_array.append(line[9] == 'TRUE')
             action.append(str(line[14]))
+            substage.append(str(line[17]))
 
         laptime = np.array(time_array)
         time_breaks = np.where(np.diff(laptime) > 1)[0]
@@ -544,7 +555,10 @@ class ImagingSessionData:
             print(missing_laps)
             self.n_laps = -1
             return 
-            
+        
+        sstage = np.array(substage)
+        current_sstage = sstage[0]
+
         pos = np.array(position_array)
         lick = np.array(lick_array)
         maze = np.array(maze_array)
@@ -592,6 +606,19 @@ class ImagingSessionData:
                 lick_lap = lick[y] ## vector of Trues and Falses
                 t_licks = t_lap[lick_lap] # time of licks
     
+                sstage_lap = np.unique(sstage[y])
+                if (len(sstage_lap) > 1):
+                    print('More than one substage in lap ', self.n_laps)
+                    return 
+
+                if (sstage_lap != current_sstage):
+                    print('############################################################')
+                    print('substage change detected!')
+                    print('first lap in substage ', sstage_lap, 'is lap', self.n_laps, ', which started at t', t_lap[0])
+                    print('the time of the change in imaging time is: ', t_lap[0] - self.imstart_time)
+                    print('############################################################')
+                    current_sstage = sstage_lap
+
                 istart = np.where(y)[0][0]
                 iend = np.where(y)[0][-1] + 1
                 action_lap = action[istart:iend]
@@ -599,6 +626,16 @@ class ImagingSessionData:
                 reward_indices = [j for j, x in enumerate(action_lap) if x == "TrialReward"]
                 t_reward = t_lap[reward_indices]
     
+
+                ## detecting invalid laps - terminated before the animal could receive reward
+                valid_lap = False
+                if (len(t_reward) > 0): # lap is valid if the animal got reward
+                    valid_lap = True
+                if (max(pos_lap) > (self.corridor_length_roxel * self.last_zone_end)): # # lap is valid if the animal left the last reward zone
+                    valid_lap = True
+                if (valid_lap == False):
+                    mode_lap = 0
+
                 actions = []
                 for j in range(len(action_lap)):
                     if not((action_lap[j]) in ['No', 'TrialReward']):
@@ -610,6 +647,10 @@ class ImagingSessionData:
                     add_lap = False
                     if (self.n_laps in selected_laps):
                         add_lap = True
+
+                ## include only valid laps
+                if (mode_lap == 0):
+                    add_lap = False
 
                 ### imaging data    
                 iframes = np.where(self.frame_laps == i_lap)[0]
@@ -643,7 +684,7 @@ class ImagingSessionData:
         valid_lap = np.zeros(len(self.i_Laps_ImData))
         k_lap = 0
         for i_lap in self.i_Laps_ImData:
-            if (self.ImLaps[i_lap].n_cells > 1):
+            if (self.ImLaps[i_lap].n_cells > 1):  # we only add imaging data when the lap is valid, so we don't need to test it again
                 valid_lap[k_lap] = 1
                 self.raw_activity_tensor[:,:,k_lap] = np.transpose(self.ImLaps[i_lap].spks_pos)
                 self.raw_activity_tensor_time[:,k_lap] = self.ImLaps[i_lap].T_pos
@@ -1068,7 +1109,7 @@ class ImagingSessionData:
 
             self.shuffle_stats.P_all = Ps
             self.shuffle_stats.P_all_names = ['Skaggs_0', 'Skaggs_1', 'spec_0', 'spec_1', 'reli_0', 'reli_1', 
-            	'select_all_0', 'select_pat1_0', 'select_pat2_0', 'select_pat3_0', 'select_rew_0', 'select_all_1', 'select_pat1_1', 'select_pat2_1', 'select_pat3_1', 'cells_select_rew_1']
+                'select_all_0', 'select_pat1_0', 'select_pat2_0', 'select_pat3_0', 'select_rew_0', 'select_all_1', 'select_pat1_1', 'select_pat2_1', 'select_pat3_1', 'cells_select_rew_1']
 
 
             self.tuned_cells=dict(cells_Skaggs_0 = cellids[np.where(ii_tuned_cells[0,:])[0]], 
@@ -1188,7 +1229,7 @@ class ImagingSessionData:
                         right = zone_ends[i_zone] * nbins              
                         polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                         axs[i_corrid].add_patch(polygon)
-                        print('adding reward zone to the ', i_corrid, 'th corridor, ', self.corridors[i_corrid+1])
+                        # print('adding reward zone to the ', i_corrid, 'th corridor, ', self.corridors[i_corrid+1])
 
             fig.suptitle(suptitle_string)
             fig.tight_layout()
@@ -1567,11 +1608,7 @@ class ImagingSessionData:
             add_anticipatory_test = False
 
         if (self.n_laps > 0):
-            corridor_ids = np.zeros(self.n_laps)
-
-            for i in range(self.n_laps):
-                corridor_ids[i] = self.ImLaps[i].corridor
-            corridor_types = np.unique(corridor_ids[selected_laps])
+            corridor_types = np.unique(self.i_corridors[selected_laps])
             nrow = len(corridor_types)
             nbins = len(self.ImLaps[0].bincenters)
             cmap = plt.cm.get_cmap('jet')   
@@ -1589,29 +1626,34 @@ class ImagingSessionData:
 
             for row in range(nrow):
                 # ax = plt.subplot(nrow, 1, row+1)
-                ids_all = np.where(corridor_ids == corridor_types[row])
+                ids_all = np.where(self.i_corridors == corridor_types[row])
                 ids = np.intersect1d(ids_all, selected_laps)
 
+                ########################################
+                ## speed
                 avespeed = np.zeros(nbins)
                 n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
                 n_laps = len(ids)
                 n_correct = 0
+                n_valid = 0
                 maxspeed = 10
 
                 speed_matrix = np.zeros((len(ids), nbins))
 
                 i_lap = 0
                 for lap in ids:
-                    axs[row,0].step(self.ImLaps[lap].bincenters, self.ImLaps[lap].ave_speed, where='mid', c=speed_color_trial)
-                    speed_matrix[i_lap,:] =  np.round(self.ImLaps[lap].ave_speed, 2)
-                    nans_lap = np.isnan(self.ImLaps[lap].ave_speed)
-                    avespeed = nan_add(avespeed, self.ImLaps[lap].ave_speed)
-                    n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
-                    if (max(self.ImLaps[lap].ave_speed) > maxspeed): maxspeed = max(self.ImLaps[lap].ave_speed)
-                    n_correct = n_correct + self.ImLaps[lap].correct
+                    if (self.ImLaps[lap].mode == 1): # only use the lap if it was a valid lap
+                        axs[row,0].step(self.ImLaps[lap].bincenters, self.ImLaps[lap].ave_speed, where='mid', c=speed_color_trial)
+                        speed_matrix[i_lap,:] =  np.round(self.ImLaps[lap].ave_speed, 2)
+                        nans_lap = np.isnan(self.ImLaps[lap].ave_speed)
+                        avespeed = nan_add(avespeed, self.ImLaps[lap].ave_speed)
+                        n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
+                        if (max(self.ImLaps[lap].ave_speed) > maxspeed): maxspeed = max(self.ImLaps[lap].ave_speed)
+                        n_correct = n_correct + self.ImLaps[lap].correct
+                        n_valid = n_valid + 1
                     i_lap = i_lap + 1
                 maxspeed = min(maxspeed, 60)
-                P_correct = np.round(np.float(n_correct) / np.float(n_laps), 3)
+                P_correct = np.round(np.float(n_correct) / np.float(n_valid), 3)
 
                 if (save_data == True):
                     filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_speed_corridor' + str(int(corridor_types[row])) + '.csv'
@@ -1633,6 +1675,9 @@ class ImagingSessionData:
                         plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
                 else:
                     plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
+
+                ########################################
+                ## reward zones
 
                 if (self.ImLaps[lap].zones.shape[1] > 0):
                     bottom, top = axs[row,0].get_ylim()
@@ -1658,6 +1703,8 @@ class ImagingSessionData:
 
                 axs[row,0].set_title(plot_title)
 
+                ########################################
+                ## lick
                 ax2 = axs[row,0].twinx()
                 n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
                 maxrate = 10
@@ -1667,12 +1714,13 @@ class ImagingSessionData:
                 i_lap = 0
 
                 for lap in ids:
-                    ax2.step(self.ImLaps[lap].bincenters, self.ImLaps[lap].lick_rate, where='mid', c=lick_color_trial, linewidth=1)
-                    lick_matrix[i_lap,:] =  np.round(self.ImLaps[lap].lick_rate, 2)
-                    nans_lap = np.isnan(self.ImLaps[lap].lick_rate)
-                    avelick = nan_add(avelick, self.ImLaps[lap].lick_rate)
-                    n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
-                    if (np.nanmax(self.ImLaps[lap].lick_rate) > maxrate): maxrate = np.nanmax(self.ImLaps[lap].lick_rate)
+                    if (self.ImLaps[lap].mode == 1): # only use the lap if it was a valid lap
+                        ax2.step(self.ImLaps[lap].bincenters, self.ImLaps[lap].lick_rate, where='mid', c=lick_color_trial, linewidth=1)
+                        lick_matrix[i_lap,:] =  np.round(self.ImLaps[lap].lick_rate, 2)
+                        nans_lap = np.isnan(self.ImLaps[lap].lick_rate)
+                        avelick = nan_add(avelick, self.ImLaps[lap].lick_rate)
+                        n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
+                        if (np.nanmax(self.ImLaps[lap].lick_rate) > maxrate): maxrate = np.nanmax(self.ImLaps[lap].lick_rate)
                     i_lap = i_lap + 1
                 maxrate = min(maxrate, 20)
 

@@ -36,7 +36,7 @@ def breakpoints(Nframes, Lmin=500, Nbreak=5):
 
 class ImShuffle:
     'Base structure for shuffling analysis of imaging data'
-    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None):
+    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None, selected_laps=None):
         self.name = name
         self.date_time = date_time
         self.stage = 0
@@ -79,6 +79,15 @@ class ImShuffle:
         input_file.close()
 
         self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])#[0:3]
+
+        self.last_zone_start = 0
+        self.last_zone_end = 0
+        for i_corridor in self.corridors:
+            if (i_corridor > 0):
+                if (max(self.corridor_list.corridors[i_corridor].reward_zone_starts) > self.last_zone_start):
+                    self.last_zone_start = max(self.corridor_list.corridors[i_corridor].reward_zone_starts)
+                if (max(self.corridor_list.corridors[i_corridor].reward_zone_ends) > self.last_zone_end):
+                    self.last_zone_end = max(self.corridor_list.corridors[i_corridor].reward_zone_ends)
 
         self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
         self.corridor_length_roxel = (self.corridor_list.corridors[self.corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
@@ -156,7 +165,7 @@ class ImShuffle:
             self.i_Laps_ImData = np.zeros(1) # np array with the index of laps with imaging
             self.i_corridors = np.zeros(1) # np array with the index of corridors in each run
 
-            self.get_lapdata_shuffle(datapath, date_time, name, self.task) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
+            self.get_lapdata_shuffle(datapath, date_time, name, self.task, selected_laps=selected_laps) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
 
             ## in certain tasks, the same corridor may appear multiple times in different substages
             ## we need to keep this corridor in the list self.corridors for running self.get_lapdata()
@@ -211,7 +220,7 @@ class ImShuffle:
                     self.cell_corridor_selectivity = self.cell_corridor_selectivity_batch
                     self.P_selectivity = self.P_selectivity_batch
             else:
-                for i_cor in range(self.N_corridors):
+                for i_cor in range(self.N_corridors-1):
                     print(np.shape(self.cell_reliability[i_cor]), np.shape(self.cell_reliability_batch[i_cor]))
                     self.cell_reliability[i_cor] = np.vstack((self.cell_reliability[i_cor], self.cell_reliability_batch[i_cor]))
                     self.P_reliability[i_cor] = np.hstack((self.P_reliability[i_cor], self.P_reliability_batch[i_cor]))
@@ -232,7 +241,7 @@ class ImShuffle:
             i_minibatch = i_minibatch + 1
 
 
-    def get_lapdata_shuffle(self, datapath, date_time, name, task):
+    def get_lapdata_shuffle(self, datapath, date_time, name, task, selected_laps=None):
 
         time_array=[]
         lap_array=[]
@@ -264,6 +273,12 @@ class ImShuffle:
         N_0lap = 0 # Counting the non-valid laps
         self.n_laps = 0
 
+        ### include only a subset of laps
+        if selected_laps is None:
+            select_laps = False
+        else:
+            select_laps = True
+
         i_ImData = [] # index of laps with imaging data
         i_corrids = [] # ID of corridor for the current lap
 
@@ -293,14 +308,34 @@ class ImShuffle:
                 reward_indices = [j for j, x in enumerate(action_lap) if x == "TrialReward"]
                 t_reward = t_lap[reward_indices]
     
+                ## detecting invalid laps - terminated before the animal could receive reward
+                valid_lap = False
+                if (len(t_reward) > 0): # lap is valid if the animal got reward
+                    valid_lap = True
+                if (max(pos_lap) > (self.corridor_length_roxel * self.last_zone_end)): # # lap is valid if the animal left the last reward zone
+                    valid_lap = True
+                if (valid_lap == False):
+                    mode_lap = 0
+
                 actions = []
                 for j in range(len(action_lap)):
                     if not((action_lap[j]) in ['No', 'TrialReward']):
                         actions.append([t_lap[j], action_lap[j]])
 
+                ### include only a subset of laps
+                add_lap = True
+                if (select_laps):
+                    add_lap = False
+                    if (self.n_laps in selected_laps):
+                        add_lap = True
+
+                ## include only valid laps
+                if (mode_lap == 0):
+                    add_lap = False
+
                 ### imaging data    
                 iframes = np.where(self.frame_laps == i_lap)[0]
-                if (len(iframes) > 0): # there is imaging data belonging to this lap...
+                if ((len(iframes) > 0) & (add_lap == True)): # there is imaging data belonging to this lap...
                     # print(i, min(iframes), max(iframes))
                     lap_frames_spikes = self.shuffle_spikes[:,iframes,:]
                     lap_frames_time = self.frame_times[iframes]
