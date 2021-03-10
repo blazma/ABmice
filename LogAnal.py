@@ -71,14 +71,13 @@ class Lap_Data:
         nbins = int(round(self.corridor_length_roxel / 70))
         self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
         
-        if (len(self.raw_time) > 2):
+        if (len(self.raw_time) > 200):
             F = interp1d(self.raw_time,self.raw_position) 
             start_time = np.ceil(self.raw_time.min()/self.dt)*self.dt
             end_time = np.floor(self.raw_time.max()/self.dt)*self.dt
             Ntimes = int(round((end_time - start_time) / self.dt)) + 1
             self.laptime = np.linspace(start_time, end_time, Ntimes)
             ppos = F(self.laptime)
-    
             self.lick_position = F(self.lick_times)
             self.reward_position = F(self.reward_times)
     
@@ -386,9 +385,6 @@ class Session:
         self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])
 
         self.get_lapdata(datapath, date_time, name, task)
-        if (self.n_laps == -1):
-            print('Error: missing laps are found in the ExpStateMachineLog file! No analysis was performed, check the logfiles!')
-            return            
         self.test_anticipatory()
 
     def get_lapdata(self, datapath, date_time, name, task):
@@ -421,22 +417,6 @@ class Session:
         maze = np.array(maze_array)
         mode = np.array(mode_array)
         N_0lap = 0 # Counting the non-valid laps
-
-        time_breaks = np.where(np.diff(laptime) > 1)[0]
-        if (len(time_breaks) > 0):
-            print('ExpStateMachineLog time interval > 1s: ', len(time_breaks), ' times')
-            print(laptime[time_breaks])
-
-        logged_laps = np.unique(lap)
-        all_laps = np.arange(max(lap)) + 1
-        missing_laps = np.setdiff1d(all_laps, logged_laps)
-
-        if (len(missing_laps) > 0):
-            print('Some laps are not logged. Number of missing laps: ', len(missing_laps))
-            print(missing_laps)
-            self.n_laps = -1
-            return 
-
         self.n_laps = 0
 
         for i_lap in np.unique(lap):
@@ -471,6 +451,7 @@ class Session:
     
     
                 # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
+#                print(self.n_laps, i_lap, len(pos_lap))
                 self.Laps.append(Lap_Data(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, self.corridor_list))
                 self.n_laps = self.n_laps + 1
             else:

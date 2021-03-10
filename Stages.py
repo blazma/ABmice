@@ -32,7 +32,7 @@ class Stage:
 			self.substages = substages
 
 	def print_props(self):
-		s = self.level + '\t stage: ' + str(self.stage)+ '\t substage: ' + str(self.substages) + '\t corridors:' + str(self.corridors) + '\t next stage:' + str(self.next_stage) + '\t rule: ' + self.rule + '\t condition:' + self.condition + '\t name:' + self.name
+		s = self.level + '\t stage: ' + str(self.stage)+ '\t substage: ' + str(self.substages) + '\t corridors:' + str(self.corridors) + '\t next stage:' + str(self.next_stage) + '\t rule: ' + str(self.rule) + '\t condition:' + self.condition + '\t name:' + self.name
 		print(s)
 
 class Stage_collection:
@@ -88,14 +88,14 @@ class Stage_collection:
 # 	 		12		a			12,15,16,19		pseudo		16				correct 	correct		square
 # 	 		13		a			13,14,17,18		pseudo		17				correct 	correct		striped
 
-# switching	14		a			12,14,17,19		pseudo		14				correct 	correct		green -> purple
-# 			14		b			13,15,16,18		pseudo		11				correct 	correct		green -> purple
-# 	 		15		a			13,15,16,18		pseudo		15				correct 	correct		purple -> square
-# 	 		15		b			12,15,16,19		pseudo		12				correct 	correct		purple -> square
-# 	 		16		a			12,15,16,19		pseudo		16				correct 	correct		square -> striped
-# 	 		16		b			13,14,17,18		pseudo		13				correct 	correct		square -> striped
-# 	 		17		a			13,14,17,18		pseudo		17				correct 	correct		striped -> green
-# 	 		17		b			12,14,17,19		pseudo		10				correct 	correct		striped -> green
+# switching	14		a			12,14,17,19		pseudo		14				correct 	correct		green ->
+# 			14		b			13,15,16,18		pseudo		11				correct 	correct				 -> purple
+# 	 		15		a			13,15,16,18		pseudo		15				correct 	correct		purple -> 
+# 	 		15		b			12,15,16,19		pseudo		12				correct 	correct				-> square
+# 	 		16		a			12,15,16,19		pseudo		16				correct 	correct		square ->
+# 	 		16		b			13,14,17,18		pseudo		13				correct 	correct				 -> striped
+# 	 		17		a			13,14,17,18		pseudo		17				correct 	correct		striped -> 
+# 	 		17		b			12,14,17,19		pseudo		10				correct 	correct				 -> green
 
 
 # CONDITIONS:
@@ -245,21 +245,21 @@ class Stage_collection:
 # 			1		d			8-10			pseudo		1e				Pavl/Oper  	both		3_cheese
 # 			1		e			11				pseudo		2				Pavl/Oper  	both		1_cheese
 
-# diff_1	2		a			12-13			pseudo		3				Pavl/Oper  	both		1 zone		
-# 			2		b			14-15			pseudo		3				Pavl/Oper  	both		1 zone		
-# diff_2	3		a			14-15			pseudo		3				Pavl/Oper  	both		1 zone		
-# 			3		b			16-18			pseudo		3				Pavl/Oper  	both		1 zone		
+# diff_1	2		a			12-13			pseudo		3				Pavl/Oper  	both		near-far drop
+# 			2		b			14-15			pseudo		3				Pavl/Oper  	both		near-far no drop
+# diff_2	3		a			14-15			pseudo		3				Pavl/Oper  	both		near-far no drop
+# 			3		b			17				pseudo		3				Pavl/Oper  	both		new corridor
 
-# stage_list = Stage_collection('.', 'NearFarLong')
-# stage_list.add_stage(level='lick&run', stage=0, corridors=[0], next_stage=[1], rule='pretrain', condition='either', name='pretrain')
-
-# stage_list.add_stage(level='lick_zone', stage=1, corridors=[1,2,3,4,5,6,7,8,9,10,11], next_stage=[2], rule='Pavlovian', condition='either', name='9 -> 1 lick zone', substages=[0,1,1,1,2,2,2,3,3,3,4])
-# stage_list.add_stage(level='diff_1', stage=2, corridors=[12, 13, 14, 15], next_stage=[3], rule='Pavlovian', condition='both', name='1_zone', substages=[0,0,1,1])
-# stage_list.add_stage(level='diff_2', stage=3, corridors=[14,15,16,17,18], next_stage=[3], rule='Pavlovian', condition='both', name='1_zone', substages=[0,0,1,1,1])
-
-# stage_list.print_table()
-
-# stage_list.write()
+#stage_list = Stage_collection('.', 'NearFarLong')
+#stage_list.add_stage(level='lick&run', stage=0, corridors=[0], next_stage=[1], rule='pretrain', condition='either', name='pretrain')
+#
+#stage_list.add_stage(level='lick_zone', stage=1, corridors=[1,2,3,4,5,6,7,8,9,10,11], next_stage=[2], rule='Pavlovian', condition='either', name='9 -> 1 lick zone', substages=[0,1,1,1,2,2,2,3,3,3,4])
+#stage_list.add_stage(level='diff_1', stage=2, corridors=[12, 13, 14, 15], next_stage=[3], rule='Pavlovian', condition='both', name='near-far', substages=[0,0,1,1])
+#stage_list.add_stage(level='diff_2', stage=3, corridors=[14,15,17], next_stage=[3], rule='Pavlovian', condition='both', name='near-far+new', substages=[0,0,1])
+#
+#stage_list.print_table()
+#
+#stage_list.write()
 
 ############################################################################
 ## Stages for the morphing experiment of Kata
@@ -274,12 +274,14 @@ class Stage_collection:
 # 			1		d			8-10			pseudo		1e				operant 	correct		3_cheese
 # 			1		e			11				pseudo		2-5				operant 	correct		1_cheese
 
-# contrast 	2		a			12-13-14-15		6-0-0-6		3				operant 	correct		extreme		
-# 			3		a			16-17-18-19		6-1-1-6		4				operant 	0.9			mid-contrast		
-# 			4		a			20-21-23-24		6-1-1-6		5				operant 	0.9			low-contrast		
-# morph		5		a			20-22-24		6-2-6		6				operant 	0.9			mid-morph		
-# 			6		a			20-21-22-23-24	6-1-1-1-6	7				operant 	0.9			psychometric		
-# 			7		a			20-25-24		6-2-6		5				operant 	0.9			new_corridor		
+# contrast 	2		a			26-13-14-27		6-0-0-6		3				operant 	correct		extreme	drops	
+# 			3		a			12-13-14-15		6-0-0-6		4				operant 	correct		extreme		
+# 			4		a			16-17-18-19		6-0-0-6		5				operant 	0.9			mid-contrast, base
+# 			5		a			16-17-18-19		6-1-1-6		6				operant 	0.9			mid-contrast		
+# 			6		a			20-21-23-24		6-1-1-6		7				operant 	0.9			low-contrast		
+# morph		7		a			20-22-24		6-2-6		8				operant 	0.9			mid-morph		
+# 			8		a			20-21-22-23-24	6-1-1-1-6	9				operant 	0.9			psychometric		
+# 			9		a			20-25-24		6-2-6		7				operant 	0.9			new_corridor		
 
 
 # stage_list = Stage_collection('.', 'morphing')
@@ -287,12 +289,14 @@ class Stage_collection:
 
 # stage_list.add_stage(level='lick_zone', stage=1, corridors=[1,2,3,4,5,6,7,8,9,10,11], next_stage=[2,3,4,5], rule='Pavlovian', condition='either', name='9 -> 1 lick zone', substages=[0,1,1,1,2,2,2,3,3,3,4])
 
-# stage_list.add_stage(level='contrast', stage=2, corridors=[12,13,14,15], next_stage=[3], rule='correct', condition='correct', name='extreme', random=[6,0,0,6])
-# stage_list.add_stage(level='contrast', stage=3, corridors=[16,17,18,19], next_stage=[4], rule=0.9, condition='correct', name='mid-contrast', random=[6,1,1,6])
-# stage_list.add_stage(level='contrast', stage=4, corridors=[20,21,23,24], next_stage=[5], rule=0.9, condition='correct', name='low-contrast', random=[6,1,1,6])
-# stage_list.add_stage(level='morph', stage=5, corridors=[20,22,24], next_stage=[6], rule=0.9, condition='correct', name='morph', random=[6,2,6])
-# stage_list.add_stage(level='morph', stage=6, corridors=[20,21,22,23,24], next_stage=[7], rule=0.9, condition='correct', name='psychometric', random=[6,1,1,1,6])
-# stage_list.add_stage(level='morph', stage=7, corridors=[20,25,24], next_stage=[5], rule=0.9, condition='correct', name='new_corridor', random=[6,2,6])
+# stage_list.add_stage(level='contrast', stage=2, corridors=[26,13,14,27], next_stage=[3], rule='correct', condition='correct', name='extreme_drops', random=[6,0,0,6])
+# stage_list.add_stage(level='contrast', stage=3, corridors=[12,13,14,15], next_stage=[4], rule='correct', condition='correct', name='extreme', random=[6,0,0,6])
+# stage_list.add_stage(level='contrast', stage=4, corridors=[16,17,18,19], next_stage=[5], rule=0.9, condition='correct', name='mid-contrast-base', random=[6,0,0,6])
+# stage_list.add_stage(level='contrast', stage=5, corridors=[16,17,18,19], next_stage=[6], rule=0.9, condition='correct', name='mid-contrast', random=[6,1,1,6])
+# stage_list.add_stage(level='contrast', stage=6, corridors=[20,21,23,24], next_stage=[7], rule=0.9, condition='correct', name='low-contrast', random=[6,1,1,6])
+# stage_list.add_stage(level='morph', stage=7, corridors=[20,22,24], next_stage=[8], rule=0.9, condition='correct', name='morph', random=[6,2,6])
+# stage_list.add_stage(level='morph', stage=8, corridors=[20,21,22,23,24], next_stage=[9], rule=0.9, condition='correct', name='psychometric', random=[6,1,1,1,6])
+# stage_list.add_stage(level='morph', stage=9, corridors=[20,25,24], next_stage=[7], rule=0.9, condition='correct', name='new_corridor', random=[6,2,6])
 
 
 

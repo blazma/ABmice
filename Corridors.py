@@ -104,7 +104,7 @@ class Corridor_list:
 ## width: 1024
 ## height: 768
 ##
-## length in Laview: 5250
+## length in Labview: 5250
 
 
 
@@ -302,7 +302,7 @@ class Corridor_list:
 ## 16					grey 		grey 			leaves				leaves				1						Right	
 ## 17					grey 		grey 			people				people				1						Right	
 ## 18					grey 		grey 			green people		green people		1						Right	
-##
+###
 #Cors = Corridor_list('./', 'NearFarLong')
 # #						 left_image, right_image, end_image, floor_image, ceiling_image
 #Cors.add_corridor('grey', 'grey_wall.png', 'grey_wall.png', 'grey_end_wall.png', 'grey_floor_ceiling.png', 'grey_floor_ceiling.png', [], reward='None')
@@ -332,16 +332,16 @@ class Corridor_list:
 #Cors.add_corridor('patternA', 'LongLeft_patternsA.png', 'LongRight_patternsA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [4720], zone_width=1050, length=10240) 
 #Cors.add_corridor('patternB', 'LongLeft_patternsB.png', 'LongRight_patternsB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [7430], zone_width=1050, length=10240)# 2500-3000
 #
-#Cors.add_corridor('people2', 'LongLeftB.png', 'LongRightB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [4600], zone_width=400, length=10240)
-#Cors.add_corridor('green people', 'LongLeftC.png', 'LongRightC.png', 'mCEnd.png', 'Long_floorC.png', 'Long_ceiling.png', [6100], zone_width=400, length=10240)
-#Cors.add_corridor('leaf2', 'LongLeftA.png', 'LongRightA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [7500], zone_width=400, length=10240)
+#Cors.add_corridor('patternA', 'LongLeft_patternsA.png', 'LongRight_patternsA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [4720], zone_width=1050, length=10240) 
+#Cors.add_corridor('green people', 'LongLeftC.png', 'LongRightC.png', 'mCEnd.png', 'Long_floorC.png', 'Long_ceiling.png', [5660], zone_width=1000, length=10240)
+#Cors.add_corridor('patternB', 'LongLeft_patternsB.png', 'LongRight_patternsB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [7430], zone_width=1050, length=10240)# 2500-3000
 #
 #Cors.print_zones()
 #Cors.print_images()
 #
 #Cors.write()
-# #
-
+## #
+#
 
 
 #####################################################################################################
