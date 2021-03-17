@@ -46,6 +46,7 @@ class Lap_Data:
         self.name = name
         self.lap = lap
 
+        self.correct = False
         self.raw_time = laptime
         self.raw_position = position
         self.lick_times = lick_times
@@ -80,6 +81,18 @@ class Lap_Data:
             ppos = F(self.laptime)
             self.lick_position = F(self.lick_times)
             self.reward_position = F(self.reward_times)
+
+            # correct: if rewarded
+            if (len(self.reward_times) > 0):
+                self.correct = True
+            # correct: if no licking in the zone
+            lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * self.corridor_length_roxel) & (self.lick_position <= self.zones[1] * self.corridor_length_roxel + 1))[0]
+            if (self.corridor_list.corridors[self.corridor].reward == 'Left'):
+                if (len(lick_in_zone) == 0):
+                    self.correct = True
+            else :
+                if ((len(lick_in_zone) == 0) & self.correct):
+                    print ('Warning: rewarded lap with no lick in zone! lap number:' + str(self.lap))
     
             ## smooth the position data with a 50 ms Gaussian kernel
             ## smooth the position data with a 50 ms Gaussian kernel
@@ -162,11 +175,11 @@ class Lap_Data:
     def plot_tx(self):
         cmap = plt.cm.get_cmap('jet')   
         plt.figure(figsize=(6,4))
-        plt.plot(self.laptime, self.smooth_position, c=cmap(50))
-        plt.plot(self.raw_time, self.raw_position, c=cmap(90))
+        plt.plot(self.laptime, self.smooth_position, color=cmap(50))
+        plt.plot(self.raw_time, self.raw_position, color=cmap(90))
 
-        plt.scatter(self.lick_times, np.repeat(self.smooth_position.min(), len(self.lick_times)), marker="|", s=100, c=cmap(180))
-        plt.scatter(self.reward_times, np.repeat(self.smooth_position.min()+100, len(self.reward_times)), marker="|", s=100, c=cmap(230))
+        plt.scatter(self.lick_times, np.repeat(self.smooth_position.min(), len(self.lick_times)), marker="|", s=100, color=cmap(180))
+        plt.scatter(self.reward_times, np.repeat(self.smooth_position.min()+100, len(self.reward_times)), marker="|", s=100, color=cmap(230))
         plt.ylabel('position')
         plt.xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
@@ -202,8 +215,8 @@ class Lap_Data:
         fig, ax = plt.subplots(figsize=(6,4))
         plt.plot(self.smooth_position, self.speed, c=cmap(80))
         plt.step(self.bincenters, self.ave_speed, where='mid', c=cmap(30))
-        plt.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, c=cmap(180))
-        plt.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, c=cmap(230))
+        plt.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, color=cmap(180))
+        plt.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, color=cmap(230))
         plt.ylabel('speed (cm/s)')
         plt.ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
         plt.xlabel('position')
@@ -284,11 +297,11 @@ class Lap_Data:
         fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,6))
 
         ## first, plot position versus time
-        ax_top.plot(self.laptime, self.smooth_position, c=cmap(50))
-        ax_top.plot(self.raw_time, self.raw_position, c=cmap(90))
+        ax_top.plot(self.laptime, self.smooth_position, color=cmap(50))
+        ax_top.plot(self.raw_time, self.raw_position, color=cmap(90))
 
-        ax_top.scatter(self.lick_times, np.repeat(200, len(self.lick_times)), marker="|", s=100, c=cmap(180))
-        ax_top.scatter(self.reward_times, np.repeat(400, len(self.reward_times)), marker="|", s=100, c=cmap(230))
+        ax_top.scatter(self.lick_times, np.repeat(200, len(self.lick_times)), marker="|", s=100, color=cmap(180))
+        ax_top.scatter(self.reward_times, np.repeat(400, len(self.reward_times)), marker="|", s=100, color=cmap(230))
         ax_top.set_ylabel('position')
         ax_top.set_xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position and speed in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
@@ -297,10 +310,10 @@ class Lap_Data:
 
 
         ## next, plot speed versus position
-        ax_bottom.plot(self.smooth_position, self.speed, c=cmap(80))
-        ax_bottom.step(self.bincenters, self.ave_speed, where='mid', c=cmap(30))
-        ax_bottom.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, c=cmap(180))
-        ax_bottom.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, c=cmap(230))
+        ax_bottom.plot(self.smooth_position, self.speed, color=cmap(80))
+        ax_bottom.step(self.bincenters, self.ave_speed, where='mid', color=cmap(30))
+        ax_bottom.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, color=cmap(180))
+        ax_bottom.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, color=cmap(230))
         ax_bottom.set_ylabel('speed (cm/s)')
         ax_bottom.set_xlabel('position')
         ax_bottom.set_ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
@@ -319,7 +332,7 @@ class Lap_Data:
                 ax_bottom.add_patch(polygon)
 
         ax2 = ax_bottom.twinx()
-        ax2.step(self.bincenters, self.lick_rate, where='mid', c=cmap(180), linewidth=1)
+        ax2.step(self.bincenters, self.lick_rate, where='mid', color=cmap(180), linewidth=1)
         ax2.set_ylabel('lick rate (lick/s)', color=cmap(180))
         ax2.tick_params(axis='y', labelcolor=cmap(180))
         ax2.set_ylim([-1,max(2*np.nanmax(self.lick_rate), 20)])
@@ -359,8 +372,8 @@ class Session:
     def __init__(self, datapath, date_time, name, task, sessionID=-1, printout=False):
         self.name = name
         self.stage = 0
-        self.sessionID = sessionID
         self.stages = []
+        self.sessionID = sessionID
 
         stagefilename = datapath + task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
@@ -378,13 +391,31 @@ class Session:
             self.corridor_list = pickle.load(input_file, encoding='latin1')
         input_file.close()
 
-        self.Laps = []
-        self.n_laps = 0
-
         self.get_stage(datapath, date_time, name, task)
         self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])
 
+        self.last_zone_start = 0
+        self.last_zone_end = 0
+        for i_corridor in self.corridors:
+            if (i_corridor > 0):
+                if (max(self.corridor_list.corridors[i_corridor].reward_zone_starts) > self.last_zone_start):
+                    self.last_zone_start = max(self.corridor_list.corridors[i_corridor].reward_zone_starts)
+                if (max(self.corridor_list.corridors[i_corridor].reward_zone_ends) > self.last_zone_end):
+                    self.last_zone_end = max(self.corridor_list.corridors[i_corridor].reward_zone_ends)
+
+        self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
+        self.corridor_length_roxel = (self.corridor_list.corridors[self.corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
+
+        self.Laps = []
+        self.n_laps = 0
+        self.i_corridors = np.zeros(1) # np array with the index of corridors in each run
+
         self.get_lapdata(datapath, date_time, name, task)
+        if (self.n_laps == -1):
+            print('Error: missing laps are found in the ExpStateMachineLog file! No analysis was performed, check the logfiles!')
+            return
+
         self.test_anticipatory()
 
     def get_lapdata(self, datapath, date_time, name, task):
@@ -396,6 +427,7 @@ class Session:
         mode_array=[]
         lick_array=[]
         action=[]
+        substage=[]
 
         data_log_file_string=datapath + 'data/' + name + '_' + task + '/' + date_time + '/' + date_time + '_' + name + '_' + task + '_ExpStateMashineLog.txt'
         data_log_file=open(data_log_file_string)
@@ -409,15 +441,37 @@ class Session:
             mode_array.append(line[6] == 'Go')
             lick_array.append(line[9] == 'TRUE')
             action.append(str(line[14]))
+            substage.append(str(line[17]))
 
         laptime = np.array(time_array)
+        time_breaks = np.where(np.diff(laptime) > 1)[0]
+        if (len(time_breaks) > 0):
+            print('ExpStateMachineLog time interval > 1s: ', len(time_breaks), ' times')
+            print(laptime[time_breaks])
+
+        lap = np.array(lap_array)
+        logged_laps = np.unique(lap)
+        all_laps = np.arange(max(lap)) + 1
+        missing_laps = np.setdiff1d(all_laps, logged_laps)
+
+        if (len(missing_laps) > 0):
+            print('Some laps are not logged. Number of missing laps: ', len(missing_laps))
+            print(missing_laps)
+            self.n_laps = -1
+            return 
+
+        sstage = np.array(substage)
+        current_sstage = sstage[0]
+
         pos = np.array(position_array)
         lick = np.array(lick_array)
-        lap = np.array(lap_array)
         maze = np.array(maze_array)
         mode = np.array(mode_array)
         N_0lap = 0 # Counting the non-valid laps
+        i_corrids = [] # ID of corridor for the current lap
         self.n_laps = 0
+
+        ### include only a subset of laps
 
         for i_lap in np.unique(lap):
             y = lap == i_lap # index for the current lap
@@ -431,12 +485,18 @@ class Session:
                 corridor = -1
 
             if (corridor > 0):
+                i_corrids.append(corridor) # list with the index of corridors in each run
                 t_lap = laptime[y]
                 pos_lap = pos[y]
     
                 lick_lap = lick[y]
                 t_licks = t_lap[lick_lap]
     
+                sstage_lap = np.unique(sstage[y])
+                if (len(sstage_lap) > 1):
+                    print('More than one substage in lap ', self.n_laps)
+                    return 
+
                 istart = np.where(y)[0][0]
                 iend = np.where(y)[0][-1] + 1
                 action_lap = action[istart:iend]
@@ -444,18 +504,28 @@ class Session:
                 reward_indices = [j for j, x in enumerate(action_lap) if x == "TrialReward"]
                 t_reward = t_lap[reward_indices]
     
+                ## detecting invalid laps - terminated before the animal could receive reward
+                valid_lap = False
+                if (len(t_reward) > 0): # lap is valid if the animal got reward
+                    valid_lap = True
+                if (max(pos_lap) > (self.corridor_length_roxel * self.last_zone_end)): # # lap is valid if the animal left the last reward zone
+                    valid_lap = True
+                if (valid_lap == False):
+                    mode_lap = 0
+
                 actions = []
                 for j in range(len(action_lap)):
                     if not((action_lap[j]) in ['No', 'TrialReward']):
-                        actions.append([t_lap[j], action_lap[j]])
-    
+                        actions.append([t_lap[j], action_lap[j]])    
     
                 # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
-#                print(self.n_laps, i_lap, len(pos_lap))
+				# print(self.n_laps, i_lap, len(pos_lap))
                 self.Laps.append(Lap_Data(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, self.corridor_list))
                 self.n_laps = self.n_laps + 1
             else:
-                N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1)
+	            N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1)
+        
+        self.i_corridors = np.array(i_corrids) # ID of corridor for the current lap
 
     def get_stage(self, datapath, date_time, name, task):
         action_log_file_string=datapath + 'data/' + name + '_' + task + '/' + date_time + '/' + date_time + '_' + name + '_' + task + '_UserActionLog.txt'
@@ -467,33 +537,36 @@ class Session:
                 self.stage = int(round(float(line[2])))
 
     def test_anticipatory(self):
-        corridor_ids = np.zeros(self.n_laps)
-        for i in range(self.n_laps):
-            corridor_ids[i] = self.Laps[i].corridor # the true corridor ID
-        corridor_types = np.unique(corridor_ids)
+        corridor_types = np.unique(self.i_corridors)
         nrow = len(corridor_types)
         self.anticipatory = []
 
         for row in range(nrow):
-            ids = np.where(corridor_ids == corridor_types[row])
+            ids = np.where(self.i_corridors == corridor_types[row])
             n_laps = np.shape(ids)[1]
             n_zones = np.shape(self.Laps[ids[0][0]].zones)[1]
             if ((n_zones == 1) & (n_laps > 2)):
                 lick_rates = np.zeros([2,n_laps])
                 k = 0
                 for lap in np.nditer(ids):
-                    lick_rates[:,k] = self.Laps[lap].preZoneRate
+                    if (self.Laps[lap].mode == 1):
+                        lick_rates[:,k] = self.Laps[lap].preZoneRate
+                    else:
+                        lick_rates[:,k] = np.nan
                     k = k + 1
                 self.anticipatory.append(anticipatory_Licks(lick_rates[0,:], lick_rates[1,:], corridor_types[row]))
 
 
-    def plot_session(self):
+    def plot_session(self, save_data=False, selected_laps=None):
         ## find the number of different corridors
+        if (selected_laps is None):
+            selected_laps = np.arange(self.n_laps)
+            add_anticipatory_test = True
+        else:
+            add_anticipatory_test = False
+
         if (self.n_laps > 0):
-            corridor_ids = np.zeros(self.n_laps)
-            for i in range(self.n_laps):
-                corridor_ids[i] = self.Laps[i].corridor
-            corridor_types = np.unique(corridor_ids)
+            corridor_types = np.unique(self.i_corridors[selected_laps])
             nrow = len(corridor_types)
             nbins = len(self.Laps[0].bincenters)
             cmap = plt.cm.get_cmap('jet')   
@@ -511,51 +584,72 @@ class Session:
 
             for row in range(nrow):
                 # ax = plt.subplot(nrow, 1, row+1)
-                ids = np.where(corridor_ids == corridor_types[row])
+                ids_all = np.where(self.i_corridors == corridor_types[row])
+                ids = np.intersect1d(ids_all, selected_laps)
+
+                ########################################
+                ## speed
                 avespeed = np.zeros(nbins)
                 n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
-                n_laps = np.shape(ids)[1]
+                n_laps = len(ids)
+                n_correct = 0
+                n_valid = 0
                 maxspeed = 10
-                for lap in np.nditer(ids):
-                    axs[row,0].step(self.Laps[lap].bincenters, self.Laps[lap].ave_speed, where='mid', c=speed_color_trial)
-                    nans_lap = np.isnan(self.Laps[lap].ave_speed)
-                    avespeed = nan_add(avespeed, self.Laps[lap].ave_speed)
-                    n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
-                    if (max(self.Laps[lap].ave_speed) > maxspeed): maxspeed = max(self.Laps[lap].ave_speed)
+
+                speed_matrix = np.zeros((len(ids), nbins))
+
+                i_lap = 0
+                for lap in ids:
+                    if (self.Laps[lap].mode == 1): # only use the lap if it was a valid lap
+                        axs[row,0].step(self.Laps[lap].bincenters, self.Laps[lap].ave_speed, where='mid', color=speed_color_trial)
+                        speed_matrix[i_lap,:] =  np.round(self.Laps[lap].ave_speed, 2)
+                        nans_lap = np.isnan(self.Laps[lap].ave_speed)
+                        avespeed = nan_add(avespeed, self.Laps[lap].ave_speed)
+                        n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
+                        if (max(self.Laps[lap].ave_speed) > maxspeed): maxspeed = max(self.Laps[lap].ave_speed)
+                        n_correct = n_correct + self.Laps[lap].correct
+                        n_valid = n_valid + 1
+                    i_lap = i_lap + 1
                 maxspeed = min(maxspeed, 60)
+                P_correct = np.round(np.float(n_correct) / np.float(n_valid), 3)
+
+                if (save_data == True):
+                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_speed_corridor' + str(int(corridor_types[row])) + '.csv'
+                    with open(filename, mode='w') as speed_file:
+                        file_writer = csv.writer(speed_file, delimiter=',')
+                        for i_row in range(len(ids)):
+                            file_writer.writerow(speed_matrix[i_row,:])
+                    print('speed data saved into file: ' + filename)
                 
                 avespeed = nan_divide(avespeed, n_lap_bins, n_lap_bins > 0)
-                axs[row,0].step(self.Laps[lap].bincenters, avespeed, where='mid', c=speed_color)
+                axs[row,0].step(self.Laps[lap].bincenters, avespeed, where='mid', color=speed_color)
                 axs[row,0].set_ylim([-1,1.2*maxspeed])
 
                 if (row == 0):
                     if (self.sessionID >= 0):
-                        plot_title = 'session:' + str(self.sessionID) + ': ' + str(int(n_laps)) + ' laps in corridor ' + str(int(corridor_types[row]))
+                        plot_title = 'session:' + str(self.sessionID) + ': ' + str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
                     else:
-                        plot_title = str(int(n_laps)) + ' laps in corridor ' + str(int(corridor_types[row]))                    
+                        plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
                 else:
-                    plot_title = str(int(n_laps)) + ' laps in corridor ' + str(int(corridor_types[row]))
+                    plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
+
+                ########################################
+                ## reward zones
 
                 if (self.Laps[lap].zones.shape[1] > 0):
                     bottom, top = axs[row,0].get_ylim()
-                    left = self.Laps[lap].zones[0,0] * self.Laps[lap].corridor_length_roxel
-                    right = self.Laps[lap].zones[1,0] * self.Laps[lap].corridor_length_roxel
+                    left = self.Laps[lap].zones[0,0] * self.corridor_length_roxel
+                    right = self.Laps[lap].zones[1,0] * self.corridor_length_roxel
 
                     polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                     axs[row,0].add_patch(polygon)
                     n_zones = np.shape(self.Laps[lap].zones)[1]
                     if (n_zones > 1):
                         for i in range(1, np.shape(self.Laps[lap].zones)[1]):
-                            left = self.Laps[lap].zones[0,i] * self.Laps[lap].corridor_length_roxel
-                            right = self.Laps[lap].zones[1,i] * self.Laps[lap].corridor_length_roxel
+                            left = self.Laps[lap].zones[0,i] * self.corridor_length_roxel
+                            right = self.Laps[lap].zones[1,i] * self.corridor_length_roxel
                             polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
                             axs[row,0].add_patch(polygon)
-                    # else: ## test for lick rate changes before the zone
-                    #     self.anticipatory = np.zeros([2,n_laps])
-                    #     k = 0
-                    #     for lap in np.nditer(ids):
-                    #         self.anticipatory[:,k] = self.Laps[lap].preZoneRate
-                    #         k = k + 1
                     else: # we look for anticipatory licking tests
                         P_statement = ', anticipatory P value not tested'
                         for k in range(len(self.anticipatory)):
@@ -565,20 +659,37 @@ class Session:
 
                 axs[row,0].set_title(plot_title)
 
+                ########################################
+                ## lick
                 ax2 = axs[row,0].twinx()
                 n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
                 maxrate = 10
                 avelick = np.zeros(nbins)
-                for lap in np.nditer(ids):
-                    ax2.step(self.Laps[lap].bincenters, self.Laps[lap].lick_rate, where='mid', c=lick_color_trial, linewidth=1)
-                    nans_lap = np.isnan(self.Laps[lap].lick_rate)
-                    avelick = nan_add(avelick, self.Laps[lap].lick_rate)
-                    n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
-                    if (max(self.Laps[lap].lick_rate) > maxrate): maxrate = max(self.Laps[lap].lick_rate)
+
+                lick_matrix = np.zeros((len(ids), nbins))
+                i_lap = 0
+
+                for lap in ids:
+                    if (self.Laps[lap].mode == 1): # only use the lap if it was a valid lap
+                        ax2.step(self.Laps[lap].bincenters, self.Laps[lap].lick_rate, where='mid', color=lick_color_trial, linewidth=1)
+                        lick_matrix[i_lap,:] =  np.round(self.Laps[lap].lick_rate, 2)
+                        nans_lap = np.isnan(self.Laps[lap].lick_rate)
+                        avelick = nan_add(avelick, self.Laps[lap].lick_rate)
+                        n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
+                        if (np.nanmax(self.Laps[lap].lick_rate) > maxrate): maxrate = np.nanmax(self.Laps[lap].lick_rate)
+                    i_lap = i_lap + 1
                 maxrate = min(maxrate, 20)
 
+                if (save_data == True):
+                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_lick_corridor' + str(int(corridor_types[row])) + '.csv'
+                    with open(filename, mode='w') as lick_file:
+                        file_writer = csv.writer(lick_file, delimiter=',')
+                        for i_row in range(len(ids)):
+                            file_writer.writerow(lick_matrix[i_row,:])
+                    print('lick data saved into file: ' + filename)
+
                 avelick = nan_divide(avelick, n_lap_bins, n_lap_bins > 0)
-                ax2.step(self.Laps[lap].bincenters, avelick, where='mid', c=lick_color)
+                ax2.step(self.Laps[lap].bincenters, avelick, where='mid', color=lick_color)
                 ax2.set_ylim([-1,1.2*maxrate])
 
 

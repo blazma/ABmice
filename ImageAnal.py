@@ -243,7 +243,7 @@ class ImagingSessionData:
             ids = np.where(self.i_corridors == corridor_types[row])
             n_laps = np.shape(ids)[1]
             n_zones = np.shape(self.ImLaps[ids[0][0]].zones)[1]
-            if (n_zones == 1):
+            if ((n_zones == 1) & (n_laps > 2)):
                 lick_rates = np.zeros([2,n_laps])
                 k = 0
                 for lap in np.nditer(ids):
@@ -869,10 +869,10 @@ class ImagingSessionData:
 
         ax[0, 0].axis('off')
 
-        sc[4] = ax[1,0].scatter(self.cell_SDs, self.cell_SNR, alpha=0.5, c='w', edgecolors='C3')
+        sc[4] = ax[1,0].scatter(self.cell_SDs, self.cell_SNR, alpha=0.5, color='w', edgecolors='C3')
         ax_list = fig.axes
         if (max(cellids) > 0):
-            ax[1,0].scatter(self.cell_SDs[cellids], self.cell_SNR[cellids], alpha=0.75, c='C3')
+            ax[1,0].scatter(self.cell_SDs[cellids], self.cell_SNR[cellids], alpha=0.75, color='C3')
         # sc = ax_left.scatter(rates, reliability, alpha=0.5, s=skaggs_info*50)
         title_string = 'SNR vs. SD'
         ax[1,0].set_title(title_string)
@@ -891,9 +891,9 @@ class ImagingSessionData:
             act_laps = self.cell_activelaps[i_corridor]
 #            act_laps_dF = self.cell_activelaps_df[i_corridor]
     
-            sc[i*4+1] = ax[i,1].scatter(rates, reliability, alpha=0.5, s=skaggs_info*50, c='w', edgecolors='C0')
+            sc[i*4+1] = ax[i,1].scatter(rates, reliability, alpha=0.5, s=skaggs_info*50, color='w', edgecolors='C0')
             if (max(cellids) > 0):
-                ax[i,1].scatter(rates[cellids], reliability[cellids], alpha=0.75, s=skaggs_info[cellids]*50, c='C0')
+                ax[i,1].scatter(rates[cellids], reliability[cellids], alpha=0.75, s=skaggs_info[cellids]*50, color='C0')
             # sc = ax_left.scatter(rates, reliability, alpha=0.5, s=skaggs_info*50)
             title_string = 'corr.' + str(corridor)
             ax[i,1].set_title(title_string)
@@ -901,18 +901,18 @@ class ImagingSessionData:
             if (i == n_corridors - 1): ax[i,1].set_xlabel('average event rate')
     
     
-            sc[i*4+2] = ax[i,2].scatter(act_laps, specificity, alpha=0.5, s=skaggs_info*50, c='w', edgecolors='C1')
+            sc[i*4+2] = ax[i,2].scatter(act_laps, specificity, alpha=0.5, s=skaggs_info*50, color='w', edgecolors='C1')
             if (max(cellids) > 0):
-                ax[i,2].scatter(act_laps[cellids], specificity[cellids], alpha=0.75, s=skaggs_info[cellids]*50, c='C1')
+                ax[i,2].scatter(act_laps[cellids], specificity[cellids], alpha=0.75, s=skaggs_info[cellids]*50, color='C1')
     
             title_string = 'corr.' + str(corridor)
             ax[i,2].set_title(title_string)
             ax[i,2].set_ylabel('tuning specificity')
             if (i == n_corridors - 1): ax[i,2].set_xlabel('percent active laps spikes')
     
-            sc[i*4+3] = ax[i,3].scatter(skaggs_info, Fano_factor, alpha=0.5, s=skaggs_info*50, c='w', edgecolors='C2')
+            sc[i*4+3] = ax[i,3].scatter(skaggs_info, Fano_factor, alpha=0.5, s=skaggs_info*50, color='w', edgecolors='C2')
             if (max(cellids) > 0):
-                ax[i,3].scatter(skaggs_info[cellids], Fano_factor[cellids], alpha=0.75, s=skaggs_info[cellids]*50, c='C2')
+                ax[i,3].scatter(skaggs_info[cellids], Fano_factor[cellids], alpha=0.75, s=skaggs_info[cellids]*50, color='C2')
             # sc = ax_right.scatter(rates, reliability, alpha=0.5, s=skaggs_info*50)
             title_string = 'corr.' + str(corridor)
             ax[i,3].set_title(title_string)
@@ -1361,7 +1361,7 @@ class ImagingSessionData:
                     events = spikes[i]
                     events = 50 * events / max_range
                     ii_events = np.nonzero(events)[0]
-                    ax[0,cor_index].scatter(times[i][ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(10*i, 255)), norm=colnorm)
+                    ax[0,cor_index].scatter(times[i][ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, color=(np.ones(len(ii_events)) * np.remainder(10*i, 255)), norm=colnorm)
                     if (reward == True): 
                         ax[0,cor_index].scatter(reward_times[i], np.repeat(i, len(reward_times[i])), marker="s", s=50, edgecolors=colmap(np.remainder(10*i, 255)), facecolors='none')
     
@@ -1473,10 +1473,10 @@ class ImagingSessionData:
                 if (reward == True):
                     i_cor = np.nonzero(correct_reward[0,:])[0]
                     n_cor = len(i_cor)
-                    ax[0, cor_index].scatter(np.ones(n_cor)*nbins, i_cor, marker="_", c='C0')
+                    ax[0, cor_index].scatter(np.ones(n_cor)*nbins, i_cor, marker="_", color='C0')
                     i_rew = np.nonzero(correct_reward[1,:])[0]
                     n_cor = len(i_rew)
-                    ax[0, cor_index].scatter(np.ones(n_cor)*(nbins+0.5), i_rew, marker="_", c='C1')
+                    ax[0, cor_index].scatter(np.ones(n_cor)*(nbins+0.5), i_rew, marker="_", color='C1')
 
                 plt.colorbar(im1, orientation='horizontal',ax=ax[1,cor_index])
                 ax[0,cor_index].set_xlim(0, nbins+1)
@@ -1662,7 +1662,6 @@ class ImagingSessionData:
                         for i_row in range(len(ids)):
                             file_writer.writerow(speed_matrix[i_row,:])
                     print('speed data saved into file: ' + filename)
-
 
                 avespeed = nan_divide(avespeed, n_lap_bins, n_lap_bins > 0)
                 axs[row,0].step(self.ImLaps[lap].bincenters, avespeed, where='mid', c=speed_color)
@@ -1992,8 +1991,8 @@ class Lap_ImData:
         ax_top.plot(self.laptime, self.smooth_position, c=colmap(50))
         ax_top.plot(self.raw_time, self.raw_position, c=colmap(90))
 
-        ax_top.scatter(self.lick_times, np.repeat(self.smooth_position.min(), len(self.lick_times)), marker="|", s=100, c=colmap(180))
-        ax_top.scatter(self.reward_times, np.repeat(self.smooth_position.min()+100, len(self.reward_times)), marker="|", s=100, c=colmap(230))
+        ax_top.scatter(self.lick_times, np.repeat(self.smooth_position.min(), len(self.lick_times)), marker="|", s=100, color=colmap(180))
+        ax_top.scatter(self.reward_times, np.repeat(self.smooth_position.min()+100, len(self.reward_times)), marker="|", s=100, color=colmap(230))
         ax_top.set_ylabel('position')
         ax_top.set_xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
@@ -2012,7 +2011,7 @@ class Lap_ImData:
                 events = self.frames_spikes[i,:]
                 events = 50 * events / max_range
                 ii_events = np.nonzero(events)[0]
-                ax_bottom.scatter(self.frames_time[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
+                ax_bottom.scatter(self.frames_time[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, color=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
 
             ylab_string = 'dF_F, spikes (max: ' + str(np.round(max_range, 1)) +  ' )'
             ax_bottom.set_ylabel(ylab_string)
@@ -2070,8 +2069,8 @@ class Lap_ImData:
         fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), sharex=True,  gridspec_kw={'height_ratios': [1, 3]})
         ax_top.plot(self.smooth_position, self.speed, c=colmap(80))
         ax_top.step(self.bincenters, self.ave_speed, where='mid', c=colmap(30))
-        ax_top.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, c=colmap(180))
-        ax_top.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, c=colmap(230))
+        ax_top.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, color=colmap(180))
+        ax_top.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, color=colmap(230))
         ax_top.set_ylabel('speed (cm/s)')
         ax_top.set_ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
         ax_top.set_xlabel('position')
@@ -2106,7 +2105,7 @@ class Lap_ImData:
                 events = self.event_rate[i,:]
                 events = 50 * events / max_range
                 ii_events = np.nonzero(events)[0]
-                ax_bottom.scatter(self.bincenters[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
+                ax_bottom.scatter(self.bincenters[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, color=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
 
             ax_bottom.set_ylabel('event rate')
             ax_bottom.set_xlabel('position')
@@ -2219,20 +2218,20 @@ class Lap_ImData:
         ax_top.plot(self.laptime, self.smooth_position, c=cmap(50))
         ax_top.plot(self.raw_time, self.raw_position, c=cmap(90))
 
-        ax_top.scatter(self.lick_times, np.repeat(200, len(self.lick_times)), marker="|", s=100, c=cmap(180))
-        ax_top.scatter(self.reward_times, np.repeat(400, len(self.reward_times)), marker="|", s=100, c=cmap(230))
+        ax_top.scatter(self.lick_times, np.repeat(200, len(self.lick_times)), marker="|", s=100, color=cmap(180))
+        ax_top.scatter(self.reward_times, np.repeat(400, len(self.reward_times)), marker="|", s=100, color=cmap(230))
         ax_top.set_ylabel('position')
         ax_top.set_xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position and speed in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
         ax_top.set_title(plot_title)
-        ax_top.set_ylim(0, 3600)
+        ax_top.set_ylim(0, self.corridor_length_roxel + 100)
 
 
         ## next, plot speed versus position
         ax_bottom.plot(self.smooth_position, self.speed, c=cmap(80))
         ax_bottom.step(self.bincenters, self.ave_speed, where='mid', c=cmap(30))
-        ax_bottom.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, c=cmap(180))
-        ax_bottom.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, c=cmap(230))
+        ax_bottom.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, color=cmap(180))
+        ax_bottom.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, color=cmap(230))
         ax_bottom.set_ylabel('speed (cm/s)')
         ax_bottom.set_xlabel('position')
         ax_bottom.set_ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])

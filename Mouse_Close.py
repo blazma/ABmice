@@ -116,7 +116,7 @@ class Close_Mouse:
                 if (i_date >= ref_date):
                     delta_t = i_date - ref_date
                     delta_t_sec = delta_t.total_seconds()
-                    if (delta_t_sec < 63):
+                    if (delta_t_sec < 120):
                         folder_index = ii
             except:
                 i_date = np.nan
