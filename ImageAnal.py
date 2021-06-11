@@ -64,11 +64,11 @@ class ImagingSessionData:
         input_file.close()
 
         self.get_stage(self.datapath, self.date_time, self.name, self.task)
-        self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])#[0:3]
+        self.all_corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])#[0:3]
 
         self.last_zone_start = 0
         self.last_zone_end = 0
-        for i_corridor in self.corridors:
+        for i_corridor in self.all_corridors:
             if (i_corridor > 0):
                 if (max(self.corridor_list.corridors[i_corridor].reward_zone_starts) > self.last_zone_start):
                     self.last_zone_start = max(self.corridor_list.corridors[i_corridor].reward_zone_starts)
@@ -76,7 +76,7 @@ class ImagingSessionData:
                     self.last_zone_end = max(self.corridor_list.corridors[i_corridor].reward_zone_ends)
 
         self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
-        self.corridor_length_roxel = (self.corridor_list.corridors[self.corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.corridor_length_roxel = (self.corridor_list.corridors[self.all_corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
         self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
 
         ##################################################
@@ -149,8 +149,24 @@ class ImagingSessionData:
         ## in certain tasks, the same corridor may appear multiple times in different substages
         ## we need to keep this corridor in the list self.corridors for running self.get_lapdata()
         ## but we should remove the redundancy after the data is loaded
-        self.corridors = np.unique(self.corridors)
-        self.N_corridors = len(self.corridors)
+        self.all_corridors = np.unique(self.all_corridors)
+        self.N_all_corridors = len(self.all_corridors)
+
+        ## only analyse corridors with at least 10 laps
+        if (self.N_all_corridors > 3):
+            N_laps_corr = np.zeros(self.N_all_corridors) 
+            N_laps_corr[0] = 100 # we include corridor 0
+            for i_corridor in (np.arange(self.N_all_corridors - 1) + 1):
+                corridor = self.all_corridors[i_corridor]
+                N_laps_corr[i_corridor] = sum(self.i_corridors == corridor)
+
+            self.corridors = self.all_corridors[np.where(N_laps_corr > 10)[0]]
+            self.N_corridors = len(self.corridors)
+
+            # print('laps per corridors:', N_laps_corr, self.corridors, self.N_corridors)
+        else :
+            self.N_corridors = self.N_all_corridors
+            self.corridors = self.all_corridors
 
         self.N_bins = int(round(self.corridor_length_roxel / 70)) # self.ImLaps[self.i_Laps_ImData[2]].event_rate.shape[1]
         self.N_ImLaps = len(self.i_Laps_ImData)
@@ -594,7 +610,7 @@ class ImagingSessionData:
 
             maze_lap = np.unique(maze[y])
             if (len(maze_lap) == 1):
-                corridor = self.corridors[int(maze_lap)] # the maze_lap is the index of the available corridors in the given stage
+                corridor = self.all_corridors[int(maze_lap)] # the maze_lap is the index of the available corridors in the given stage
             else:
                 corridor = -1
 
@@ -973,7 +989,7 @@ class ImagingSessionData:
         self.accepted_PCs = [] # a list, each element is a vector of Trues and Falses of accepted place cells after bootstrapping
 
         ## we calculate the rate matrix for all corridors - we need to use the same colors for the images
-        for corrid in np.unique(self.i_corridors):
+        for corrid in self.corridors:
             if (sum(self.i_corridors == corrid) > 10):
                 # select the laps in the corridor 
                 i_corrid = int(np.nonzero(self.corridors == corrid)[0] - 1)
@@ -1033,6 +1049,7 @@ class ImagingSessionData:
         if (self.N_corridors == 3):
             for i_cell in np.arange(rate_matrix.shape[1]):
                 self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
+
 
     # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
     def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None, randseed=123, print_binom_test=True, Holmes_Bonferroni=True):
@@ -1100,7 +1117,7 @@ class ImagingSessionData:
             print(str(N_sel3_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor1, n=NN, p=0.05, alternative='greater'), 5)))
             print(str(N_sel4_cor1) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor1, n=NN, p=0.05, alternative='greater'), 5)))
 
-        if (Holmes_Bonferroni & (self.N_corridors == 3) & (self.task == 'contingency_learning')):
+        if (Holmes_Bonferroni & (self.N_corridors == 3)):# & (self.task == 'contingency_learning')):
             Ps = np.vstack((self.shuffle_stats.P_skaggs[0], self.shuffle_stats.P_skaggs[1]))
             Ps = np.vstack((Ps, self.shuffle_stats.P_tuning_specificity[0], self.shuffle_stats.P_tuning_specificity[1]))
             Ps = np.vstack((Ps, self.shuffle_stats.P_reliability[0], self.shuffle_stats.P_reliability[1]))
@@ -1117,17 +1134,17 @@ class ImagingSessionData:
                 cells_spec_0 = cellids[np.where(ii_tuned_cells[2,:])[0]], 
                 cells_spec_1 = cellids[np.where(ii_tuned_cells[3,:])[0]], 
                 cells_reli_0 = cellids[np.where(ii_tuned_cells[4,:])[0]], 
-                cells_reli_1 = cellids[np.where(ii_tuned_cells[5,:])[0]], 
-                cells_select_all_0 = cellids[np.where(ii_tuned_cells[6,:])[0]], 
-                cells_select_pat1_0 = cellids[np.where(ii_tuned_cells[7,:])[0]], 
-                cells_select_pat2_0 = cellids[np.where(ii_tuned_cells[8,:])[0]], 
-                cells_select_pat3_0 = cellids[np.where(ii_tuned_cells[9,:])[0]], 
-                cells_select_rew_0 = cellids[np.where(ii_tuned_cells[10,:])[0]], 
-                cells_select_all_1 = cellids[np.where(ii_tuned_cells[11,:])[0]], 
-                cells_select_pat1_1 = cellids[np.where(ii_tuned_cells[12,:])[0]], 
-                cells_select_pat2_1 = cellids[np.where(ii_tuned_cells[13,:])[0]], 
-                cells_select_pat3_1 = cellids[np.where(ii_tuned_cells[14,:])[0]], 
-                cells_select_rew_1 = cellids[np.where(ii_tuned_cells[15,:])[0]])
+                cells_reli_1 = cellids[np.where(ii_tuned_cells[5,:])[0]]) 
+                # cells_select_all_0 = cellids[np.where(ii_tuned_cells[6,:])[0]], 
+                # cells_select_pat1_0 = cellids[np.where(ii_tuned_cells[7,:])[0]], 
+                # cells_select_pat2_0 = cellids[np.where(ii_tuned_cells[8,:])[0]], 
+                # cells_select_pat3_0 = cellids[np.where(ii_tuned_cells[9,:])[0]], 
+                # cells_select_rew_0 = cellids[np.where(ii_tuned_cells[10,:])[0]], 
+                # cells_select_all_1 = cellids[np.where(ii_tuned_cells[11,:])[0]], 
+                # cells_select_pat1_1 = cellids[np.where(ii_tuned_cells[12,:])[0]], 
+                # cells_select_pat2_1 = cellids[np.where(ii_tuned_cells[13,:])[0]], 
+                # cells_select_pat3_1 = cellids[np.where(ii_tuned_cells[14,:])[0]], 
+                # cells_select_rew_1 = cellids[np.where(ii_tuned_cells[15,:])[0]])
 
             self.tuned_cells['tuned_cells_0'] = np.unique(np.concatenate((self.tuned_cells['cells_Skaggs_0'], self.tuned_cells['cells_spec_0'], self.tuned_cells['cells_reli_0'])))
             self.tuned_cells['tuned_cells_1'] = np.unique(np.concatenate((self.tuned_cells['cells_Skaggs_1'], self.tuned_cells['cells_spec_1'], self.tuned_cells['cells_reli_1'])))
@@ -1153,7 +1170,7 @@ class ImagingSessionData:
 
 
 
-    def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1])):
+    def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1]), vmax=0):
         ## plot the average event rate of all cells in a given corridor
         ## if corridor == -1 then the first corridor is used
         ## normalized: each cell ratemap is normalized to have a max = 1
@@ -1170,7 +1187,6 @@ class ImagingSessionData:
         n_corrid = len(corrids)
         ## we calculate the rate matrix for all corridors - we need to use the same colors for the images
         
-        vmax = 0
         if (normalized):
             vmax = 1
         else: 
@@ -1361,7 +1377,7 @@ class ImagingSessionData:
                     events = spikes[i]
                     events = 50 * events / max_range
                     ii_events = np.nonzero(events)[0]
-                    ax[0,cor_index].scatter(times[i][ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, color=(np.ones(len(ii_events)) * np.remainder(10*i, 255)), norm=colnorm)
+                    ax[0,cor_index].scatter(times[i][ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(10*i, 255)), norm=colnorm)
                     if (reward == True): 
                         ax[0,cor_index].scatter(reward_times[i], np.repeat(i, len(reward_times[i])), marker="s", s=50, edgecolors=colmap(np.remainder(10*i, 255)), facecolors='none')
     
@@ -1991,8 +2007,8 @@ class Lap_ImData:
         ax_top.plot(self.laptime, self.smooth_position, c=colmap(50))
         ax_top.plot(self.raw_time, self.raw_position, c=colmap(90))
 
-        ax_top.scatter(self.lick_times, np.repeat(self.smooth_position.min(), len(self.lick_times)), marker="|", s=100, color=colmap(180))
-        ax_top.scatter(self.reward_times, np.repeat(self.smooth_position.min()+100, len(self.reward_times)), marker="|", s=100, color=colmap(230))
+        ax_top.scatter(self.lick_times, np.repeat(self.smooth_position.min(), len(self.lick_times)), marker="|", s=100, c=colmap(180))
+        ax_top.scatter(self.reward_times, np.repeat(self.smooth_position.min()+100, len(self.reward_times)), marker="|", s=100, c=colmap(230))
         ax_top.set_ylabel('position')
         ax_top.set_xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
@@ -2011,7 +2027,7 @@ class Lap_ImData:
                 events = self.frames_spikes[i,:]
                 events = 50 * events / max_range
                 ii_events = np.nonzero(events)[0]
-                ax_bottom.scatter(self.frames_time[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, color=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
+                ax_bottom.scatter(self.frames_time[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
 
             ylab_string = 'dF_F, spikes (max: ' + str(np.round(max_range, 1)) +  ' )'
             ax_bottom.set_ylabel(ylab_string)
