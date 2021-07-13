@@ -303,44 +303,41 @@ class Corridor_list:
 ## 17					grey 		grey 			people				people				1						Right	
 ## 18					grey 		grey 			green people		green people		1						Right	
 ###
-#Cors = Corridor_list('./', 'NearFarLong')
+# Cors = Corridor_list('./', 'NearFarLong')
 # #						 left_image, right_image, end_image, floor_image, ceiling_image
-#Cors.add_corridor('grey', 'grey_wall.png', 'grey_wall.png', 'grey_end_wall.png', 'grey_floor_ceiling.png', 'grey_floor_ceiling.png', [], reward='None')
-#
-#Cors.add_corridor('9_cheese', 'RN_9_cheese_left.png', 'RN_9_cheese_right.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [140, 820, 1500, 2180, 2860, 3540, 4220, 4900, 5580])
-#
-#Cors.add_corridor('7_cheese_a', 'RN_7_cheese_left_a.png', 'RN_7_cheese_right_a.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [140, 1140, 1940, 2740, 3940, 4740, 5500])
-#Cors.add_corridor('7_cheese_b', 'RN_7_cheese_left_b.png', 'RN_7_cheese_right_b.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [140, 940, 1740, 2540, 3340, 4140, 5500])
-#Cors.add_corridor('7_cheese_c', 'RN_7_cheese_left_c.png', 'RN_7_cheese_right_c.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [340, 1540, 2340, 3390, 4090, 4790, 5500])
-#
-#Cors.add_corridor('5_cheese_a', 'RN_5_cheese_left_a.png', 'RN_5_cheese_right_a.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [940, 1740, 2540, 4140, 5500])
-#Cors.add_corridor('5_cheese_b', 'RN_5_cheese_left_b.png', 'RN_5_cheese_right_b.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [140, 1340, 3140, 4640, 5500])
-#Cors.add_corridor('5_cheese_c', 'RN_5_cheese_left_c.png', 'RN_5_cheese_right_c.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [1140, 2740, 3940, 4740, 5500])
-#
-#Cors.add_corridor('3_cheese_a', 'RN_3_cheese_left_a.png', 'RN_3_cheese_right_a.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [1140, 2140, 5250])
-#Cors.add_corridor('3_cheese_b', 'RN_3_cheese_left_b.png', 'RN_3_cheese_right_b.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [940, 3640, 5250])
-#Cors.add_corridor('3_cheese_c', 'RN_3_cheese_left_c.png', 'RN_3_cheese_right_c.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [1740, 4140, 5250])
-#
-#Cors.add_corridor('1_cheese', 'RN_1_cheese_left_drop.png', 'RN_1_cheese_right_drop.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [5250])
-#
-# # def add_corridor(self, name, left_image, right_image, end_image, floor_image, ceiling_image, reward_zone_starts, zone_width=470, reward='Right', length=7168, height=768, width=1024):
-##Cors.add_corridor('leaf', 'LongLeftA.png', 'LongRightA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [7500], zone_width=400, length=10240) 
-##Cors.add_corridor('people', 'LongLeftB.png', 'LongRightB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [4600], zone_width=400, length=10240)# 2500-3000
-#Cors.add_corridor('grey1', 'Long_grey.png', 'Long_grey.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [150, 1650, 3150, 4650, 6150, 7650,], zone_width=1000, length=10240) 
-#Cors.add_corridor('grey2', 'Long_grey.png', 'Long_grey.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png',  [150, 1650, 3150, 4650, 6150, 7650,], zone_width=1000, length=10240)# 2500-3000
-#
-#Cors.add_corridor('patternA', 'LongLeft_patternsA.png', 'LongRight_patternsA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [4720], zone_width=1050, length=10240) 
-#Cors.add_corridor('patternB', 'LongLeft_patternsB.png', 'LongRight_patternsB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [7430], zone_width=1050, length=10240)# 2500-3000
-#
-#Cors.add_corridor('patternA', 'LongLeft_patternsA.png', 'LongRight_patternsA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [4720], zone_width=1050, length=10240) 
-#Cors.add_corridor('green people', 'LongLeftC.png', 'LongRightC.png', 'mCEnd.png', 'Long_floorC.png', 'Long_ceiling.png', [5660], zone_width=1000, length=10240)
-#Cors.add_corridor('patternB', 'LongLeft_patternsB.png', 'LongRight_patternsB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [7430], zone_width=1050, length=10240)# 2500-3000
-#
-#Cors.print_zones()
-#Cors.print_images()
-#
-#Cors.write()
-## #
+# Cors.add_corridor('grey', 'grey_wall.png', 'grey_wall.png', 'grey_end_wall.png', 'grey_floor_ceiling.png', 'grey_floor_ceiling.png', [], reward='None')
+
+# Cors.add_corridor('9_cheese', 'RN_9_cheese_left.png', 'RN_9_cheese_right.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [140, 820, 1500, 2180, 2860, 3540, 4220, 4900, 5580])
+
+# Cors.add_corridor('7_cheese_a', 'RN_7_cheese_left_a.png', 'RN_7_cheese_right_a.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [140, 1140, 1940, 2740, 3940, 4740, 5500])
+# Cors.add_corridor('7_cheese_b', 'RN_7_cheese_left_b.png', 'RN_7_cheese_right_b.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [140, 940, 1740, 2540, 3340, 4140, 5500])
+# Cors.add_corridor('7_cheese_c', 'RN_7_cheese_left_c.png', 'RN_7_cheese_right_c.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [340, 1540, 2340, 3390, 4090, 4790, 5500])
+
+# Cors.add_corridor('5_cheese_a', 'RN_5_cheese_left_a.png', 'RN_5_cheese_right_a.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [940, 1740, 2540, 4140, 5500])
+# Cors.add_corridor('5_cheese_b', 'RN_5_cheese_left_b.png', 'RN_5_cheese_right_b.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [140, 1340, 3140, 4640, 5500])
+# Cors.add_corridor('5_cheese_c', 'RN_5_cheese_left_c.png', 'RN_5_cheese_right_c.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [1140, 2740, 3940, 4740, 5500])
+
+# Cors.add_corridor('3_cheese_a', 'RN_3_cheese_left_a.png', 'RN_3_cheese_right_a.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [1140, 2140, 5250])
+# Cors.add_corridor('3_cheese_b', 'RN_3_cheese_left_b.png', 'RN_3_cheese_right_b.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [940, 3640, 5250])
+# Cors.add_corridor('3_cheese_c', 'RN_3_cheese_left_c.png', 'RN_3_cheese_right_c.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [1740, 4140, 5250])
+
+# Cors.add_corridor('1_cheese', 'RN_1_cheese_left_drop.png', 'RN_1_cheese_right_drop.png', 'black_end_wall.png', 'floor_ceiling.png', 'floor_ceiling.png', [5250])
+
+# Cors.add_corridor('grey1', 'Long_grey.png', 'Long_grey.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [150, 1650, 3150, 4650, 6150, 7650,], zone_width=1000, length=10240) 
+# Cors.add_corridor('grey2', 'Long_grey.png', 'Long_grey.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png',  [150, 1650, 3150, 4650, 6150, 7650,], zone_width=1000, length=10240)# 2500-3000
+
+# Cors.add_corridor('patternA', 'LongLeft_patternsA.png', 'LongRight_patternsA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [4720], zone_width=1050, length=10240) 
+# Cors.add_corridor('patternB', 'LongLeft_patternsB.png', 'LongRight_patternsB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [7430], zone_width=1050, length=10240)# 2500-3000
+
+# Cors.add_corridor('patternA', 'LongLeft_patternsA.png', 'LongRight_patternsA.png', 'mAEnd.png', 'Long_floorA.png', 'Long_ceiling.png', [4720], zone_width=1050, length=10240) 
+# Cors.add_corridor('green people', 'LongLeftC.png', 'LongRightC.png', 'mCEnd.png', 'Long_floorC.png', 'Long_ceiling.png', [5660], zone_width=1000, length=10240)
+# Cors.add_corridor('patternB', 'LongLeft_patternsB.png', 'LongRight_patternsB.png', 'mBEnd.png', 'Long_floorB.png', 'Long_ceiling.png', [7430], zone_width=1050, length=10240)# 2500-3000
+
+# Cors.print_zones()
+# Cors.print_images()
+
+# Cors.write()
+# ## #
 #
 
 

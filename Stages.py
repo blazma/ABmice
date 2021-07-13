@@ -89,13 +89,13 @@ class Stage_collection:
 # 	 		13		a			13,14,17,18		pseudo		17				correct 	correct		striped
 
 # switching	14		a			12,14,17,19		pseudo		14				correct 	correct		green ->
-# 			14		b			13,15,16,18		pseudo		11				correct 	correct				 -> purple
+# 					b			13,15,16,18		pseudo		11				correct 	correct				 -> purple
 # 	 		15		a			13,15,16,18		pseudo		15				correct 	correct		purple -> 
-# 	 		15		b			12,15,16,19		pseudo		12				correct 	correct				-> square
+# 	 				b			12,15,16,19		pseudo		12				correct 	correct				-> square
 # 	 		16		a			12,15,16,19		pseudo		16				correct 	correct		square ->
-# 	 		16		b			13,14,17,18		pseudo		13				correct 	correct				 -> striped
+# 	 				b			13,14,17,18		pseudo		13				correct 	correct				 -> striped
 # 	 		17		a			13,14,17,18		pseudo		17				correct 	correct		striped -> 
-# 	 		17		b			12,14,17,19		pseudo		10				correct 	correct				 -> green
+# 	 				b			12,14,17,19		pseudo		10				correct 	correct				 -> green
 
 
 # CONDITIONS:
@@ -245,21 +245,25 @@ class Stage_collection:
 # 			1		d			8-10			pseudo		1e				Pavl/Oper  	both		3_cheese
 # 			1		e			11				pseudo		2				Pavl/Oper  	both		1_cheese
 
-# diff_1	2		a			12-13			pseudo		3				Pavl/Oper  	both		near-far drop
-# 			2		b			14-15			pseudo		3				Pavl/Oper  	both		near-far no drop
-# diff_2	3		a			14-15			pseudo		3				Pavl/Oper  	both		near-far no drop
+# diff_1	2		a			12-13			pseudo		3				Pavl/Oper  	both		2 grey corridors with 6 zones
+# 			2		b			14-15			pseudo		3				Pavl/Oper  	both		near-far 
+# diff_2	3		a			14-15			pseudo		3				Pavl/Oper  	both		near-far 
 # 			3		b			17				pseudo		3				Pavl/Oper  	both		new corridor
+# diff_3	4		a			14-15			pseudo		4				Pavl/Oper  	both		near-far 
+# 			4		b			14				pseudo		4				Pavl/Oper  	both		near
+# 			4		c			15				pseudo		4				Pavl/Oper  	both		far
 
-#stage_list = Stage_collection('.', 'NearFarLong')
-#stage_list.add_stage(level='lick&run', stage=0, corridors=[0], next_stage=[1], rule='pretrain', condition='either', name='pretrain')
-#
-#stage_list.add_stage(level='lick_zone', stage=1, corridors=[1,2,3,4,5,6,7,8,9,10,11], next_stage=[2], rule='Pavlovian', condition='either', name='9 -> 1 lick zone', substages=[0,1,1,1,2,2,2,3,3,3,4])
-#stage_list.add_stage(level='diff_1', stage=2, corridors=[12, 13, 14, 15], next_stage=[3], rule='Pavlovian', condition='both', name='near-far', substages=[0,0,1,1])
-#stage_list.add_stage(level='diff_2', stage=3, corridors=[14,15,17], next_stage=[3], rule='Pavlovian', condition='both', name='near-far+new', substages=[0,0,1])
-#
-#stage_list.print_table()
-#
-#stage_list.write()
+# stage_list = Stage_collection('.', 'NearFarLong')
+# stage_list.add_stage(level='lick&run', stage=0, corridors=[0], next_stage=[1], rule='pretrain', condition='either', name='pretrain')
+
+# stage_list.add_stage(level='lick_zone', stage=1, corridors=[1,2,3,4,5,6,7,8,9,10,11], next_stage=[2], rule='Pavlovian', condition='either', name='9 -> 1 lick zone', substages=[0,1,1,1,2,2,2,3,3,3,4])
+# stage_list.add_stage(level='diff_1', stage=2, corridors=[12, 13, 14, 15], next_stage=[3], rule='Pavlovian', condition='both', name='near-far', substages=[0,0,1,1])
+# stage_list.add_stage(level='diff_2', stage=3, corridors=[14,15,17], next_stage=[3], rule='Pavlovian', condition='both', name='near-far+new', substages=[0,0,1])
+# stage_list.add_stage(level='diff_2', stage=3, corridors=[14,15,16,18], next_stage=[4], rule='Pavlovian', condition='both', name='near-far-blocks', substages=[0,0,1,2])
+
+# stage_list.print_table()
+
+# stage_list.write()
 
 ############################################################################
 ## Stages for the morphing experiment of Kata

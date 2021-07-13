@@ -21,6 +21,7 @@ from utils import *
 from Stages import *
 from Corridors import *
 
+## a function to break a time series into Nbreak sections each at least Lmin long.
 def breakpoints(Nframes, Lmin=500, Nbreak=5):
     if (Nframes < (Lmin * Nbreak)):
         print('Nframes < (Lmin * Nbreak), we use smaller segments')
@@ -36,14 +37,63 @@ def breakpoints(Nframes, Lmin=500, Nbreak=5):
 
 class ImShuffle:
     'Base structure for shuffling analysis of imaging data'
-    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None, selected_laps=None):
-        self.name = name
+    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None, selected_laps=None, speed_threshold=5, randseed=123):
+        ###########################################
+        ## setting basic parameters for the session
+        ###########################################
+
+        self.datapath = datapath
         self.date_time = date_time
-        self.stage = 0
-        self.stages = []
-        self.stage = stage
+        self.name = name
         self.task = task
 
+        self.stage = stage
+        self.stages = []
+        self.randseed = randseed
+        self.selected_laps = selected_laps
+        self.speed_threshold = speed_threshold
+
+        stagefilename = datapath + self.task + '_stages.pkl'
+        input_file = open(stagefilename, 'rb')
+        if version_info.major == 2:
+            self.stage_list = pickle.load(input_file)
+        elif version_info.major == 3:
+            self.stage_list = pickle.load(input_file, encoding='latin1')
+        input_file.close()
+
+        corridorfilename = datapath + self.task + '_corridors.pkl'
+        input_file = open(corridorfilename, 'rb')
+        if version_info.major == 2:
+            self.corridor_list = pickle.load(input_file)
+        elif version_info.major == 3:
+            self.corridor_list = pickle.load(input_file, encoding='latin1')
+        input_file.close()
+
+        self.all_corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])# we always add corridor 0 - that is the grey zone
+
+        ## in certain tasks, the same corridor may appear multiple times in different substages
+        ## Labview uses different indexes for corridors in different substages, therefore 
+        ## we need to keep this corridor in the list self.corridors for running self.get_lapdata()
+        ## but we should remove the redundancy after the data is loaded
+
+        self.last_zone_start = 0
+        self.last_zone_end = 0
+        for i_corridor in self.all_corridors:
+            if (i_corridor > 0):
+                if (max(self.corridor_list.corridors[i_corridor].reward_zone_starts) > self.last_zone_start):
+                    self.last_zone_start = max(self.corridor_list.corridors[i_corridor].reward_zone_starts)
+                if (max(self.corridor_list.corridors[i_corridor].reward_zone_ends) > self.last_zone_end):
+                    self.last_zone_end = max(self.corridor_list.corridors[i_corridor].reward_zone_ends)
+
+        self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
+        self.corridor_length_roxel = (self.corridor_list.corridors[self.all_corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
+        self.N_pos_bins = int(np.round(self.corridor_length_roxel / 70))
+
+
+        ###########################################
+        ## imaging data - imaging data and time axis is given as an argument - we don't need to reload it
+        ###########################################
         self.raw_spikes = raw_spikes
         self.frame_times = frame_times
         self.frame_pos = frame_pos
@@ -62,62 +112,43 @@ class ImShuffle:
         self.N_shuffle = N_shuffle
         self.mode = mode # random: totally randomize the spike times; shift: circularly shift spike times 
 
-        stagefilename = datapath + self.task + '_stages.pkl'
-        input_file = open(stagefilename, 'rb')
-        if version_info.major == 2:
-            self.stage_list = pickle.load(input_file)
-        elif version_info.major == 3:
-            self.stage_list = pickle.load(input_file, encoding='latin1')
-        input_file.close()
-
-        corridorfilename = datapath + self.task + '_corridors.pkl'
-        input_file = open(corridorfilename, 'rb')
-        if version_info.major == 2:
-            self.corridor_list = pickle.load(input_file)
-        elif version_info.major == 3:
-            self.corridor_list = pickle.load(input_file, encoding='latin1')
-        input_file.close()
-
-        self.corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])#[0:3]
-
-        self.last_zone_start = 0
-        self.last_zone_end = 0
-        for i_corridor in self.corridors:
-            if (i_corridor > 0):
-                if (max(self.corridor_list.corridors[i_corridor].reward_zone_starts) > self.last_zone_start):
-                    self.last_zone_start = max(self.corridor_list.corridors[i_corridor].reward_zone_starts)
-                if (max(self.corridor_list.corridors[i_corridor].reward_zone_ends) > self.last_zone_end):
-                    self.last_zone_end = max(self.corridor_list.corridors[i_corridor].reward_zone_ends)
-
-        self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
-        self.corridor_length_roxel = (self.corridor_list.corridors[self.corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
-        self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
           
-
+        ###########################################
+        ## setting up minibatches 
+        ###########################################
         ## shuffling in minibatches - to save memory when running high number of shuffles with a lots of cells
         ## defining containers for the P-values
         ## still not super efficient as we load the behavior data separately for each minibatch...
         if batchsize is None:
-            batchsize = self.N_cells
+            self.batchsize = self.N_cells
+        else:
+            self.batchsize = batchsize
+
+        self.ratemaps = [] # a list, each element is an array space x neurons being the ratemap of the cells in a given corridor
 
         self.cell_reliability = [] # a list, each element is a matrix with the reliability of the shuffles in a corridor
         self.P_reliability = [] # a list, each element is a vector with the P value estimated from shuffle control - P(reliability > measured)
+
         self.cell_skaggs=[] # a list, each element is a matrix with the skaggs93 spatial info of the shuffles in a corridor
         self.P_skaggs=[] # a list, each element is a vector with the the P value estimated from shuffle control - P(Skaggs-info > measured)
+
         self.cell_tuning_specificity=[] # a list, each element is a matrix with the tuning specificity of the shuffles in a corridor
         self.P_tuning_specificity=[] # a list, each element is a vector with the the P value estimated from shuffle control - P(specificity > measured)
+
         self.accepted_PCs = [] # a list, each element is a vector of Trues and Falses of candidate place cells with at least 1 place field according to Hainmuller and Bartos 2018
 
-        ## warning: cell_corridor_selectivity assumes 2 corridors and a single reward zone at the end of the corridor        
-        self.cell_corridor_selectivity = np.zeros((5, self.N_cells, self.N_shuffle+1)) # a matrix with the selectivity of the shuffles in the maze, corridor 1-3, reward area
-        self.P_selectivity = np.zeros((5, self.N_cells)) # a matrix with the selectivity of the the P value estimated from shuffle control - P(selectivity > measured)
+        self.cell_corridor_selectivity = np.zeros([2, self.N_cells, self.N_shuffle]) # a matrix with the selectivity index of the cells. Second row indicates the corridor with the highers rate.
+        self.P_corridor_selectivity = np.zeros([self.N_cells])
+
+        self.cell_corridor_similarity = np.zeros([self.N_cells, self.N_shuffle]) # a vector with the similarity index of the cells.
+        self.P_corridor_similarity = np.zeros([self.N_cells])
 
         ##################################################
         ## shuffling the spikes data
         ##################################################
 
         i_start = 0
-        i_end = i_start + batchsize
+        i_end = i_start + self.batchsize
         if (i_end == (self.N_cells - 1)): # the last minibatch would contain only 1 cell
             i_end = i_end + 1
         i_minibatch = 0
@@ -128,7 +159,7 @@ class ImShuffle:
             print('calculating minibatch ' + str(i_minibatch) + ', batch length: ', str(batchsize))
 
             self.shuffle_spikes = np.zeros((batchsize, self.N_frames, self.N_shuffle+1))
-            self.shuffle_spikes[:,:,self.N_shuffle] = self.raw_spikes[batch_ids,:] # the last is the real data ...
+            self.shuffle_spikes[:,:,self.N_shuffle] = self.raw_spikes[batch_ids,:] # the last element is the real data ...
 
             if (self.mode == 'shift'):
                 for i_shuffle in range(self.N_shuffle):
@@ -148,7 +179,7 @@ class ImShuffle:
                     self.shuffle_spikes[:,:,i_shuffle] = spks_rolled
             else:
                 if (self.mode != 'random'):
-                    print ('Warning: shuffling mode must be either random or shift. We will use radnom.')
+                    print ('Warning: shuffling mode must be either random or shift. We will use random.')
                 for i_shuffle in range(self.N_shuffle):
                     spks = np.copy(self.raw_spikes[batch_ids,:])
                     spks = np.moveaxis(spks, 1, 0)
@@ -165,46 +196,66 @@ class ImShuffle:
             self.i_Laps_ImData = np.zeros(1) # np array with the index of laps with imaging
             self.i_corridors = np.zeros(1) # np array with the index of corridors in each run
 
-            self.get_lapdata_shuffle(datapath, date_time, name, self.task, selected_laps=selected_laps) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
+            self.get_lapdata_shuffle(self.datapath, self.date_time, self.name, self.task, selected_laps=self.selected_laps) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
 
             ## in certain tasks, the same corridor may appear multiple times in different substages
-            ## we need to keep this corridor in the list self.corridors for running self.get_lapdata()
+            ## we need to keep this corridor in the list self.all_corridors for running self.get_lapdata()
             ## but we should remove the redundancy after the data is loaded
-            self.corridors = np.unique(self.corridors)
-            self.N_corridors = len(self.corridors)
+            self.all_corridors = np.unique(self.all_corridors)
+            self.N_all_corridors = len(self.all_corridors)
 
-            self.N_bins = 50 # self.shuffle_ImLaps[self.i_Laps_ImData[2]].event_rate.shape[1]
+            ## only analyse corridors with at least 3 laps 
+            # - the data still remains in the ImLaps list and will appear in the activity tensor!
+            #   but the corridor will not 
+            #   we also do NOT include corridor 0 here
+            if (self.N_all_corridors > 1):
+                N_laps_corr = np.zeros(self.N_all_corridors) 
+                for i_corridor in np.arange(self.N_all_corridors):
+                    corridor = self.all_corridors[i_corridor]
+                    N_laps_corr[i_corridor] = sum(self.i_corridors == corridor)
+
+                self.corridors = self.all_corridors[np.where(N_laps_corr > 3)[0]]
+                self.N_corridors = len(self.corridors)
+
+            else :
+                self.corridors = np.setdiff1d(self.all_corridors, 0)
+                self.N_corridors = len(self.corridors)
+
             self.N_ImLaps = len(self.i_Laps_ImData)
 
-            self.raw_activity_tensor = np.zeros((self.N_bins, batchsize, self.N_ImLaps, self.N_shuffle+1)) # a tensor with space x neurons x trials x shuffle containing the spikes
-            self.raw_activity_tensor_time = np.zeros((self.N_bins, self.N_ImLaps)) # a tensor with space x trials containing the time spent at each location in each lap
-            self.activity_tensor = np.zeros((self.N_bins, batchsize, self.N_ImLaps, self.N_shuffle+1)) # same as the activity tensor spatially smoothed
-            self.activity_tensor_time = np.zeros((self.N_bins, self.N_ImLaps)) # same as the activity_tensor_time spatially smoothed
+            self.raw_activity_tensor = np.zeros((self.N_pos_bins, batchsize, self.N_ImLaps, self.N_shuffle+1)) # a tensor with space x neurons x trials x shuffle containing the spikes
+            self.raw_activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # a tensor with space x trials containing the time spent at each location in each lap
+            self.activity_tensor = np.zeros((self.N_pos_bins, batchsize, self.N_ImLaps, self.N_shuffle+1)) # same as the activity tensor spatially smoothed
+            self.activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # same as the activity_tensor_time spatially smoothed
             self.combine_lapdata_shuffle() ## fills in the cell_activity tensor
 
-            ## warning: self.cell_rates assumes a single reward zone at the end of the corridor
-            self.cell_rates = [] # a list, each element is a 3 x n_cells matrix with the average rate of the cells in the total corridor, pattern zone and reward zone
+
+            self.cell_rates_batch = [] # a list, each element is a 1 x n_cells matrix with the average rate of the cells in the total corridor
+            self.cell_activelaps_batch=[] # a list, each element is a matrix with the % of significantly spiking laps of the shuffles in a corridor
+            self.cell_Fano_factor_batch = [] # a list, each element is a matrix with the reliability of the shuffles in a corridor
+
             self.cell_reliability_batch = [] # a list, each element is a matrix with the reliability of the shuffles in a corridor
-            self.cell_Fano_factor = [] # a list, each element is a matrix with the reliability of the shuffles in a corridor
             self.cell_skaggs_batch=[] # a list, each element is a matrix with the skaggs93 spatial info of the shuffles in a corridor
-            self.cell_activelaps=[] # a list, each element is a matrix with the % of significantly spiking laps of the shuffles in a corridor
             self.cell_tuning_specificity_batch=[] # a list, each element is a matrix with the tuning specificity of the shuffles in a corridor
 
             self.P_reliability_batch = [] # a list, each element is a vector with the P value estimated from shuffle control - P(reliability > measured)
             self.P_skaggs_batch=[] # a list, each element is a vector with the the P value estimated from shuffle control - P(Skaggs-info > measured)
             self.P_tuning_specificity_batch=[] # a list, each element is a vector with the the P value estimated from shuffle control - P(specificity > measured)
 
-            ## warning: cell_corridor_selectivity assumes 2 corridors and a single reward zone at the end of the corridor
-            self.cell_corridor_selectivity_batch = np.zeros((5, batchsize, self.N_shuffle+1)) # a matrix with the selectivity of the shuffles in the maze, corridor 1-3, reward area
-            self.P_selectivity_batch = np.zeros((5, batchsize)) # a matrix with the selectivity of the the P value estimated from shuffle control - P(selectivity > measured)
+            self.cell_corridor_selectivity_batch = np.zeros([batchsize, self.N_shuffle]) # a matrix with the selectivity index of the cells
+            self.P_corridor_selectivity_batch = np.zeros([batchsize])
+
+            self.ratemaps_batch = [] # a list, each element is an array space x neurons being the ratemap of the cells in a given corridor
+            self.cell_corridor_similarity_batch = np.zeros([batchsize, self.N_shuffle]) # a vector with the similarity index of the cells.
+            self.P_corridor_similarity_batch = np.zeros([batchsize])
 
             self.calculate_properties_shuffle()
 
-            self.candidate_PCs_batch_batch = [] # a list, each element is a vector of Trues and Falses of candidate place cells with at least 1 place field according to Hainmuller and Bartos 2018
+            self.candidate_PCs_batch = [] # a list, each element is a vector of Trues and Falses of candidate place cells with at least 1 place field according to Hainmuller and Bartos 2018
             self.accepted_PCs_batch = [] # a list, each element is a vector of Trues and Falses of accepted place cells after bootstrapping
 
             ## warning: self.cell_corridor_similarity assumes 2 corridors
-            self.cell_corridor_similarity = np.zeros((2, batchsize, self.N_shuffle+1)) # a matrix with the pearson R and P value of the correlation between the ratemaps in the two mazes
+            # self.cell_corridor_similarity = np.zeros((2, batchsize, self.N_shuffle+1)) # a matrix with the pearson R and P value of the correlation between the ratemaps in the two mazes
             self.Hainmuller_PCs_shuffle()
 
             if (i_minibatch == 0):
@@ -216,11 +267,15 @@ class ImShuffle:
                 self.P_tuning_specificity = self.P_tuning_specificity_batch
                 self.accepted_PCs = self.accepted_PCs_batch
 
-                if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
-                    self.cell_corridor_selectivity = self.cell_corridor_selectivity_batch
-                    self.P_selectivity = self.P_selectivity_batch
+                self.cell_corridor_selectivity = self.cell_corridor_selectivity_batch  
+                self.P_corridor_selectivity = self.P_corridor_selectivity_batch 
+
+                self.ratemaps = self.ratemaps_batch
+                self.cell_corridor_similarity = self.cell_corridor_similarity_batch 
+                self.P_corridor_similarity = self.P_corridor_similarity_batch 
+
             else:
-                for i_cor in range(self.N_corridors-1):
+                for i_cor in range(self.N_corridors):
                     print(np.shape(self.cell_reliability[i_cor]), np.shape(self.cell_reliability_batch[i_cor]))
                     self.cell_reliability[i_cor] = np.vstack((self.cell_reliability[i_cor], self.cell_reliability_batch[i_cor]))
                     self.P_reliability[i_cor] = np.hstack((self.P_reliability[i_cor], self.P_reliability_batch[i_cor]))
@@ -229,10 +284,13 @@ class ImShuffle:
                     self.cell_tuning_specificity[i_cor] = np.vstack((self.cell_tuning_specificity[i_cor], self.cell_tuning_specificity_batch[i_cor]))
                     self.P_tuning_specificity[i_cor] = np.hstack((self.P_tuning_specificity[i_cor], self.P_tuning_specificity_batch[i_cor]))
                     self.accepted_PCs[i_cor] = np.hstack((self.accepted_PCs[i_cor], self.accepted_PCs_batch[i_cor]))
+                    self.ratemaps[i_cor] = np.concatenate((self.ratemaps[i_cor], self.ratemaps_batch[i_cor]), axis=1)
 
-                if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
-                    self.cell_corridor_selectivity = np.concatenate((self.cell_corridor_selectivity, self.cell_corridor_selectivity_batch), axis=1)
-                    self.P_selectivity = np.hstack((self.P_selectivity, self.P_selectivity_batch))
+                self.cell_corridor_selectivity = np.concatenate((self.cell_corridor_selectivity, self.cell_corridor_selectivity_batch))
+                self.P_corridor_selectivity = np.concatenate((self.P_corridor_selectivity, self.P_corridor_selectivity_batch))
+
+                self.cell_corridor_similarity = np.concatenate((self.cell_corridor_similarity, self.cell_corridor_similarity_batch)) 
+                self.P_corridor_similarity = np.concatenate((self.P_corridor_similarity, self.P_corridor_similarity_batch))
 
             i_start = i_end
             i_end = min(i_start + batchsize, self.N_cells)
@@ -265,22 +323,26 @@ class ImShuffle:
             action.append(str(line[14]))
 
         laptime = np.array(time_array)
+        lap = np.array(lap_array)
+
         pos = np.array(position_array)
         lick = np.array(lick_array)
-        lap = np.array(lap_array)
         maze = np.array(maze_array)
         mode = np.array(mode_array)
         N_0lap = 0 # Counting the non-valid laps
         self.n_laps = 0
+
+        #################################################
+        ## position, and lap info has been already added to the imaging frames
+        #################################################
+        i_ImData = [] # index of laps with imaging data
+        i_corrids = [] # ID of corridor for the current lap
 
         ### include only a subset of laps
         if selected_laps is None:
             select_laps = False
         else:
             select_laps = True
-
-        i_ImData = [] # index of laps with imaging data
-        i_corrids = [] # ID of corridor for the current lap
 
         for i_lap in np.unique(lap):
             y = lap == i_lap # index for the current lap
@@ -289,7 +351,7 @@ class ImShuffle:
 
             maze_lap = np.unique(maze[y])
             if (len(maze_lap) == 1):
-                corridor = self.corridors[int(maze_lap)] # the maze_lap is the index of the available corridors in the given stage
+                corridor = self.all_corridors[int(maze_lap)] # the maze_lap is the index of the available corridors in the given stage
             else:
                 corridor = -1
 
@@ -335,7 +397,7 @@ class ImShuffle:
 
                 ### imaging data    
                 iframes = np.where(self.frame_laps == i_lap)[0]
-                if ((len(iframes) > 0) & (add_lap == True)): # there is imaging data belonging to this lap...
+                if ((len(iframes) > self.N_pos_bins) & (add_lap == True)): # there is imaging data belonging to this lap...
                     # print(i, min(iframes), max(iframes))
                     lap_frames_spikes = self.shuffle_spikes[:,iframes,:]
                     lap_frames_time = self.frame_times[iframes]
@@ -347,27 +409,25 @@ class ImShuffle:
                     lap_frames_pos = np.nan 
                     
                 # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
-                self.shuffle_ImLaps.append(Shuffle_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list))
+                self.shuffle_ImLaps.append(Shuffle_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold))
                 self.n_laps = self.n_laps + 1
             else:
                 N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anythin with this...
 
         self.i_Laps_ImData = np.array(i_ImData) # index of laps with imaging data
         self.i_corridors = np.array(i_corrids) # ID of corridor for the current lap
-        # self.cell_activity = np.zeros((self.N_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials
+        # self.cell_activity = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials
 
     def combine_lapdata_shuffle(self): ## fills in the cell_activity tensor
-        # self.raw_activity_tensor = np.zeros((self.N_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
-        # self.raw_activity_tensor_time = np.zeros((self.N_bins, self.N_ImLaps)) # a tensor with space x  trials containing the time spent at each location in each lap
+        # self.raw_activity_tensor = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
+        # self.raw_activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # a tensor with space x  trials containing the time spent at each location in each lap
         valid_lap = np.zeros(len(self.i_Laps_ImData))
         k_lap = 0
         for i_lap in self.i_Laps_ImData:
             if (self.shuffle_ImLaps[i_lap].n_cells > 1):
                 valid_lap[k_lap] = 1
-                # self.spks_pos = np.zeros((N_cells, 50, self.n_shuffle)) # sum of spike counts measured at a given position
-                # self.raw_activity_tensor = np.zeros((50, N_cells, self.N_ImLaps, self.N_shuffle)) # a tensor with space x neurons x trials x shuffle containing the spikes
                 self.raw_activity_tensor[:,:,k_lap,:] = np.moveaxis(self.shuffle_ImLaps[i_lap].spks_pos, 1, 0)
-                self.raw_activity_tensor_time[:,k_lap] = self.shuffle_ImLaps[i_lap].T_pos
+                self.raw_activity_tensor_time[:,k_lap] = self.shuffle_ImLaps[i_lap].T_pos_fast
             k_lap = k_lap + 1
 
         ## smoothing - average of the 3 neighbouring bins
@@ -375,7 +435,7 @@ class ImShuffle:
         self.activity_tensor[-1,:,:,:] = (self.raw_activity_tensor[-1,:,:,:] + self.raw_activity_tensor[-1,:,:,:]) / 2
         self.activity_tensor_time[0,:] = (self.raw_activity_tensor_time[0,:] + self.raw_activity_tensor_time[1,:]) / 2
         self.activity_tensor_time[-1,:] = (self.raw_activity_tensor_time[-1,:] + self.raw_activity_tensor_time[-1,:]) / 2
-        for i_bin in np.arange(1, self.N_bins-1):
+        for i_bin in np.arange(1, self.N_pos_bins-1):
             self.activity_tensor[i_bin,:,:,:] = np.average(self.raw_activity_tensor[(i_bin-1):(i_bin+2),:,:,:], axis=0)
             self.activity_tensor_time[i_bin,:] = np.average(self.raw_activity_tensor_time[(i_bin-1):(i_bin+2),:], axis=0)
 
@@ -389,22 +449,28 @@ class ImShuffle:
 
 
     def calculate_properties_shuffle(self):
-        self.ratemaps = [] # a list, each element is an array space x neurons being the ratemaps of the cells in a given corridor
-        self.cell_rates = [] # we do not append if it already exists...
+        self.cell_rates_batch = [] # we do not append if it already exists...
+        self.cell_Fano_factor_batch = []
+        self.cell_activelaps_batch=[]
+
         self.cell_reliability_batch = []
-        self.cell_Fano_factor = []
         self.cell_skaggs_batch=[]
-        self.cell_activelaps=[]
         self.cell_tuning_specificity_batch=[]
 
+        self.ratemaps_batch = [] # a list, each element is an array space x neurons being the ratemaps of the cells in a given corridor
         self.P_reliability_batch = [] # a list, each element is a vector with the P value estimated from shuffle control - P(reliability > measured)
         self.P_skaggs_batch=[] # a list, each element is a vector with the the P value estimated from shuffle control - P(Skaggs-info > measured)
         self.P_tuning_specificity_batch=[] # a list, each element is a vector with the the P value estimated from shuffle control - P(specificity > measured)
 
         minibatchsize = self.activity_tensor.shape[1]
+        self.cell_corridor_selectivity_batch = np.zeros([minibatchsize, self.N_shuffle]) # a matrix with the selectivity index of the cells. Second row indicates the corridor with the highers rate.
+        self.P_corridor_selectivity_batch = np.zeros([minibatchsize])
 
-        if (self.N_corridors > 1):
-            for i_corridor in (np.arange(self.N_corridors-1)+1):
+        self.cell_corridor_similarity_batch = np.zeros([minibatchsize, self.N_shuffle]) # a vector with the similarity index of the cells.
+        self.P_corridor_similarity_batch = np.zeros([minibatchsize])
+
+        if (self.N_corridors > 0):
+            for i_corridor in np.arange(self.N_corridors):
                 corridor = self.corridors[i_corridor]
                 if (sum(self.i_corridors == corridor) > 10):
                     # select the laps in the corridor 
@@ -424,20 +490,13 @@ class ImShuffle:
                         for i_shuffle in range(self.N_shuffle+1):
                             rate_matrix[:,i_cell,i_shuffle] = total_spikes[:,i_cell,i_shuffle] / total_time
 
-                    self.ratemaps.append(rate_matrix)
+                    self.ratemaps_batch.append(rate_matrix)
 
                     print('calculating rate, reliability and Fano factor...')
 
                     ## average firing rate
                     rates = np.sum(total_spikes, axis=0) / np.sum(total_time) # cells x shuffle
-                    if (self.task == 'contingency_learning'):
-                        rates_pattern1 = np.sum(total_spikes[0:14,:,:], axis=0) / np.sum(total_time[0:14])
-                        rates_pattern2 = np.sum(total_spikes[14:28,:,:], axis=0) / np.sum(total_time[14:28])
-                        rates_pattern3 = np.sum(total_spikes[28:42,:,:], axis=0) / np.sum(total_time[28:42])
-                        rates_reward = np.sum(total_spikes[42:47,:,:], axis=0) / np.sum(total_time[42:47])
-                        self.cell_rates.append(np.stack((rates, rates_pattern1, rates_pattern2, rates_pattern3, rates_reward), axis=0))
-                    else :
-                        self.cell_rates.append(np.expand_dims(rates, axis=0))
+                    self.cell_rates_batch.append(rates)
 
 
                     ## reliability and Fano factor
@@ -457,7 +516,7 @@ class ImShuffle:
 
                     self.cell_reliability_batch.append(reliability)
                     self.P_reliability_batch.append(P_reliability_batch)
-                    self.cell_Fano_factor.append(Fano_factor)
+                    self.cell_Fano_factor_batch.append(Fano_factor)
 
 
                     print('calculating Skaggs spatial info...')
@@ -494,41 +553,13 @@ class ImShuffle:
                         k = k + 1
 
                     active_laps_ratio = np.sum(active_laps, 1) / N_laps_corr
-                    self.cell_activelaps.append(active_laps_ratio)
+                    self.cell_activelaps_batch.append(active_laps_ratio)
                     
-                    ## tuning specificity
-                    # print('calculating circular tuning specificity ...')
-                    # tuning_spec=np.zeros((minibatchsize, self.N_shuffle+1))
-                    # r=1
-                    # deg_d=(2*np.pi)/50
-                    # x=np.zeros(50)
-                    # y=np.zeros(50)
-                    # x_ext=np.zeros((50,len(i_laps)))
-                    # y_ext=np.zeros((50,len(i_laps)))
-                    
-                    # for i in range(50):
-                    #    x_i,y_i=pol2cart(r,deg_d*i)
-                    #    x[i]=round(x_i,5)
-                    #    y[i]=round(y_i,5)
-                       
-                    # for i in range(len(i_laps)):
-                    #     x_ext[:,i]=x
-                    #     y_ext[:,i]=y
-                        
-                    # for i_cell in range(minibatchsize):
-                    #     for i_shuffle in range(self.N_shuffle+1):
-                    #         magn_x=nan_divide(self.activity_tensor[:,i_cell,i_laps,i_shuffle]*x_ext, self.activity_tensor_time[:,i_laps], self.activity_tensor_time[:,i_laps] > 0)
-                    #         magn_y=nan_divide(self.activity_tensor[:,i_cell,i_laps,i_shuffle]*y_ext, self.activity_tensor_time[:,i_laps], self.activity_tensor_time[:,i_laps] > 0)
-                    #         X = np.nansum(magn_x)
-                    #         Y = np.nansum(magn_y)
-                    #         Z = np.nansum(np.sqrt(magn_x**2 + magn_y**2))
-                    #         tuning_spec[i_cell,i_shuffle]=np.sqrt(X**2+Y**2) / Z
-
                     ## linear tuning specificity
                     print('calculating linear tuning specificity ...')
                     tuning_spec=np.zeros((minibatchsize, self.N_shuffle+1))
                     P_tuning_specificity_batch = np.zeros(minibatchsize)
-                    xbins = (np.arange(50) + 0.5) * self.corridor_length_cm / 50
+                    xbins = (np.arange(self.N_pos_bins) + 0.5) * self.corridor_length_cm / self.N_pos_bins
                     
                     for i_cell in range(minibatchsize):
                         for i_shuffle in range(self.N_shuffle+1):
@@ -546,20 +577,79 @@ class ImShuffle:
                     self.cell_tuning_specificity_batch.append(tuning_spec)
                     self.P_tuning_specificity_batch.append(P_tuning_specificity_batch)
 
-            # self.cell_rates = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the total corridor, pattern zones 1-3 and reward zone
-            if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
-                self.cell_corridor_selectivity_batch[0,:,:] = (self.cell_rates[0][0,:,:] - self.cell_rates[1][0,:,:]) / (self.cell_rates[0][0,:,:] + self.cell_rates[1][0,:,:])
-                self.cell_corridor_selectivity_batch[1,:,:] = (self.cell_rates[0][1,:,:] - self.cell_rates[1][1,:,:]) / (self.cell_rates[0][1,:,:] + self.cell_rates[1][1,:,:])
-                self.cell_corridor_selectivity_batch[2,:,:] = (self.cell_rates[0][2,:,:] - self.cell_rates[1][2,:,:]) / (self.cell_rates[0][2,:,:] + self.cell_rates[1][2,:,:])
-                self.cell_corridor_selectivity_batch[3,:,:] = (self.cell_rates[0][3,:,:] - self.cell_rates[1][3,:,:]) / (self.cell_rates[0][3,:,:] + self.cell_rates[1][3,:,:])
-                self.cell_corridor_selectivity_batch[4,:,:] = (self.cell_rates[0][4,:,:] - self.cell_rates[1][4,:,:]) / (self.cell_rates[0][4,:,:] + self.cell_rates[1][4,:,:])
+            # # self.cell_rates_batch = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the total corridor, pattern zones 1-3 and reward zone
+            # if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
+            #     self.cell_corridor_selectivity_batch[0,:,:] = (self.cell_rates_batch[0][0,:,:] - self.cell_rates_batch[1][0,:,:]) / (self.cell_rates_batch[0][0,:,:] + self.cell_rates_batch[1][0,:,:])
+            #     self.cell_corridor_selectivity_batch[1,:,:] = (self.cell_rates_batch[0][1,:,:] - self.cell_rates_batch[1][1,:,:]) / (self.cell_rates_batch[0][1,:,:] + self.cell_rates_batch[1][1,:,:])
+            #     self.cell_corridor_selectivity_batch[2,:,:] = (self.cell_rates_batch[0][2,:,:] - self.cell_rates_batch[1][2,:,:]) / (self.cell_rates_batch[0][2,:,:] + self.cell_rates_batch[1][2,:,:])
+            #     self.cell_corridor_selectivity_batch[3,:,:] = (self.cell_rates_batch[0][3,:,:] - self.cell_rates_batch[1][3,:,:]) / (self.cell_rates_batch[0][3,:,:] + self.cell_rates_batch[1][3,:,:])
+            #     self.cell_corridor_selectivity_batch[4,:,:] = (self.cell_rates_batch[0][4,:,:] - self.cell_rates_batch[1][4,:,:]) / (self.cell_rates_batch[0][4,:,:] + self.cell_rates_batch[1][4,:,:])
             
-                for i_region in range(5):
-                    for i_cell in range(minibatchsize):
-                        shuffle_ecdf = self.cell_corridor_selectivity_batch[i_region,i_cell, 0:self.N_shuffle]
-                        data_point = self.cell_corridor_selectivity_batch[i_region,i_cell, self.N_shuffle]
-                        self.P_selectivity_batch[i_region,i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
+            #     for i_region in range(5):
+            #         for i_cell in range(minibatchsize):
+            #             shuffle_ecdf = self.cell_corridor_selectivity_batch[i_region,i_cell, 0:self.N_shuffle]
+            #             data_point = self.cell_corridor_selectivity_batch[i_region,i_cell, self.N_shuffle]
+            #             self.P_selectivity_batch[i_region,i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
 
+        if (self.N_corridors > 1):
+            self.calc_selectivity_similarity()
+
+    def calc_selectivity_similarity(self, zone=None):
+        ## corridor selectivity calculated for M corridors for all neurons
+        ## selectivity is defined as (max(r) - min(r)) / sum(r) 
+        ##           is always positive
+        ##           is near 0 for non-selective cells
+        ##           is 1 for cells that are active for a single corridor
+        ## the selectivity is stored in a vector of 2 elements for each cell:
+        ##      1. selectivity
+        ##      2. id of the corridor with the maximal firing rate
+        ##
+        ## corridor similarity is calculated for M corridors for all neurons
+        ## similarity is defined as the average correlation between the ratemaps
+        ##           is always positive
+        ##           is near 0 for cells with uncorrelated ratemaps
+        ##           is 1 if cells have identical ratemaps for all the corridors
+        ## the similarity is stored in a vector of 1 element for each cell
+        ## for indexing: 
+        ## K    corridors
+        ## N    cells 
+        ## M    shuffles
+        ## L    corridor length in bins
+
+        print('calculating corridor selectivity ...')
+        rate_matrix = np.array(self.cell_rates_batch) # K x N x M
+
+        max_rate = np.max(rate_matrix, axis=0)
+        i_corr_max = np.argmax(rate_matrix, axis=0)
+        min_rate = np.min(rate_matrix, axis=0)
+        sumrate = np.sum(rate_matrix, axis=0)
+
+        self.cell_corridor_selectivity_batch = (max_rate - min_rate) / sumrate # matrix, N x M
+        
+        print('calculating corridor similarity ...')
+        minibatchsize = self.activity_tensor.shape[1]
+
+        map_mat = np.array(self.ratemaps_batch) # K x L x N x M
+        M = int(self.N_corridors * (self.N_corridors - 1) / 2)
+        similarity_matrix = np.zeros((M, minibatchsize, self.N_shuffle+1))
+        m = 0
+        for i_cor in np.arange(self.N_corridors-1):
+            for j_cor in np.arange(i_cor+1, self.N_corridors):
+                for i_cell in np.arange(minibatchsize):
+                    X = np.transpose(map_mat[i_cor,:,i_cell,:])
+                    Y = np.transpose(map_mat[j_cor,:,i_cell,:])
+                    similarity_matrix[m,i_cell,] = Mcorrcoef(X,Y, zero_var_out=0)
+
+        self.cell_corridor_similarity_batch = np.mean(similarity_matrix, axis=0) # matrix of N x M
+
+        for i_cell in np.arange(minibatchsize):
+            shuffle_ecdf = self.cell_corridor_selectivity_batch[i_cell, 0:self.N_shuffle]
+            data_point = self.cell_corridor_selectivity_batch[i_cell, self.N_shuffle]
+            self.P_corridor_selectivity_batch[i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
+
+            shuffle_ecdf = self.cell_corridor_similarity_batch[i_cell, 0:self.N_shuffle]
+            data_point = self.cell_corridor_similarity_batch[i_cell, self.N_shuffle]
+            self.P_corridor_similarity_batch[i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
 
 
     def plot_properties_shuffle(self, cellids=np.array([-1]), maxNcells=10):
@@ -579,7 +669,7 @@ class ImShuffle:
 
         colormap = np.array(['C1','C2'])
         # n_corridors=self.corridors.size-1#we don't want to plot corridor 0
-        n_corridors=len(self.cell_rates)
+        n_corridors=len(self.cell_rates_batch)
         fig, ax = plt.subplots(n_corridors, 3, figsize=(10,5), sharex='all', sharey='col')
         plt.subplots_adjust(wspace=0.35, hspace=0.2)
         title_string = 'shuffling mode: ' + self.mode
@@ -625,7 +715,7 @@ class ImShuffle:
             ax[i,1].set_xlabel(xlab_string)
 
             # ## active laps
-            # data = np.transpose(self.cell_activelaps[i_corridor][iplot_cells,:])
+            # data = np.transpose(self.cell_activelaps_batch[i_corridor][iplot_cells,:])
             # ax[i,2].violinplot(data[0:self.N_shuffle,:])
             # ax[i,2].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c=cols)
             # ylab_string = ''
@@ -659,7 +749,7 @@ class ImShuffle:
             ax[i,2].set_xlabel(xlab_string)
 
             # ## Fano_factor
-            # data = np.transpose(self.cell_Fano_factor[i_corridor][iplot_cells,:])
+            # data = np.transpose(self.cell_Fano_factor_batch[i_corridor][iplot_cells,:])
             # ax[i,4].violinplot(data[0:self.N_shuffle,:])
             # ax[i,4].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c=cols)
             # ylab_string = ''
@@ -679,64 +769,64 @@ class ImShuffle:
         plt.show(block=False)
 
 
-        ###########################
-        ## plots of corridor selectivity
-        if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
+        # ###########################
+        # ## plots of corridor selectivity
+        # if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
 
-            fig, ax = plt.subplots(1, 5, figsize=(7,3), sharex='all', sharey='all')
-            plt.subplots_adjust(wspace=0.35, hspace=0.2)
+        #     fig, ax = plt.subplots(1, 5, figsize=(7,3), sharex='all', sharey='all')
+        #     plt.subplots_adjust(wspace=0.35, hspace=0.2)
 
-            ## corridor selectivity    
-            data = np.transpose(self.cell_corridor_selectivity[0,iplot_cells,:])
-            ax[0].violinplot(data[0:self.N_shuffle,:])
-            ax[0].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C1')
-            ax[0].set_title('total corridor selectivity')
-            ax[0].set_ylabel('selectivity index')
-            ax[0].set_xlabel('cells')
-            ax[0].set_xticks(np.arange(Ncells_to_plot)+1)
-            ax[0].set_xticklabels(cellids, rotation=90)
+        #     ## corridor selectivity    
+        #     data = np.transpose(self.cell_corridor_selectivity[0,iplot_cells,:])
+        #     ax[0].violinplot(data[0:self.N_shuffle,:])
+        #     ax[0].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C1')
+        #     ax[0].set_title('total corridor selectivity')
+        #     ax[0].set_ylabel('selectivity index')
+        #     ax[0].set_xlabel('cells')
+        #     ax[0].set_xticks(np.arange(Ncells_to_plot)+1)
+        #     ax[0].set_xticklabels(cellids, rotation=90)
 
-            ## corridor selectivity    
-            data = np.transpose(self.cell_corridor_selectivity[1,iplot_cells,:])
-            ax[1].violinplot(data[0:self.N_shuffle,:])
-            ax[1].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C2')
-            ax[1].set_title('pattern 1 selectivity')
-            ax[1].set_ylabel('selectivity index')
-            ax[1].set_xlabel('cells')
-            ax[1].set_xticks(np.arange(Ncells_to_plot)+1)
-            ax[1].set_xticklabels(cellids, rotation=90)
+        #     ## corridor selectivity    
+        #     data = np.transpose(self.cell_corridor_selectivity[1,iplot_cells,:])
+        #     ax[1].violinplot(data[0:self.N_shuffle,:])
+        #     ax[1].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C2')
+        #     ax[1].set_title('pattern 1 selectivity')
+        #     ax[1].set_ylabel('selectivity index')
+        #     ax[1].set_xlabel('cells')
+        #     ax[1].set_xticks(np.arange(Ncells_to_plot)+1)
+        #     ax[1].set_xticklabels(cellids, rotation=90)
 
-            ## corridor selectivity    
-            data = np.transpose(self.cell_corridor_selectivity[2,iplot_cells,:])
-            ax[2].violinplot(data[0:self.N_shuffle,:])
-            ax[2].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C3')
-            ax[2].set_title('pattern 2 selectivity')
-            ax[2].set_ylabel('selectivity index')
-            ax[2].set_xlabel('cells')
-            ax[2].set_xticks(np.arange(Ncells_to_plot)+1)
-            ax[2].set_xticklabels(cellids, rotation=90)
+        #     ## corridor selectivity    
+        #     data = np.transpose(self.cell_corridor_selectivity[2,iplot_cells,:])
+        #     ax[2].violinplot(data[0:self.N_shuffle,:])
+        #     ax[2].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C3')
+        #     ax[2].set_title('pattern 2 selectivity')
+        #     ax[2].set_ylabel('selectivity index')
+        #     ax[2].set_xlabel('cells')
+        #     ax[2].set_xticks(np.arange(Ncells_to_plot)+1)
+        #     ax[2].set_xticklabels(cellids, rotation=90)
 
-            ## corridor selectivity    
-            data = np.transpose(self.cell_corridor_selectivity[3,iplot_cells,:])
-            ax[3].violinplot(data[0:self.N_shuffle,:])
-            ax[3].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C4')
-            ax[3].set_title('pattern 3 selectivity')
-            ax[3].set_ylabel('selectivity index')
-            ax[3].set_xlabel('cells')
-            ax[3].set_xticks(np.arange(Ncells_to_plot)+1)
-            ax[3].set_xticklabels(cellids, rotation=90)
+        #     ## corridor selectivity    
+        #     data = np.transpose(self.cell_corridor_selectivity[3,iplot_cells,:])
+        #     ax[3].violinplot(data[0:self.N_shuffle,:])
+        #     ax[3].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C4')
+        #     ax[3].set_title('pattern 3 selectivity')
+        #     ax[3].set_ylabel('selectivity index')
+        #     ax[3].set_xlabel('cells')
+        #     ax[3].set_xticks(np.arange(Ncells_to_plot)+1)
+        #     ax[3].set_xticklabels(cellids, rotation=90)
 
-            ## corridor selectivity    
-            data = np.transpose(self.cell_corridor_selectivity[4,iplot_cells,:])
-            ax[4].violinplot(data[0:self.N_shuffle,:])
-            ax[4].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C5')
-            ax[4].set_title('reward selectivity')
-            ax[4].set_ylabel('selectivity index')
-            ax[4].set_xlabel('cells')
-            ax[4].set_xticks(np.arange(Ncells_to_plot)+1)
-            ax[4].set_xticklabels(cellids, rotation=90)
+        #     ## corridor selectivity    
+        #     data = np.transpose(self.cell_corridor_selectivity[4,iplot_cells,:])
+        #     ax[4].violinplot(data[0:self.N_shuffle,:])
+        #     ax[4].scatter(np.arange(Ncells_to_plot)+1, data[self.N_shuffle,:], c='C5')
+        #     ax[4].set_title('reward selectivity')
+        #     ax[4].set_ylabel('selectivity index')
+        #     ax[4].set_xlabel('cells')
+        #     ax[4].set_xticks(np.arange(Ncells_to_plot)+1)
+        #     ax[4].set_xticklabels(cellids, rotation=90)
 
-            plt.show(block=False)
+        #     plt.show(block=False)
 
     def Hainmuller_PCs_shuffle(self):
         ## ratemaps: similar to the activity tensor, the laps are sorted by the corridors
@@ -749,7 +839,7 @@ class ImShuffle:
             # only laps with imaging data are selected - this will index the activity_tensor
             if (sum(self.i_corridors == corrid) > 10):
                 i_corrid = int(np.nonzero(self.corridors == corrid)[0] - 1)
-                rate_matrix = self.ratemaps[i_corrid]
+                rate_matrix = self.ratemaps_batch[i_corrid]
                 cell_number = rate_matrix.shape[1]
 
                 candidate_cells = np.zeros((cell_number, self.N_shuffle+1))
@@ -774,7 +864,7 @@ class ImShuffle:
                         placefield_length = 0
                         candidate_start = 0
                         candidate_length = 0
-                        for k in range(50):
+                        for k in range(self.N_pos_bins):
                             if (rate_i[k] > threshold):
                                 candidate_length = candidate_length + 1
                                 if (candidate_length == 1):
@@ -788,7 +878,7 @@ class ImShuffle:
                         if (not(np.isnan(placefield_start))):
                             ##  2) with average rate at least 7x the average rate outside
                             index_infield = np.arange(placefield_start,(placefield_start+placefield_length))
-                            index_outfield = np.setdiff1d(np.arange(50), index_infield)
+                            index_outfield = np.setdiff1d(np.arange(self.N_pos_bins), index_infield)
                             rate_inField = np.mean(rate_i[index_infield])
                             rate_outField = np.mean(rate_i[index_outfield])
 
@@ -807,16 +897,16 @@ class ImShuffle:
                 self.candidate_PCs_batch.append(candidate_cells)
                 self.accepted_PCs_batch.append(accepted_cells.astype(int))
         
-        if (self.N_corridors == 3):
-            for i_cell in np.arange(rate_matrix.shape[1]):
-                for i_shuffle in np.arange(rate_matrix.shape[2]):
-                    self.cell_corridor_similarity[:,i_cell, i_shuffle] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell,i_shuffle], self.ratemaps[1][:,i_cell,i_shuffle])
+        # if (self.N_corridors == 2):
+        #     for i_cell in np.arange(rate_matrix.shape[1]):
+        #         for i_shuffle in np.arange(rate_matrix.shape[2]):
+        #             self.cell_corridor_similarity[:,i_cell, i_shuffle] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell,i_shuffle], self.ratemaps[1][:,i_cell,i_shuffle])
 
 
 class Shuffle_ImData:
     'common base class for shuffled laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False, speed_threshold=5):
         self.name = name
         self.lap = lap
 
@@ -829,18 +919,13 @@ class Shuffle_ImData:
         self.corridor_list = corridor_list # the ID of the corridor in the given stage; This indexes the corridors in the vector called self.corridors
         self.mode = mode # 1 if all elements are recorded in 'Go' mode
         self.actions = actions
-        self.speed_threshold = 5 ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
 
+        self.speed_threshold = speed_threshold ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
         self.corridor_length_roxel = (self.corridor_list.corridors[self.corridor].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.N_pos_bins = int(np.round(self.corridor_length_roxel / 70))
         self.speed_factor = 106.5 / 3500 ## constant to convert distance from pixel to cm
         self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
 
-
-        self.zones = np.vstack([np.array(self.corridor_list.corridors[self.corridor].reward_zone_starts), np.array(self.corridor_list.corridors[self.corridor].reward_zone_ends)])
-        self.n_zones = np.shape(self.zones)[1]
-        self.preZoneRate = [None, None] # only if 1 lick zone; Compare the 210 roxels just before the zone with the preceeding 210 
-
-        self.dt = 0.01 # resampling frequency = 100 Hz
         # approximate frame period for imaging - 0.033602467
         # only use it to convert spikes to rates!
         self.dt_imaging = 0.033602467
@@ -848,208 +933,71 @@ class Shuffle_ImData:
         self.frames_spikes = lap_frames_spikes
         self.frames_pos = lap_frames_pos
         self.frames_time = lap_frames_time
-        self.min_N_frames = 50 # we analyse imaging data if there are at least 50 frames in the lap
+        
+        self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
         self.n_cells = 1 # we still create the same np arrays even if there are no cells
         self.n_shuffle = 1 
-        if (not(np.isnan(self.frames_time).any())): # we have real data
-            if (len(self.frames_time) > self.min_N_frames): # we have more than 50 frames
-                self.n_cells = self.frames_spikes.shape[0]
-                self.n_shuffle = self.frames_spikes.shape[2]
-            
+
+        ##################################################################################
+        ## lick position and reward position
+        ##################################################################################
+        F = interp1d(self.raw_time,self.raw_position)    
+        self.lick_position = F(self.lick_times)
+        self.reward_position = F(self.reward_times)
+
+        ##################################################################################
+        ## speed vs. time
+        ##################################################################################
+        self.imaging_data = True
+
+        if (np.isnan(self.frames_time).any()): # we have real data
+
+            self.imaging_data = False
+            ## resample time uniformly for calculating speed
+            start_time = np.ceil(self.raw_time.min()/self.dt_imaging)*self.dt_imaging
+            end_time = np.floor(self.raw_time.max()/self.dt_imaging)*self.dt_imaging
+            Ntimes = int(round((end_time - start_time) / self.dt_imaging)) + 1
+            self.frames_time = np.linspace(start_time, end_time, Ntimes)
+            self.frames_pos = F(self.frames_time)
+
+        ## calculate the speed during the frames
+        speed = np.diff(self.frames_pos) * self.speed_factor / self.dt_imaging # cm / s       
+        speed_first = 2 * speed[0] - speed[1] # linear extrapolation: x1 - (x2 - x1)
+        self.frames_speed = np.hstack([speed_first, speed])
+
+        ##################################################################################
+        ## speed, lick and spiking vs. position
+        ##################################################################################
+
         ####################################################################
-        ## resample time and position with a uniform 100 Hz
-        nbins = int(round(self.corridor_length_roxel / 70))
-        self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
-        
-        if (len(self.raw_time) > 2):
-            F = interp1d(self.raw_time,self.raw_position)
-            start_time = np.ceil(self.raw_time.min()/self.dt)*self.dt
-            end_time = np.floor(self.raw_time.max()/self.dt)*self.dt
-            Ntimes = int(round((end_time - start_time) / self.dt)) + 1
-            self.laptime = np.linspace(start_time, end_time, Ntimes)
-            ppos = F(self.laptime)
+        ## calculate the lick-rate and the average speed versus location    
+        bin_counts = np.zeros(self.N_pos_bins)
+        fast_bin_counts = np.zeros(self.N_pos_bins)
+
+        for i_frame in range(len(self.frames_pos)):
+            bin_number = int(self.frames_pos[i_frame] // 70)
+            bin_counts[bin_number] += 1
+            if (self.frames_speed[i_frame] > self.speed_threshold):
+                fast_bin_counts[bin_number] += 1
+
+        self.T_pos = bin_counts * self.dt_imaging           # used for lick rate and average speed
+        self.T_pos_fast = fast_bin_counts * self.dt_imaging # used for spike rate calculations
+
+
+        ####################################################################
+        ## calculate the cell activations (spike rate) as a function of position
+        if (self.imaging_data == True):        
+            self.n_cells = self.frames_spikes.shape[0]
+            self.n_shuffle = self.frames_spikes.shape[2]
     
-            self.lick_position = F(self.lick_times)
-            self.reward_position = F(self.reward_times)
-
-            # correct: if rewarded
-            if (len(self.reward_times) > 0):
-                self.correct = True
-            # correct: if no licking in the zone
-            lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * self.corridor_length_roxel) & (self.lick_position <= self.zones[1] * self.corridor_length_roxel + 1))[0]
-            if (self.corridor_list.corridors[self.corridor].reward == 'Left'):
-                if (len(lick_in_zone) == 0):
-                    self.correct = True
-            else :
-                if ((len(lick_in_zone) == 0) & self.correct):
-                    print ('Warning: rewarded lap with no lick in zone! lap number:' + str(self.lap))
-
-            self.smooth_position = ppos
+            self.spks_pos = np.zeros((self.n_cells, self.N_pos_bins, self.n_shuffle)) # sum of spike counts measured at a given position
+            self.event_rate = np.zeros((self.n_cells, self.N_pos_bins, self.n_shuffle)) # spike rate 
             
-            ## calculate the smoothed speed 
-            # self.speed = np.diff(np.hstack([self.smooth_position[0], self.smooth_position])) / self.dt # roxel [=rotational pixel] / s       
-            speed = np.diff(self.smooth_position) * self.speed_factor / self.dt # cm / s       
-            speed_first = 2 * speed[0] - speed[1] # linear extrapolation: x1 - (x2 - x1)
-            self.speed = np.hstack([speed_first, speed])
-
-            ## calculate the speed during the frames
-            if (not(np.isnan(self.frames_time).any())): # we real data
-                if (len(self.frames_time) > self.min_N_frames): # we have more than 50 frames
-                    FF = interp1d(self.laptime,self.speed, fill_value="extrapolate") 
-                    self.frames_speed = FF(self.frames_time)
-
-            ####################################################################
-            ## calculate the lick-rate and the average speed versus location    
-            bin_counts = np.zeros(50)
-            for pos in self.smooth_position:
-                bin_number = int(pos // 70)
-                bin_counts[bin_number] += 1
-            self.T_pos = bin_counts * self.dt
-
-            lbin_counts = np.zeros(50)
-            for lpos in self.lick_position:
-                lbin_number = int(lpos // 70)
-                lbin_counts[lbin_number] += 1
-            self.N_licks = lbin_counts
-            self.lick_rate = nan_divide(self.N_licks, self.T_pos, where=(self.T_pos > 0.025))
-    
-            total_speed = np.zeros(50)
-            for i_frame in range(len(self.smooth_position)):
-                ind_bin = int(self.smooth_position[i_frame] // 70)
-                total_speed[ind_bin] = total_speed[ind_bin] + self.speed[i_frame]
-            total_speed = total_speed * self.dt
-            self.ave_speed = nan_divide(total_speed, self.T_pos, where=(self.T_pos > 0.025))
-        
-            ####################################################################
-            ## calculate the cell activations (spike rate) as a function of position
-            self.spks_pos = np.zeros((self.n_cells, 50, self.n_shuffle)) # sum of spike counts measured at a given position
-            self.event_rate = np.zeros((self.n_cells, 50, self.n_shuffle)) # spike rate 
-            # self.dF_F_pos = np.zeros((self.n_cells, 50))
-            if (not(np.isnan(self.frames_time).any())): # we real data
-                if (len(self.frames_time) > self.min_N_frames): # we have more than 50 frames
-                    for i_frame in range(len(self.frames_pos)):
-                        ind_bin = int(self.frames_pos[i_frame] // 70)
-                        if (self.frames_speed[ind_bin] > self.speed_threshold):
-                            ### we need to multiply the values with dt_imaging as this converts probilities to expected counts
-                            self.spks_pos[:,ind_bin,:] = self.spks_pos[:,ind_bin,:] + self.frames_spikes[:,i_frame,:] * self.dt_imaging
-                    for ind_bin in range(50):
-                        if (self.T_pos[ind_bin] > 0): # otherwise the rate will remain 0
-                            self.event_rate[:,ind_bin,:] = self.spks_pos[:,ind_bin,:] / self.T_pos[ind_bin]
-
-
-        else:
-            self.lick_position = lick_times
-            self.reward_position = reward_times
-            self.smooth_position = position
-            self.speed = np.zeros(len(position))
-            self.T_pos = np.zeros(50)
-            self.N_licks = np.zeros(50)
-            self.ave_speed = np.zeros(50)
-            self.lick_rate = np.zeros(50)
-                
-
-    # def plot_tx(self, fluo=False, th=25):
-    #     colmap = plt.cm.get_cmap('jet')   
-    #     colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
-    #     fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), sharex=True, gridspec_kw={'height_ratios': [1, 3]})
-
-    #     ## first, plot position versus time
-    #     ax_top.plot(self.laptime, self.smooth_position, c=colmap(50))
-    #     ax_top.plot(self.raw_time, self.raw_position, c=colmap(90))
-
-    #     ax_top.scatter(self.lick_times, np.repeat(self.smooth_position.min(), len(self.lick_times)), marker="|", s=100, c=colmap(180))
-    #     ax_top.scatter(self.reward_times, np.repeat(self.smooth_position.min()+100, len(self.reward_times)), marker="|", s=100, c=colmap(230))
-    #     ax_top.set_ylabel('position')
-    #     ax_top.set_xlabel('time (s)')
-    #     plot_title = 'Mouse: ' + self.name + ' position in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
-    #     ax_top.set_title(plot_title)
-    #     ax_top.set_ylim(0, 3500)
-
-    #     ## next, plot dF/F versus time (or spikes)
-    #     if (self.n_cells > 1):
-    #         # act_cells = np.nonzero(np.amax(self.frames_dF_F, 1) > th)[0]
-    #         act_cells = np.nonzero(np.amax(self.frames_spikes, 1) > th)[0]
-    #         max_range = np.nanmax(self.event_rate)
-    #         for i in range(self.n_cells):
-    #         # for i in (252, 258, 275):
-    #             if (fluo & (i in act_cells)):
-    #                 ax_bottom.plot(self.frames_time, self.frames_dF_F[i,:] + i, alpha=0.5, c=colmap(np.remainder(i, 255)))
-    #             events = self.frames_spikes[i,:]
-    #             events = 50 * events / max_range
-    #             ii_events = np.nonzero(events)[0]
-    #             ax_bottom.scatter(self.frames_time[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
-
-    #         ylab_string = 'dF_F, spikes (max: ' + str(np.round(max_range, 1)) +  ' )'
-    #         ax_bottom.set_ylabel(ylab_string)
-    #         ax_bottom.set_xlabel('time (s)')
-    #         plot_title = 'dF/F of all neurons  in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
-    #         ax_bottom.set_title(plot_title)
-    #         ax_bottom.set_ylim(0, self.n_cells+5)
-    #         # ax_bottom.set_ylim(250, 280)
-
-    #     plt.show(block=False)
-       
-
-    # def plot_xv(self):
-    #     colmap = plt.cm.get_cmap('jet')   
-    #     colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
-
-    #     fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), sharex=True,  gridspec_kw={'height_ratios': [1, 3]})
-    #     ax_top.plot(self.smooth_position, self.speed, c=colmap(80))
-    #     ax_top.step(self.bincenters, self.ave_speed, where='mid', c=colmap(30))
-    #     ax_top.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, c=colmap(180))
-    #     ax_top.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, c=colmap(230))
-    #     ax_top.set_ylabel('speed (cm/s)')
-    #     ax_top.set_ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
-    #     ax_top.set_xlabel('position')
-    #     plot_title = 'Mouse: ' + self.name + ' speed in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
-    #     ax_top.set_title(plot_title)
-
-
-    #     bottom, top = ax_top.get_ylim()
-    #     left = self.zones[0,0] * 3500
-    #     right = self.zones[1,0] * 3500
-
-    #     polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-    #     ax_top.add_patch(polygon)
-    #     if (self.n_zones > 1):
-    #         for i in range(1, np.shape(self.zones)[1]):
-    #             left = self.zones[0,i] * 3500
-    #             right = self.zones[1,i] * 3500
-    #             polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-    #             ax_top.add_patch(polygon)
-
-    #     ax2 = ax_top.twinx()
-    #     ax2.step(self.bincenters, self.lick_rate, where='mid', c=colmap(200), linewidth=1)
-    #     ax2.set_ylabel('lick rate (lick/s)', color=colmap(200))
-    #     ax2.tick_params(axis='y', labelcolor=colmap(200))
-    #     ax2.set_ylim([-1,max(2*np.nanmax(self.lick_rate), 20)])
-
-    #     ## next, plot event rates versus space
-    #     if (self.n_cells > 1):
-    #         max_range = np.nanmax(self.event_rate)
-    #         # for i in np.arange(250, 280):
-    #         for i in range(self.n_cells):
-    #             events = self.event_rate[i,:]
-    #             events = 50 * events / max_range
-    #             ii_events = np.nonzero(events)[0]
-    #             ax_bottom.scatter(self.bincenters[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
-
-    #         ax_bottom.set_ylabel('event rate')
-    #         ax_bottom.set_xlabel('position')
-    #         plot_title = 'event rate of all neurons  in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
-    #         ax_bottom.set_title(plot_title)
-    #         # ax_bottom.set_ylim(250, 280)
-    #         ax_bottom.set_ylim(0, self.n_cells)
-
-    #     plt.show(block=False)       
-
-
-    #     colmap = plt.cm.get_cmap('jet')
-    #     colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
-    #     x = np.random.rand(4)
-    #     y = np.random.rand(4)
-    #     area = (np.abs(x/max(x))*30)**2
-    #     colors = 232
-
-
+            for i_frame in range(len(self.frames_pos)):
+                bin_number = int(self.frames_pos[i_frame] // 70)
+                if (self.frames_speed[i_frame] > self.speed_threshold):
+                    ### we need to multiply the values with dt_imaging as this converts probilities to expected counts
+                    self.spks_pos[:,bin_number,:] = self.spks_pos[:,bin_number,:] + self.frames_spikes[:,i_frame,:] * self.dt_imaging
+            for bin_number in range(self.N_pos_bins):
+                if (self.T_pos_fast[bin_number] > 0): # otherwise the rate will remain 0
+                    self.event_rate[:,bin_number,:] = self.spks_pos[:,bin_number,:] / self.T_pos_fast[bin_number]                

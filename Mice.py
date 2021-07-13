@@ -572,7 +572,7 @@ class Mouse():
 
     def test_perf(self, printout=True):
         # test the performance of the mouse in each session if it is significantly different from chance
-        # updaate the stage variable to be the last session that was significantly different from chance
+        # update the stage variable to be the last session that was significantly different from chance
         n_sessions = int(len(self.sessions))
         last_stage = int(self.stages[n_sessions-1])
         if (n_sessions > 0):
@@ -638,7 +638,8 @@ class Read_Mouse:
         self.task = task
 
         input_path = data_dir + '/data/' + self.name + '/' + self.name + '_' + self.task + '.pkl'
-
+        print (input_path)
+        
         if (os.path.exists(input_path)):
             input_file = open(input_path, 'rb')
             if version_info.major == 2:        

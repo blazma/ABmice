@@ -154,5 +154,5 @@ if __name__ == '__main__':
             return_value = return_value+str(i+1)+'_'+i_substage+'_'+str(zone_start)+'_'+str(zone_end)+'_'+str(reward_side_num)+'_'+str(P_corridor)+'\n'
     
     return_value = return_value+'\n'
-    print (return_value)    
+    print (return_value)
     

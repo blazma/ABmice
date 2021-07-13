@@ -33,19 +33,21 @@ from Corridors import *
 from ImShuffle import *
 
 
-
 class ImagingSessionData:
     'Base structure for both imaging and behaviour data'
-    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None):
+    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None, speed_threshold=5, randseed=123):
         self.datapath = datapath
         self.date_time = date_time
         self.name = name
         self.task = task
+        self.suite2p_folder = suite2p_folder
 
         self.stage = 0
         self.stages = []
         self.sessionID = sessionID
-
+        self.randseed = randseed
+        self.selected_laps = selected_laps
+        self.speed_threshold = speed_threshold
 
         stagefilename = self.datapath + self.task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
@@ -63,8 +65,13 @@ class ImagingSessionData:
             self.corridor_list = pickle.load(input_file, encoding='latin1')
         input_file.close()
 
-        self.get_stage(self.datapath, self.date_time, self.name, self.task)
-        self.all_corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])#[0:3]
+        self.get_stage(self.datapath, self.date_time, self.name, self.task) # reads the stage of the experiment from the log file
+        self.all_corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])# we always add corridor 0 - that is the grey zone
+
+        ## in certain tasks, the same corridor may appear multiple times in different substages
+        ## Labview uses different indexes for corridors in different substages, therefore 
+        ## we need to keep this corridor in the list self.corridors for running self.get_lapdata()
+        ## but we should remove the redundancy after the data is loaded
 
         self.last_zone_start = 0
         self.last_zone_end = 0
@@ -78,7 +85,7 @@ class ImagingSessionData:
         self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
         self.corridor_length_roxel = (self.corridor_list.corridors[self.all_corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
         self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
-
+        self.N_pos_bins = int(np.round(self.corridor_length_roxel / 70))
         ##################################################
         ## loading the trigger signals to match LabView and Imaging data axis
         ## CAPITAL LETTERS: variables defined with IMAGING time axis
@@ -95,22 +102,22 @@ class ImagingSessionData:
                 
         ## matching imaging time with labview time
         self.imstart_time = 0 # the labview time of the first imaging frame
-        self.LocateImaging(trigger_log_file_string, TRIGGER_VOLTAGE_FILENAME)
+        self.imstart_time = LocateImaging(trigger_log_file_string, TRIGGER_VOLTAGE_FILENAME)
 
         ##################################################
         ## loading imaging data
         ##################################################
-        F_string = suite2p_folder + 'F.npy'
-        Fneu_string = suite2p_folder + 'Fneu.npy'
-        spks_string = suite2p_folder + 'spks.npy'
-        iscell_string = suite2p_folder + 'iscell.npy'
+        F_string = self.suite2p_folder + 'F.npy'
+        # Fneu_string = self.suite2p_folder + 'Fneu.npy'
+        spks_string = self.suite2p_folder + 'spks.npy'
+        iscell_string = self.suite2p_folder + 'iscell.npy'
         
         self.F_all = np.load(F_string) # npy array, N_ROI x N_frames, fluorescence traces of ROIs from suite2p
-        self.Fneu = np.load(Fneu_string) # npy array, N_ROI x N_frames, fluorescence traces of neuropil from suite2p
+        # self.Fneu = np.load(Fneu_string) # npy array, N_ROI x N_frames, fluorescence traces of neuropil from suite2p
         self.spks_all = np.load(spks_string) # npy array, N_ROI x N_frames, spike events detected from suite2p
         self.iscell = np.load(iscell_string) # np array, N_ROI x 2, 1st col: binary classified as cell. 2nd P_cell?
-        self.stat_string = suite2p_folder + 'stat.npy' # we may load these later if needed
-        self.ops_string = suite2p_folder + 'ops.npy'
+        self.stat_string = self.suite2p_folder + 'stat.npy' # we may load these later if needed
+        self.ops_string = self.suite2p_folder + 'ops.npy'
         print('suite2p data loaded')               
 
         self.frame_times = np.nan # labview coordinates
@@ -141,10 +148,14 @@ class ImagingSessionData:
         self.i_Laps_ImData = np.zeros(1) # np array with the index of laps with imaging
         self.i_corridors = np.zeros(1) # np array with the index of corridors in each run
 
-        self.get_lapdata(self.datapath, self.date_time, self.name, self.task, selected_laps=selected_laps) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
+        self.get_lapdata(self.datapath, self.date_time, self.name, self.task, selected_laps=self.selected_laps) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
         if (self.n_laps == -1):
             print('Error: missing laps are found in the ExpStateMachineLog file! No analysis was performed, check the logfiles!')
             return
+
+        frame_time_lap_maze_pos = np.array((self.frame_times, self.frame_laps, self.frame_maze, self.frame_pos))
+        time_lap_maze_pos_FILE = self.suite2p_folder + 'frame_time_lap_maze_pos.npy'
+        np.save(time_lap_maze_pos_FILE, frame_time_lap_maze_pos)
 
         ## in certain tasks, the same corridor may appear multiple times in different substages
         ## we need to keep this corridor in the list self.corridors for running self.get_lapdata()
@@ -152,42 +163,44 @@ class ImagingSessionData:
         self.all_corridors = np.unique(self.all_corridors)
         self.N_all_corridors = len(self.all_corridors)
 
-        ## only analyse corridors with at least 10 laps
-        if (self.N_all_corridors > 3):
+        ## only analyse corridors with at least 3 laps 
+        # - the data still remains in the ImLaps list and will appear in the activity tensor!
+        #   but the corridor will not 
+        #   we also do NOT include corridor 0 here
+        if (self.N_all_corridors > 1):
             N_laps_corr = np.zeros(self.N_all_corridors) 
-            N_laps_corr[0] = 100 # we include corridor 0
-            for i_corridor in (np.arange(self.N_all_corridors - 1) + 1):
+            for i_corridor in np.arange(self.N_all_corridors):
                 corridor = self.all_corridors[i_corridor]
                 N_laps_corr[i_corridor] = sum(self.i_corridors == corridor)
 
-            self.corridors = self.all_corridors[np.where(N_laps_corr > 10)[0]]
+            self.corridors = self.all_corridors[np.where(N_laps_corr > 3)[0]]
             self.N_corridors = len(self.corridors)
 
-            # print('laps per corridors:', N_laps_corr, self.corridors, self.N_corridors)
         else :
-            self.N_corridors = self.N_all_corridors
-            self.corridors = self.all_corridors
+            self.corridors = np.setdiff1d(self.all_corridors, 0)
+            self.N_corridors = len(self.corridors)
 
-        self.N_bins = int(round(self.corridor_length_roxel / 70)) # self.ImLaps[self.i_Laps_ImData[2]].event_rate.shape[1]
         self.N_ImLaps = len(self.i_Laps_ImData)
 
-        self.raw_activity_tensor = np.zeros((self.N_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
-        self.raw_activity_tensor_time = np.zeros((self.N_bins, self.N_ImLaps)) # a tensor with space x trials containing the time spent at each location in each lap
-        self.activity_tensor = np.zeros((self.N_bins, self.N_cells, self.N_ImLaps)) # same as the activity tensor spatially smoothed
-        self.activity_tensor_time = np.zeros((self.N_bins, self.N_ImLaps)) # same as the activity tensor time spatially smoothed
+        self.raw_activity_tensor = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
+        self.raw_activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # a tensor with space x trials containing the time spent at each location in each lap
+        self.activity_tensor = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # same as the activity tensor spatially smoothed
+        self.activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # same as the activity tensor time spatially smoothed
         self.combine_lapdata() ## fills in the cell_activity tensor
 
-        ## warning: self.cell_rates assumes a single reward zone at the end of the corridor
-        self.cell_rates = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the whole corridor, pattern zones 1-3 and reward zone
-        self.cell_reliability = [] # a list, each element is a vector with the reliability of the cells in a corridor
-        self.cell_Fano_factor = [] # a list, each element is a vector with the reliability of the cells in a corridor
-        self.cell_skaggs=[] # a list, each element is a vector with the skaggs93 spatial info of the cells in a corridor
         self.cell_activelaps=[] # a list, each element is a vector with the % of significantly spiking laps of the cells in a corridor
-        self.cell_activelaps_df=[] # a list, each element is a vector with the % of significantly active (dF/F) laps of the cells in a corridor
+        self.cell_Fano_factor = [] # a list, each element is a vector with the reliability of the cells in a corridor
+
+        self.cell_reliability = [] # a list, each element is a vector with the reliability of the cells in a corridor
+        self.cell_skaggs=[] # a list, each element is a vector with the skaggs93 spatial info of the cells in a corridor
         self.cell_tuning_specificity=[] # a list, each element is a vector with the tuning specificity of the cells in a corridor
-        ## warning: cell_corridor_selectivity assumes 2 corridors and a single reward zone at the end of the corridor
-        self.cell_corridor_selectivity = np.zeros([5,self.N_cells]) # a matrix with the selectivity of the cells in the maze, corridor1, corridor2, corridor3 and reward area
+
+        self.cell_rates = [] # a list, each element is a 1 x n_cells matrix with the average rate of the cells in the whole corridor
+        self.cell_corridor_selectivity = np.zeros([2,self.N_cells]) # a matrix with the selectivity index of the cells. Second row indicates the corridor with the highers rate.
+
         self.ratemaps = [] # a list, each element is an array space x neurons x trials being the ratemaps of the cells in a given corridor
+        self.cell_corridor_similarity = np.zeros(self.N_cells) # a vector with the similarity index of the cells.
+
         self.calculate_properties()
 
         self.candidate_PCs = [] # a list, each element is a vector of Trues and Falses of candidate place cells with at least 1 place field according to Hainmuller and Bartos 2018
@@ -198,7 +211,98 @@ class ImagingSessionData:
 
         self.test_anticipatory()
 
-        
+    def write_params(self, filename):
+        # write the parameters of the current ImagingSessionData into the given file
+
+        data_folder = self.suite2p_folder + 'analysed_data'
+        if not os.path.exists(data_folder):
+            os.makedirs(data_folder)
+
+        param_filename = data_folder + '/' + filename
+        with open(param_filename, mode='w') as paramfile:
+            file_writer = csv.writer(paramfile, delimiter=' ')
+            file_writer.writerow(('#name:', self.name))
+            file_writer.writerow(('#task:', self.task))
+            file_writer.writerow(('#date_time:', self.date_time))
+            file_writer.writerow(('#datapath:', self.datapath))
+            file_writer.writerow(('#suite2p_folder:', self.suite2p_folder))
+            file_writer.writerow(('#stage:', self.stage))
+            file_writer.writerow(('#randseed:', self.randseed))
+            file_writer.writerow(('#selected_laps:', str(self.selected_laps)))
+            file_writer.writerow(('#speed_threshold:', self.speed_threshold))
+
+        print('Session parameters written into file: ', filename)
+
+    def check_params(self, filename):
+        # read the parameters from the file and compare it to the current ImagingSessionData 
+        data_folder = self.suite2p_folder + 'analysed_data'
+        if not os.path.exists(data_folder):
+            print ('Error: data directory', data_folder, 'does NOT exist!')    
+            return False
+
+        param_filename = data_folder + '/' + filename
+        param_file=open(param_filename)
+        param_file_reader=csv.reader(param_file, delimiter=' ')
+
+        name = next(param_file_reader)
+        if (name[1] != self.name):
+            print('Error: name read from file not equals the session name!')
+            return False
+
+        task = next(param_file_reader)
+        if (task[1] != self.task):
+            print('Error: task read from file not equals the session task!')
+            return False
+
+        date_time = next(param_file_reader)
+        if (date_time[1] != self.date_time):
+            print('Error: date_time read from file not equals the date_time in the loaded session!')
+            return False
+
+        datapath = next(param_file_reader)
+        if (datapath[1] != self.datapath):
+            print('Error: datapath read from file not equals the datapath in the loaded session!')
+            return False
+
+        suite2p_folder = next(param_file_reader)
+        if (suite2p_folder[1] != self.suite2p_folder):
+            print('Error: suite2p_folder read from file not equals the suite2p_folder in the loaded session!')
+            return False
+
+        stage = next(param_file_reader)
+        if (int(stage[1]) != self.stage):
+            print('Error: stage read from file not equals the stage in the loaded session!')
+            return False
+
+        randseed = next(param_file_reader)
+        if (int(randseed[1]) != self.randseed):
+            print('Error: randseed read from file not equals the randseed in the loaded session!')
+            return False
+
+        selected_laps = next(param_file_reader)
+        if self.selected_laps is None:
+            if (selected_laps[1] != 'None'):
+                print('Error: selected_laps read from file not equals the selected_laps in the loaded session!')
+                return False
+        elif (selected_laps[1] == 'None'):
+            if self.selected_laps is not None:            
+                print('Error: selected_laps read from file not equals the selected_laps in the loaded session!')
+                return False
+        else:
+            L = len(selected_laps[1])-1
+            sel_laps = np.fromstring(selected_laps[1][1:L], dtype=int, sep=' ')
+            diff_laps = np.setdiff1d(sel_laps, self.selected_laps)
+            if (len(diff_laps) > 0):
+                print('Error: selected_laps read from file not equals the selected_laps in the loaded session!')
+                return False
+
+        speed_threshold = next(param_file_reader)
+        if (int(speed_threshold[1]) != self.speed_threshold):
+            print('Error: speed_threshold read from file not equals the speed_threshold in the loaded session!')
+            return False 
+
+        return True
+
     def get_stage(self, datapath, date_time, name, task):
         # function that reads the action_log_file and finds the current stage
         action_log_file_string=datapath + 'data/' + name + '_' + task + '/' + date_time + '/' + date_time + '_' + name + '_' + task + '_UserActionLog.txt'
@@ -220,18 +324,19 @@ class ImagingSessionData:
         ## the signal's 0 has a slight delay compared to the time 0 of the imaging recording 
         ## we substract this delay from the offset to get the LabView time of the time 0 of the imaging recording
         corrected_offset = offset - voltage_delay
+        print('corrected offset:', corrected_offset, 'voltage_delay:', voltage_delay)        
 
         frames = imaging_logfile.getElementsByTagName('Frame')
         self.frame_times = np.zeros(len(frames)) # this is already in labview time
         for i in range(len(frames)):
-            self.frame_times[i] = float(frames[i].attributes['absoluteTime'].value) + corrected_offset
+            self.frame_times[i] = float(frames[i].attributes['relativeTime'].value) + corrected_offset
         if (len(self.frame_times) != self.F_all.shape[1]):
             print('Warning: imaging frame number does not match suite2p frame number! Something is wrong!')
             N_frames = min([len(self.frame_times), self.F_all.shape[1]])
             if (len(self.frame_times) < self.F_all.shape[1]):
                 self.F_all = self.F_all[:, 1:N_frames]
                 self.spks_all = self.spks_all[:, 1:N_frames]
-                self.Fneu = self.Fneu[:, 1:N_frames]
+                # self.Fneu = self.Fneu[:, 1:N_frames]
             else:
                 self.frame_times = self.frame_times[0:N_frames]   
 
@@ -251,12 +356,10 @@ class ImagingSessionData:
         return data
 
     def test_anticipatory(self):
-        corridor_types = np.unique(self.i_corridors)
-        nrow = len(corridor_types)
         self.anticipatory = []
 
-        for row in range(nrow):
-            ids = np.where(self.i_corridors == corridor_types[row])
+        for row in range(self.N_corridors):
+            ids = np.where(self.i_corridors == self.corridors[row])
             n_laps = np.shape(ids)[1]
             n_zones = np.shape(self.ImLaps[ids[0][0]].zones)[1]
             if ((n_zones == 1) & (n_laps > 2)):
@@ -268,142 +371,9 @@ class ImagingSessionData:
                     else:
                         lick_rates[:,k] = np.nan
                     k = k + 1
-                self.anticipatory.append(anticipatory_Licks(lick_rates[0,:], lick_rates[1,:], corridor_types[row]))
+                self.anticipatory.append(anticipatory_Licks(lick_rates[0,:], lick_rates[1,:], self.corridors[row]))
 
 
-    ##########################################################
-    def LocateImaging(self, trigger_log_file_string, TRIGGER_VOLTAGE_FILENAME):
-        # 1. TRIGGER_DATA  = np.array, 4 x N_triggers, each row is the 1. start time, 2, end time, duration, ITT
-        # 2. select only trigger data with ITT > 10 ms
-        # 3. find the shortest trigger
-        # 4. find candidate trigger times in the log_trigger by matching trigger duration
-        # 5. check the next ITTS in voltage recording and log trigger
-        # intputs: 
-        #   self.trigger_log_starts,        normal LETTERS: variables defined with LabView time axis
-        #   self.trigger_log_lengths, 
-        #   self.TRIGGER_VOLTAGE_VALUE,      CAPITAL LETTERS: variables defined with IMAGING time axis
-        #   self.TRIGGER_VOLTAGE_TIMES
-        #
-        # output:
-        #   self.imstart_time: singe scalar [s]: Labview time of the start of voltage-imaging recordings
-        #
-        # only works for 1 imaging session...
-        # self.imstart_time = 537.133055 # Bazsi's best guess
-        # print('Imaging time axis guessed by Bazsi...')
-        
-        #0)load recorded trigger 
-        trigger_log_starts = [] ## s
-        trigger_log_lengths = []      
-        trigger_log_file=open(trigger_log_file_string)
-        log_file_reader=csv.reader(trigger_log_file, delimiter=',')
-        next(log_file_reader, None)#skip the headers
-        for line in log_file_reader:             
-            trigger_log_starts.append(float(line[0])) # seconds
-            trigger_log_lengths.append(float(line[1]) / 1000) # convert to seconds from ms
-        print('trigger logfile loaded')
-        trigger_starts = np.array(trigger_log_starts)
-        trigger_lengths = np.array(trigger_log_lengths)
-
-
-        TRIGGER_VOLTAGE_VALUE = [] 
-        TRIGGER_VOLTAGE_TIMES = [] ## ms
-        trigger_signal_file=open(TRIGGER_VOLTAGE_FILENAME, 'r')
-        trigger_reader=csv.reader(trigger_signal_file, delimiter=',')
-        next(trigger_reader, None)
-        for line in trigger_reader:
-            TRIGGER_VOLTAGE_VALUE.append(float(line[1])) 
-            TRIGGER_VOLTAGE_TIMES.append(float(line[0]) / 1000) # converting it to seconds
-        TRIGGER_VOLTAGE=np.array(TRIGGER_VOLTAGE_VALUE)
-        TRIGGER_TIMES=np.array(TRIGGER_VOLTAGE_TIMES)
-        print('trigger voltage signal loaded')
-        
-        ## find trigger start and end times
-        rise_index=np.nonzero((TRIGGER_VOLTAGE[0:-1] < 1)&(TRIGGER_VOLTAGE[1:]>= 1))[0]+1#+1 needed otherwise we are pointing to the index just before the trigger
-        RISE_T=TRIGGER_TIMES[rise_index]
-        
-        fall_index=np.nonzero((TRIGGER_VOLTAGE[0:-1] > 1)&(TRIGGER_VOLTAGE[1:]<= 1))[0]+1
-        FALL_T=TRIGGER_TIMES[fall_index]
-        
-        # pairing rises with falls
-        if (RISE_T[0]>FALL_T[0]):
-            print('deleting first fall')
-            FALL_T = np.delete(FALL_T,0)
-        if (RISE_T[-1] > FALL_T[-1]):
-            print('deleting last rise')
-            RISE_T=np.delete(RISE_T,-1)
-
-        if np.size(RISE_T)!=np.size(FALL_T):
-            print(np.size(RISE_T),np.size(FALL_T))
-            print('trigger ascending and desending edges do not match! unable to locate imaging part')
-            self.imstart_time = np.nan
-            return
-
-        #1) filling up TRIGGER_DATA array:
-        #TRIGGER_DATA: 0. start time, 1. end time, 2. duration, 3.ITT, 4. index
-        TRIGGER_DATA = np.zeros((np.size(RISE_T),5))
-        TRIGGER_DATA[:,0] = RISE_T
-        TRIGGER_DATA[:,1] = FALL_T
-        TRIGGER_DATA[:,2]=FALL_T-RISE_T # duration
-        TEMP_FALL = np.concatenate([[0],FALL_T]) 
-        TEMP_FALL = np.delete(TEMP_FALL,-1)
-        TRIGGER_DATA[:,3] = RISE_T - TEMP_FALL # previous down duration - Inter Trigger Time
-        TRIGGER_DATA[:,4] = np.arange(0,np.size(RISE_T))
-            
-        #2) keeping only triggers with ITT > 10 ms    
-        valid_indexes=np.nonzero(TRIGGER_DATA[:,3] > 0.010)[0]
-        TRIGGER_DATA_sub=TRIGGER_DATA[valid_indexes,:]
-        
-        #3) find the valid shortest trigger
-        minindex = np.argmin(TRIGGER_DATA_sub[:,2])
-        used_index = int(TRIGGER_DATA_sub[minindex][4])
-        n_extra_indexes = min(5,TRIGGER_DATA.shape[0]-used_index)
-        print('triggers after:',TRIGGER_DATA.shape[0]-used_index)
-        print('n_extra_indexes',n_extra_indexes)
-    
-        #4)find the candidate trigger times
-        candidate_log_indexes = []
-        for i in range(len(trigger_lengths)):
-            if (abs(trigger_lengths[i] - TRIGGER_DATA[used_index][2]) < 0.007):
-                candidate_log_indexes.append(i)
-        print('candidate log indexes',candidate_log_indexes)
-    
-        #5)check the next ITT-s, locate relevant behavior
-        print('min recorded trigger length:',TRIGGER_DATA[used_index,2])
-        if TRIGGER_DATA[used_index,2] > 0.600:
-            print('Warning! No short enough trigger in this recording! Unable to locate imaging')
-            self.imstart_time = np.nan
-            # return
-        else:
-            match_found = False
-            for i in range(len(candidate_log_indexes)):    
-                log_reference_index=candidate_log_indexes[i]
-                difs=[]
-                if len(trigger_starts) > log_reference_index + n_extra_indexes:
-                    for j in range(n_extra_indexes):
-                        dif_log = trigger_starts[log_reference_index + j] - trigger_starts[log_reference_index]
-                        dif_mes = TRIGGER_DATA[used_index+j,0] - TRIGGER_DATA[used_index,0]
-                        delta = abs(dif_log - dif_mes)
-                        difs.append(delta)
-    #                    print(self.trigger_log_lengths[candidate_log_indexes[i]],'log',dif_log,'mes', dif_mes,'dif', delta)
-                    if max(difs) < 0.009:
-                        if match_found==False:                      
-                            lap_time_of_first_frame = trigger_starts[log_reference_index] - TRIGGER_DATA[used_index,0]
-                            print('relevant behavior located, lap time of the first frame:',lap_time_of_first_frame, ', log reference index:', log_reference_index)
-                            match_found=True
-                        else:
-                            print('Warning! More than one trigger matches found!')
-                else:
-                    print('slight warning - testing some late candidates failed')
-
-            if match_found==True:
-                self.imstart_time = lap_time_of_first_frame
-            else:
-                print('no precise trigger mach found: need to refine code or check device')
-                self.imstart_time = np.nan
-
-    def mask_imaging(self, maks=None, startend=None):
-        ## 
-        pass
 
     def calc_dF_F(self):
         print('calculating dF/F and SNR...')
@@ -411,8 +381,9 @@ class ImagingSessionData:
         self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
         self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
 
-        sp_threshold = 20
+        ## to calculate the SD and SNR, we need baseline periods with no spikes for at least 1 sec
         frame_rate = int(np.ceil(1/np.median(np.diff(self.frame_times))))
+        sp_threshold = 20 # 
         T_after_spike = 3 #s 
         T_before_spike = 0.5 #s 
         Tmin_no_spike = 1 #s 
@@ -425,11 +396,14 @@ class ImagingSessionData:
 
         #calculate baseline
         for i_cell in range(self.N_cells):
+            
+            # baseline: mode of the histogram
             trace=self.F[i_cell,]
-
             hist=np.histogram(trace, bins=100)
             max_index = np.where(hist[0] == max(hist[0]))[0][0]
             baseline = hist[1][max_index]
+            # if (baseline == 0): 
+            #     baseline = hist[1][max_index+1]            
 
             self.dF_F[i_cell,] = (self.F[i_cell,] - baseline) / baseline
 
@@ -471,7 +445,6 @@ class ImagingSessionData:
             fall_ind = fall_index[long_index]
 
             sds = np.zeros(len(rise_ind))
-            sdsD = np.zeros(len(rise_ind))
             for k in range(len(rise_ind)):
                 i_start = fall_ind[k] + L_after_spike
                 i_end = rise_ind[k] - L_before_spike
@@ -540,7 +513,7 @@ class ImagingSessionData:
         action=[]
         substage=[]
 
-
+        # this could be made much faster by using pandas
         data_log_file_string=datapath + 'data/' + name + '_' + task + '/' + date_time + '/' + date_time + '_' + name + '_' + task + '_ExpStateMashineLog.txt'
         data_log_file=open(data_log_file_string)
         log_file_reader=csv.reader(data_log_file, delimiter=',')
@@ -589,6 +562,9 @@ class ImagingSessionData:
         self.frame_pos = np.round(F(self.frame_times))
         F = interp1d(laptime, lap) 
         self.frame_laps = F(self.frame_times) 
+        F = interp1d(laptime, maze) 
+        self.frame_maze = F(self.frame_times) 
+
         ## frame_laps is NOT integer for frames between laps
         ## however, it MAY not be integer even even for frames within a lap...
         #################################################
@@ -603,7 +579,7 @@ class ImagingSessionData:
         else:
             select_laps = True
 
-        for i_lap in np.unique(lap):
+        for i_lap in np.unique(lap): 
             y = lap == i_lap # index for the current lap
 
             mode_lap = np.prod(mode[y]) # 1 if all elements are recorded in 'Go' mode
@@ -635,13 +611,12 @@ class ImagingSessionData:
                     print('############################################################')
                     current_sstage = sstage_lap
 
-                istart = np.where(y)[0][0]
+                istart = np.where(y)[0][0] # action is not a np.array, array indexing does not work
                 iend = np.where(y)[0][-1] + 1
                 action_lap = action[istart:iend]
     
                 reward_indices = [j for j, x in enumerate(action_lap) if x == "TrialReward"]
                 t_reward = t_lap[reward_indices]
-    
 
                 ## detecting invalid laps - terminated before the animal could receive reward
                 valid_lap = False
@@ -670,7 +645,7 @@ class ImagingSessionData:
 
                 ### imaging data    
                 iframes = np.where(self.frame_laps == i_lap)[0]
-                if ((len(iframes) > 0) & (add_lap == True)): # there is imaging data belonging to this lap...
+                if ((len(iframes) > self.N_pos_bins) & (add_lap == True)): # there is imaging data belonging to this lap...
                     # print(i, min(iframes), max(iframes))
                     lap_frames_dF_F = self.dF_F[:,iframes]
                     lap_frames_spikes = self.spks[:,iframes]
@@ -685,25 +660,24 @@ class ImagingSessionData:
                     
                 # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
                 # Lap_ImData(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False):
-                self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list))
+                self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold))
                 self.n_laps = self.n_laps + 1
             else:
-                N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anythin with this...
+                N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anything with this...
 
         self.i_Laps_ImData = np.array(i_ImData) # index of laps with imaging data
         self.i_corridors = np.array(i_corrids) # ID of corridor for the current lap
-        # self.cell_activity = np.zeros((self.N_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials
 
     def combine_lapdata(self): ## fills in the cell_activity tensor
-        # self.raw_activity_tensor = np.zeros((self.N_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
-        # self.raw_activity_tensor_time = np.zeros((self.N_bins, self.N_ImLaps)) # a tensor with space x  trials containing the time spent at each location in each lap
+        # self.raw_activity_tensor = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
+        # self.raw_activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # a tensor with space x  trials containing the time spent at each location in each lap
         valid_lap = np.zeros(len(self.i_Laps_ImData))
         k_lap = 0
         for i_lap in self.i_Laps_ImData:
             if (self.ImLaps[i_lap].n_cells > 1):  # we only add imaging data when the lap is valid, so we don't need to test it again
                 valid_lap[k_lap] = 1
                 self.raw_activity_tensor[:,:,k_lap] = np.transpose(self.ImLaps[i_lap].spks_pos)
-                self.raw_activity_tensor_time[:,k_lap] = self.ImLaps[i_lap].T_pos
+                self.raw_activity_tensor_time[:,k_lap] = self.ImLaps[i_lap].T_pos_fast
             k_lap = k_lap + 1
 
         ## smoothing - average of the 3 neighbouring bins
@@ -711,7 +685,7 @@ class ImagingSessionData:
         self.activity_tensor[-1,:,:] = (self.raw_activity_tensor[-1,:,:] + self.raw_activity_tensor[-1,:,:]) / 2
         self.activity_tensor_time[0,:] = (self.raw_activity_tensor_time[0,:] + self.raw_activity_tensor_time[1,:]) / 2
         self.activity_tensor_time[-1,:] = (self.raw_activity_tensor_time[-1,:] + self.raw_activity_tensor_time[-1,:]) / 2
-        for i_bin in np.arange(1, self.N_bins-1):
+        for i_bin in np.arange(1, self.N_pos_bins-1):
             self.activity_tensor[i_bin,:,:] = np.average(self.raw_activity_tensor[(i_bin-1):(i_bin+2),:,:], axis=0)
             self.activity_tensor_time[i_bin,:] = np.average(self.raw_activity_tensor_time[(i_bin-1):(i_bin+2),:], axis=0)
 
@@ -724,8 +698,6 @@ class ImagingSessionData:
 
 
     def calculate_properties(self, nSD=4):
-        self.ratemaps = [] # a list, each element is an array space x neurons being the ratemaps of the cells in a given corridor
-        self.cell_rates = [] # we do not append if it already exists...
         self.cell_reliability = []
         self.cell_Fano_factor = []
         self.cell_skaggs=[]
@@ -733,8 +705,14 @@ class ImagingSessionData:
         self.cell_activelaps_df=[]
         self.cell_tuning_specificity=[]
 
-        if (self.N_corridors > 1):
-            for i_corridor in (np.arange(self.N_corridors-1)+1):
+        self.cell_rates = [] # a list, each element is a 1 x n_cells matrix with the average rate of the cells in the whole corridor
+        self.cell_corridor_selectivity = np.zeros([2,self.N_cells]) # a matrix with the selectivity index of the cells. Second row indicates the corridor with the highers rate.
+
+        self.ratemaps = [] # a list, each element is an array space x neurons x trials being the ratemaps of the cells in a given corridor
+        self.cell_corridor_similarity = np.zeros(self.N_cells) # a matrix with the similarity index of the cells.
+
+        if (self.N_corridors > 0):
+            for i_corridor in np.arange(self.N_corridors): # we exclude corridor 0
                 corridor = self.corridors[i_corridor]
                 if (sum(self.i_corridors == corridor) > 10):
                     # select the laps in the corridor 
@@ -761,15 +739,7 @@ class ImagingSessionData:
 
                     ## average firing rate
                     rates = np.sum(total_spikes, axis=0) / np.sum(total_time)
-                    if (self.task == 'contingency_learning'):
-                        rates_pattern1 = np.sum(total_spikes[0:14,:], axis=0) / np.sum(total_time[0:14])
-                        rates_pattern2 = np.sum(total_spikes[14:28,:], axis=0) / np.sum(total_time[14:28])
-                        rates_pattern3 = np.sum(total_spikes[28:42,:], axis=0) / np.sum(total_time[28:42])
-                        rates_reward = np.sum(total_spikes[42:47,:], axis=0) / np.sum(total_time[42:47])
-                        self.cell_rates.append(np.vstack([rates, rates_pattern1, rates_pattern2, rates_pattern3, rates_reward]))
-                    else :
-                        self.cell_rates.append(np.expand_dims(rates, axis=0))
-
+                    self.cell_rates.append(rates)
 
                     ## reliability and Fano factor
                     reliability = np.zeros(self.N_cells)
@@ -800,7 +770,7 @@ class ImagingSessionData:
                     active_laps = np.zeros((self.N_cells, N_laps_corr))
 
                     icorrids = self.i_corridors[self.i_Laps_ImData] # corridor ids with image data
-                    i_laps_abs = self.i_Laps_ImData[np.nonzero(icorrids == corridor)[0]]
+                    i_laps_abs = self.i_Laps_ImData[np.nonzero(icorrids == corridor)[0]] # we need a different indexing here, for the ImLaps list and not fot  the activityTensor
                     k = 0
                     for i_lap in i_laps_abs:#y=ROI
                         act_cells = np.nonzero(np.amax(self.ImLaps[i_lap].frames_spikes, 1) > 25)[0]
@@ -821,37 +791,10 @@ class ImagingSessionData:
                     active_laps_ratio_df = np.sum(active_laps_df, 1) / N_laps_corr
                     self.cell_activelaps_df.append(active_laps_ratio_df)
 
-                    ## circular tuning specificity
-                    # print('calculating circular tuning specificity ...')
-                    # tuning_spec=np.zeros(self.N_cells)
-                    # r=1
-                    # deg_d=(2*np.pi)/50
-                    # x=np.zeros(50)
-                    # y=np.zeros(50)
-                    # x_ext=np.zeros((50,len(i_laps)))
-                    # y_ext=np.zeros((50,len(i_laps)))
-                    
-                    # for i in range( 50):
-                    #    x_i,y_i=pol2cart(r,deg_d*i)
-                    #    x[i]=round(x_i,5)
-                    #    y[i]=round(y_i,5)
-                       
-                    # for i in range(len(i_laps)):
-                    #     x_ext[:,i]=x
-                    #     y_ext[:,i]=y
-                        
-                    # for i_cell in range(self.N_cells):
-                    #     magn_x=nan_divide(self.activity_tensor[:,i_cell,i_laps]*x_ext, self.activity_tensor_time[:,i_laps], self.activity_tensor_time[:,i_laps] > 0)
-                    #     magn_y=nan_divide(self.activity_tensor[:,i_cell,i_laps]*y_ext, self.activity_tensor_time[:,i_laps], self.activity_tensor_time[:,i_laps] > 0)
-                    #     X = np.nansum(magn_x)
-                    #     Y = np.nansum(magn_y)
-                    #     Z = np.nansum(np.sqrt(magn_x**2 + magn_y**2))
-                    #     tuning_spec[i_cell]=np.sqrt(X**2+Y**2) / Z
-
                     ## linear tuning specificity
                     print('calculating linear tuning specificity ...')
                     tuning_spec = np.zeros(self.N_cells)
-                    xbins = (np.arange(50) + 0.5) * self.corridor_length_cm / 50
+                    xbins = (np.arange(self.N_pos_bins) + 0.5) * self.corridor_length_cm / self.N_pos_bins
                     
                     for i_cell in range(self.N_cells):
                         rr = np.copy(rate_matrix[:,i_cell])
@@ -863,24 +806,59 @@ class ImagingSessionData:
 
                     self.cell_tuning_specificity.append(tuning_spec)
 
-            # self.cell_rates = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the total corridor, pattern zone 1-3 and reward zone
-            if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
-                self.cell_corridor_selectivity[0,:] = (self.cell_rates[0][0,:] - self.cell_rates[1][0,:]) / (self.cell_rates[0][0,:] + self.cell_rates[1][0,:])
-                self.cell_corridor_selectivity[1,:] = (self.cell_rates[0][1,:] - self.cell_rates[1][1,:]) / (self.cell_rates[0][1,:] + self.cell_rates[1][1,:])
-                self.cell_corridor_selectivity[2,:] = (self.cell_rates[0][2,:] - self.cell_rates[1][2,:]) / (self.cell_rates[0][2,:] + self.cell_rates[1][2,:])
-                self.cell_corridor_selectivity[3,:] = (self.cell_rates[0][3,:] - self.cell_rates[1][3,:]) / (self.cell_rates[0][3,:] + self.cell_rates[1][3,:])
-                self.cell_corridor_selectivity[4,:] = (self.cell_rates[0][4,:] - self.cell_rates[1][4,:]) / (self.cell_rates[0][4,:] + self.cell_rates[1][4,:])
+            self.calc_selectivity_similarity()
 
+
+
+    def calc_selectivity_similarity(self, zone=None):
+        ## corridor selectivity calculated for M corridors for all neurons
+        ## selectivity is defined as (max(r) - min(r)) / sum(r) 
+        ##           is always positive
+        ##           is near 0 for non-selective cells
+        ##           is 1 for cells that are active for a single corridor
+        ## the selectivity is stored in a vector of 2 elements for each cell:
+        ##      1. selectivity
+        ##      2. id of the corridor with the maximal firing rate
+        ##
+        ## corridor similarity is calculated for M corridors for all neurons
+        ## similarity is defined as the average correlation between the ratemaps
+        ##           is always positive
+        ##           is near 0 for cells with uncorrelated ratemaps
+        ##           is 1 if cells have identical ratemaps for all the corridors
+        ## the similarity is stored in a vector of 1 element for each cell
+
+        print('calculating corridor selectivity ...')
+        rate_matrix = np.array(self.cell_rates)
+
+        max_rate = np.max(rate_matrix, axis=0)
+        i_corr_max = np.argmax(rate_matrix, axis=0)
+        min_rate = np.min(rate_matrix, axis=0)
+        sumrate = np.sum(rate_matrix, axis=0)
+
+        self.cell_corridor_selectivity[0,:] = (max_rate - min_rate) / sumrate
+        self.cell_corridor_selectivity[1,:] = i_corr_max
+        
+        print('calculating corridor similarity ...')
+        map_mat = np.array(self.ratemaps)
+        M = int(self.N_corridors * (self.N_corridors - 1) / 2)
+        similarity_matrix = np.zeros((M, self.N_cells))
+        m = 0
+        for i_cor in np.arange(self.N_corridors-1):
+            for j_cor in np.arange(i_cor+1, self.N_corridors):
+                X = np.transpose(map_mat[i_cor,:,:])
+                Y = np.transpose(map_mat[j_cor,:,:])
+                similarity_matrix[m,] = Mcorrcoef(X,Y, zero_var_out=0)
+
+        self.cell_corridor_similarity = np.mean(similarity_matrix, axis=0)
 
     def plot_properties(self, cellids=np.array([-1]), interactive=False):
         
-        n_corridors=len(self.cell_rates)#self.corridors.size-1#we don't want to plot corridor 0
-        fig, ax = plt.subplots(n_corridors, 4, figsize=(10,5), sharex='col', sharey='col')
+        fig, ax = plt.subplots(self.N_corridors, 4, figsize=(10,5), sharex='col', sharey='col')
         plt.subplots_adjust(wspace=0.35, hspace=0.2)
         # matplotlib.pyplot.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=None)
         
         sc=[]
-        for i in range(n_corridors*4):
+        for i in range(self.N_corridors*4):
             sc.append(0)
 
         ax[0, 0].axis('off')
@@ -895,11 +873,10 @@ class ImagingSessionData:
         ax[1,0].set_ylabel('SNR')
         ax[1,0].set_xlabel('SD')
         
-        for i in range(n_corridors):
-            corridor=self.corridors[i+1]#always plot the specified corridor
-            i_corridor = int(np.nonzero(self.corridors == corridor)[0]) - 1
+        for i_corridor in range(self.N_corridors):
+            corridor=self.corridors[i_corridor]#always plot the specified corridor
             
-            rates = self.cell_rates[i_corridor][0,:]
+            rates = self.cell_rates[i_corridor]
             reliability = self.cell_reliability[i_corridor]
             skaggs_info=self.cell_skaggs[i_corridor]
             Fano_factor = self.cell_Fano_factor[i_corridor]
@@ -907,33 +884,33 @@ class ImagingSessionData:
             act_laps = self.cell_activelaps[i_corridor]
 #            act_laps_dF = self.cell_activelaps_df[i_corridor]
     
-            sc[i*4+1] = ax[i,1].scatter(rates, reliability, alpha=0.5, s=skaggs_info*50, color='w', edgecolors='C0')
+            sc[i_corridor*4+1] = ax[i_corridor,1].scatter(rates, reliability, alpha=0.5, s=skaggs_info*50, color='w', edgecolors='C0')
             if (max(cellids) > 0):
-                ax[i,1].scatter(rates[cellids], reliability[cellids], alpha=0.75, s=skaggs_info[cellids]*50, color='C0')
+                ax[i_corridor,1].scatter(rates[cellids], reliability[cellids], alpha=0.75, s=skaggs_info[cellids]*50, color='C0')
             # sc = ax_left.scatter(rates, reliability, alpha=0.5, s=skaggs_info*50)
             title_string = 'corr.' + str(corridor)
-            ax[i,1].set_title(title_string)
-            ax[i,1].set_ylabel('reliability')
-            if (i == n_corridors - 1): ax[i,1].set_xlabel('average event rate')
+            ax[i_corridor,1].set_title(title_string)
+            ax[i_corridor,1].set_ylabel('reliability')
+            if (i_corridor == self.N_corridors - 1): ax[i_corridor,1].set_xlabel('average event rate')
     
     
-            sc[i*4+2] = ax[i,2].scatter(act_laps, specificity, alpha=0.5, s=skaggs_info*50, color='w', edgecolors='C1')
+            sc[i_corridor*4+2] = ax[i_corridor,2].scatter(act_laps, specificity, alpha=0.5, s=skaggs_info*50, color='w', edgecolors='C1')
             if (max(cellids) > 0):
-                ax[i,2].scatter(act_laps[cellids], specificity[cellids], alpha=0.75, s=skaggs_info[cellids]*50, color='C1')
+                ax[i_corridor,2].scatter(act_laps[cellids], specificity[cellids], alpha=0.75, s=skaggs_info[cellids]*50, color='C1')
     
             title_string = 'corr.' + str(corridor)
-            ax[i,2].set_title(title_string)
-            ax[i,2].set_ylabel('tuning specificity')
-            if (i == n_corridors - 1): ax[i,2].set_xlabel('percent active laps spikes')
+            ax[i_corridor,2].set_title(title_string)
+            ax[i_corridor,2].set_ylabel('tuning specificity')
+            if (i_corridor == self.N_corridors - 1): ax[i_corridor,2].set_xlabel('percent active laps spikes')
     
-            sc[i*4+3] = ax[i,3].scatter(skaggs_info, Fano_factor, alpha=0.5, s=skaggs_info*50, color='w', edgecolors='C2')
+            sc[i_corridor*4+3] = ax[i_corridor,3].scatter(skaggs_info, Fano_factor, alpha=0.5, s=skaggs_info*50, color='w', edgecolors='C2')
             if (max(cellids) > 0):
-                ax[i,3].scatter(skaggs_info[cellids], Fano_factor[cellids], alpha=0.75, s=skaggs_info[cellids]*50, color='C2')
+                ax[i_corridor,3].scatter(skaggs_info[cellids], Fano_factor[cellids], alpha=0.75, s=skaggs_info[cellids]*50, color='C2')
             # sc = ax_right.scatter(rates, reliability, alpha=0.5, s=skaggs_info*50)
             title_string = 'corr.' + str(corridor)
-            ax[i,3].set_title(title_string)
-            ax[i,3].set_ylabel('Fano factor')
-            if (i == n_corridors - 1): ax[i,3].set_xlabel('Skaggs info (bit/event)')
+            ax[i_corridor,3].set_title(title_string)
+            ax[i_corridor,3].set_ylabel('Fano factor')
+            if (i_corridor == self.N_corridors - 1): ax[i_corridor,3].set_xlabel('Skaggs info (bit/event)')
            
         #####################
         #add interactive annotation
@@ -941,7 +918,7 @@ class ImagingSessionData:
         #we need an sc list, with the given scatters in order, empty slots can be 0
         if (interactive == True):
             annot=[]
-            for i in range(n_corridors*4):
+            for i in range(self.N_corridors*4):
                 if sc[i] != 0:
                     annot_sub = ax_list[i].annotate("", xy=(0,0), xytext=(20,20),textcoords="offset points",
                                  bbox=dict(boxstyle="round", fc="w"),
@@ -992,12 +969,11 @@ class ImagingSessionData:
         for corrid in self.corridors:
             if (sum(self.i_corridors == corrid) > 10):
                 # select the laps in the corridor 
-                i_corrid = int(np.nonzero(self.corridors == corrid)[0] - 1)
+                i_corrid = int(np.nonzero(self.corridors == corrid)[0])
                 rate_matrix = self.ratemaps[i_corrid]
                 # only laps with imaging data are selected - this will index the activity_tensor
 
                 candidate_cells = np.zeros(self.N_cells)
-                accepted_cells = np.zeros(self.N_cells)
                 
                 i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corrid)[0] 
                 N_laps_corr = len(i_laps)
@@ -1017,7 +993,7 @@ class ImagingSessionData:
                     placefield_length = 0
                     candidate_start = 0
                     candidate_length = 0
-                    for k in range(50):
+                    for k in range(self.N_pos_bins):
                         if (rate_i[k] > threshold):
                             candidate_length = candidate_length + 1
                             if (candidate_length == 1):
@@ -1031,7 +1007,7 @@ class ImagingSessionData:
                     if (not(np.isnan(placefield_start))):
                         ##  2) with average rate at least 7x the average rate outside
                         index_infield = np.arange(placefield_start,(placefield_start+placefield_length))
-                        index_outfield = np.setdiff1d(np.arange(50), index_infield)
+                        index_outfield = np.setdiff1d(np.arange(self.N_pos_bins), index_infield)
                         rate_inField = np.mean(rate_i[index_infield])
                         rate_outField = np.mean(rate_i[index_outfield])
 
@@ -1040,116 +1016,160 @@ class ImagingSessionData:
                         lapsums = act_tensor_1[index_infield,i_cell,:].sum(0) # only laps in this corridor
 
                         if ( ( (sum(lapsums > 0.6) / float(N_laps_corr)) > 0.2)  & ( (rate_inField / rate_outField) > 7) ):
-                            # accepted_cells[i_cell] = 1
                             candidate_cells[i_cell] = 1
 
                 self.candidate_PCs.append(candidate_cells)
-                self.accepted_PCs.append(accepted_cells)
         
-        if (self.N_corridors == 3):
-            for i_cell in np.arange(rate_matrix.shape[1]):
+        if (self.N_corridors == 2):
+            for i_cell in np.arange(self.N_corridors):
                 self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
 
 
     # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
-    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None, randseed=123, print_binom_test=True, Holmes_Bonferroni=True):
+    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None):
+
+        cellids = np.array(cellids)
         raw_spikes = self.raw_spks[cellids,:]
-        np.random.seed(randseed)
-        self.shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode, batchsize=batchsize)
-        self.accepted_PCs = self.shuffle_stats.accepted_PCs
+        calculate_shuffles = True
 
-        NN = cellids.size
-        N_corrids = len(self.shuffle_stats.cell_activelaps)
-        sanity_checks_passed = True
-        if ((N_corrids + 1) != self.N_corridors):
-                print ('warning: number of corridors is different between shuffling and control!')
-                sanity_checks_passed = False            
-        for i_cor in range(N_corrids):
-            if (sum(np.abs(self.shuffle_stats.cell_reliability[i_cor][:,n] - self.cell_reliability[i_cor][cellids]) > 0.0001) > 0):
-                print ('warning: calculating reliability is different between shuffling and control!')
-                sanity_checks_passed = False
-    
-        if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
-            if (np.sum(np.abs(self.shuffle_stats.cell_corridor_selectivity[:,:,n] - self.cell_corridor_selectivity[:,cellids]) > 0.0001) > 0):
-                print ('warning: calculating corridor selectivity is different between shuffling and control!')
-                sanity_checks_passed = False
+        ##########################################################################
+        ## reading shuffling data from file
+        ##########################################################################
 
-        if (sanity_checks_passed):
-            print ('Shuffling stats calculated succesfully')
+        data_folder = self.suite2p_folder + 'analysed_data'
+        shuffle_filename = 'shuffle_stats_n' + str(n) + '_mode_' + mode + '.csv'
+        shuffle_path = data_folder + '/' + shuffle_filename
+        if os.path.exists(shuffle_path):
+            calculate_shuffles = False
+            if (self.check_params(shuffle_filename)):
+                print('loading shuffling P-values from file...')
+                ## load from file
+                shuffle_file=open(shuffle_path)
+                shuffle_file_reader=csv.reader(shuffle_file, delimiter=' ')
+                ## we skip the first few lines, as they contain the header already checked by check_params(shuffle_filename)
+                file_data = next(shuffle_file_reader)
+                while (file_data[0][0] == '#'):
+                    file_data = next(shuffle_file_reader)
+                # the statistics and corridors
+                Ps_names = file_data
+                if (self.N_corridors == 1):
+                    expected_names = self.N_corridors * 4 + 1
+                if (self.N_corridors > 1):
+                    expected_names = self.N_corridors * 4 + 3
+                if not (len(Ps_names) == expected_names):
+                    print ('number of P-values read from the saved file for each cell does not match the number expected for a given number of corridor. We will perform shuffling.')
+                    calculate_shuffles = True
 
-        if ((print_binom_test) & (self.N_corridors == 3)):
-            N_skaggs0 = len(np.where(self.shuffle_stats.P_skaggs[0] < 0.05)[0])
-            N_skaggs1 = len(np.where(self.shuffle_stats.P_skaggs[1] < 0.05)[0])
+                # fill in the P-value array
+                file_data = next(shuffle_file_reader)
+                shuffle_Pvalues = np.array(file_data, dtype='float')
+                for row in shuffle_file_reader:
+                    shuffle_Pvalues = np.vstack((shuffle_Pvalues, np.array(row, dtype='float')))
 
-            N_TunSpec0 = len(np.where(self.shuffle_stats.P_tuning_specificity[0] < 0.05)[0])
-            N_TunSpec1 = len(np.where(self.shuffle_stats.P_tuning_specificity[1] < 0.05)[0])
+                ## check the cellids
+                cellids_from_file = shuffle_Pvalues[:,0]
+                if not np.array_equal(np.sort(cellids_from_file), np.sort(cellids)):
+                    print ('cellids of the saved file does not match the cellids provided. We will perform shuffling.')
+                    calculate_shuffles = True
+            else:
+                calculate_shuffles = True
 
-            N_rel0 = len(np.where(self.shuffle_stats.P_reliability[0] < 0.05)[0])
-            N_rel1 = len(np.where(self.shuffle_stats.P_reliability[1] < 0.05)[0])
+        ##########################################################################
+        ## calculating shuffling - if appropriate file not found
+        ##########################################################################
+        if (calculate_shuffles):
+            print('calculating shuffles...')
+            shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode, batchsize=batchsize, randseed=self.randseed)
 
-            print(str(N_skaggs0) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_skaggs1) + ' of ' + str(NN) + ' cells Skaggs info significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_skaggs1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_TunSpec0) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_TunSpec1) + ' of ' + str(NN) + ' cells Tuning Specificity significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_TunSpec1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_rel0) + ' of ' + str(NN) + ' cells reliability significant in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_rel1) + ' of ' + str(NN) + ' cells reliability significant in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_rel1, n=NN, p=0.05, alternative='greater'), 5)))
+            NN = cellids.size
+            N_corrids = len(shuffle_stats.ratemaps)
+            sanity_checks_passed = True
+            if ((N_corrids) != self.N_corridors):
+                    print ('warning: number of corridors is different between shuffling and control!')
+                    sanity_checks_passed = False            
+            for i_cor in range(N_corrids):
+                if (sum(np.abs(shuffle_stats.cell_reliability[i_cor][:,n] - self.cell_reliability[i_cor][cellids]) > 0.0001) > 0):
+                    print ('warning: calculating reliability is different between shuffling and control!')
+                    sanity_checks_passed = False
 
-            N_sel0_cor0 = len(np.where(self.shuffle_stats.P_selectivity[0,] < 0.05)[0])
-            N_sel1_cor0 = len(np.where(self.shuffle_stats.P_selectivity[1,] < 0.05)[0])
-            N_sel2_cor0 = len(np.where(self.shuffle_stats.P_selectivity[2,] < 0.05)[0])
-            N_sel3_cor0 = len(np.where(self.shuffle_stats.P_selectivity[3,] < 0.05)[0])
-            N_sel4_cor0 = len(np.where(self.shuffle_stats.P_selectivity[4,] < 0.05)[0])
+            if (sanity_checks_passed):
+                print ('Shuffling stats calculated succesfully')
+            else : 
+                print ('Shuffling failed, ask for help...')
+                return
 
-            N_sel0_cor1 = len(np.where(self.shuffle_stats.P_selectivity[0,] > 0.95)[0])
-            N_sel1_cor1 = len(np.where(self.shuffle_stats.P_selectivity[1,] > 0.95)[0])
-            N_sel2_cor1 = len(np.where(self.shuffle_stats.P_selectivity[2,] > 0.95)[0])
-            N_sel3_cor1 = len(np.where(self.shuffle_stats.P_selectivity[3,] > 0.95)[0])
-            N_sel4_cor1 = len(np.where(self.shuffle_stats.P_selectivity[4,] > 0.95)[0])
+            print('saving shuffling data into file...')
 
-            print(str(N_sel0_cor0) + ' of ' + str(NN) + ' cells selective for the whole corridor in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel0_cor0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel1_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 1 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel1_cor0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel2_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 2 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel2_cor0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel3_cor0) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel4_cor0) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 0, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor0, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel0_cor1) + ' of ' + str(NN) + ' cells selective for the whole corridor in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel0_cor1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel1_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 1 in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel1_cor1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel2_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 2 in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel2_cor1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel3_cor1) + ' of ' + str(NN) + ' cells selective for the pattern zone 3 in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel3_cor1, n=NN, p=0.05, alternative='greater'), 5)))
-            print(str(N_sel4_cor1) + ' of ' + str(NN) + ' cells selective for the reward zone in corridor 1, binomial test P value:' + str(np.round(scipy.stats.binom_test(N_sel4_cor1, n=NN, p=0.05, alternative='greater'), 5)))
+            if (shuffle_stats.N_corridors > 1):# & (task == 'contingency_learning')):
+                shuffle_Pvalues = cellids
+                Ps_names = ['cellids']#, 
+                for i in np.arange(shuffle_stats.N_corridors):
+                    shuffle_Pvalues = np.vstack((shuffle_Pvalues, shuffle_stats.P_skaggs[i]))
+                    Ps_names = Ps_names + ['Skaggs_' + str(i)]
+                for i in np.arange(shuffle_stats.N_corridors):
+                    shuffle_Pvalues = np.vstack((shuffle_Pvalues, shuffle_stats.P_tuning_specificity[i]))
+                    Ps_names = Ps_names + ['spec_' + str(i)]
+                for i in np.arange(shuffle_stats.N_corridors):
+                    shuffle_Pvalues = np.vstack((shuffle_Pvalues, shuffle_stats.P_reliability[i]))
+                    Ps_names = Ps_names + ['reli_' + str(i)]
 
-        if (Holmes_Bonferroni & (self.N_corridors == 3)):# & (self.task == 'contingency_learning')):
-            Ps = np.vstack((self.shuffle_stats.P_skaggs[0], self.shuffle_stats.P_skaggs[1]))
-            Ps = np.vstack((Ps, self.shuffle_stats.P_tuning_specificity[0], self.shuffle_stats.P_tuning_specificity[1]))
-            Ps = np.vstack((Ps, self.shuffle_stats.P_reliability[0], self.shuffle_stats.P_reliability[1]))
-            Ps = np.vstack((Ps, self.shuffle_stats.P_selectivity, 1-self.shuffle_stats.P_selectivity))
-            ii_tuned_cells = HolmBonfMat(Ps, 0.05)
+                shuffle_Pvalues = np.vstack((shuffle_Pvalues, shuffle_stats.P_corridor_selectivity))
+                Ps_names = Ps_names + ['selectivity']
 
-            self.shuffle_stats.P_all = Ps
-            self.shuffle_stats.P_all_names = ['Skaggs_0', 'Skaggs_1', 'spec_0', 'spec_1', 'reli_0', 'reli_1', 
-                'select_all_0', 'select_pat1_0', 'select_pat2_0', 'select_pat3_0', 'select_rew_0', 'select_all_1', 'select_pat1_1', 'select_pat2_1', 'select_pat3_1', 'cells_select_rew_1']
+                shuffle_Pvalues = np.vstack((shuffle_Pvalues, shuffle_stats.P_corridor_similarity))
+                Ps_names = Ps_names + ['similarity']
 
+                for i in np.arange(shuffle_stats.N_corridors):
+                    shuffle_Pvalues = np.vstack((shuffle_Pvalues, shuffle_stats.accepted_PCs[i]))
+                    Ps_names = Ps_names + ['Hainmuller_PlaceCell_' + str(i)]
+            else :
+                shuffle_Pvalues = np.vstack((cellids, shuffle_stats.P_skaggs[0], shuffle_stats.P_tuning_specificity[0], shuffle_stats.P_reliability[0], shuffle_stats.accepted_PCs[0]))
+                Ps_names = ['cellids', 'Skaggs_0', 'spec_0', 'reli_0', 'Hainmuller_PlaceCell_0']# 
 
-            self.tuned_cells=dict(cells_Skaggs_0 = cellids[np.where(ii_tuned_cells[0,:])[0]], 
-                cells_Skaggs_1 = cellids[np.where(ii_tuned_cells[1,:])[0]], 
-                cells_spec_0 = cellids[np.where(ii_tuned_cells[2,:])[0]], 
-                cells_spec_1 = cellids[np.where(ii_tuned_cells[3,:])[0]], 
-                cells_reli_0 = cellids[np.where(ii_tuned_cells[4,:])[0]], 
-                cells_reli_1 = cellids[np.where(ii_tuned_cells[5,:])[0]]) 
-                # cells_select_all_0 = cellids[np.where(ii_tuned_cells[6,:])[0]], 
-                # cells_select_pat1_0 = cellids[np.where(ii_tuned_cells[7,:])[0]], 
-                # cells_select_pat2_0 = cellids[np.where(ii_tuned_cells[8,:])[0]], 
-                # cells_select_pat3_0 = cellids[np.where(ii_tuned_cells[9,:])[0]], 
-                # cells_select_rew_0 = cellids[np.where(ii_tuned_cells[10,:])[0]], 
-                # cells_select_all_1 = cellids[np.where(ii_tuned_cells[11,:])[0]], 
-                # cells_select_pat1_1 = cellids[np.where(ii_tuned_cells[12,:])[0]], 
-                # cells_select_pat2_1 = cellids[np.where(ii_tuned_cells[13,:])[0]], 
-                # cells_select_pat3_1 = cellids[np.where(ii_tuned_cells[14,:])[0]], 
-                # cells_select_rew_1 = cellids[np.where(ii_tuned_cells[15,:])[0]])
+            shuffle_Pvalues = np.transpose(shuffle_Pvalues)
 
-            self.tuned_cells['tuned_cells_0'] = np.unique(np.concatenate((self.tuned_cells['cells_Skaggs_0'], self.tuned_cells['cells_spec_0'], self.tuned_cells['cells_reli_0'])))
-            self.tuned_cells['tuned_cells_1'] = np.unique(np.concatenate((self.tuned_cells['cells_Skaggs_1'], self.tuned_cells['cells_spec_1'], self.tuned_cells['cells_reli_1'])))
-        else:
-            self.tuned_cells=[]
+            self.write_params(shuffle_filename)
+            with open(shuffle_path, mode='a') as shuffle_file:
+                file_writer = csv.writer(shuffle_file, delimiter=' ')
+                file_writer.writerow(Ps_names)
+                for i_row in np.arange(shuffle_Pvalues.shape[0]):
+                    file_writer.writerow(np.round(shuffle_Pvalues[i_row,:], 6))
+            print('P values for n=', len(cellids), ' saved into file: ', shuffle_path)
+
+        ##########################################################################
+        ## processing the shuffling stats ...
+        ##########################################################################
+
+        self.shuffle_Pvalues = shuffle_Pvalues
+        self.Ps_names = Ps_names
+        if (self.N_corridors == 1):
+            self.ii_tuned_cells = np.transpose(HolmBonfMat(np.transpose(self.shuffle_Pvalues[:,1:(self.N_corridors*3+1)]), 0.05))
+        if (self.N_corridors > 1):
+            self.ii_tuned_cells = np.transpose(HolmBonfMat(np.transpose(self.shuffle_Pvalues[:,1:(self.N_corridors*3+3)]), 0.05))
+
+        self.accepted_PCs = []
+        self.tuned_cells = []
+        self.skaggs_tuned_cells = []
+        self.spec_tuned_cells = []
+        self.reli_tuned_cells = []
+
+        # print(shuffle_Pvalues)
+        # print(shuffle_Pvalues.shape)
+        for i_cor in np.arange(self.N_corridors):
+            print(i_cor)
+            if (self.N_corridors == 1):
+                self.accepted_PCs.append(cellids[np.where(shuffle_Pvalues[:,self.N_corridors*3+1+i_cor])])
+            if (self.N_corridors > 1):
+                self.accepted_PCs.append(cellids[np.where(shuffle_Pvalues[:,self.N_corridors*3+3+i_cor])])
+            self.skaggs_tuned_cells.append(cellids[np.where(self.ii_tuned_cells[:,i_cor])])
+            self.spec_tuned_cells.append(cellids[np.where(self.ii_tuned_cells[:,self.N_corridors+i_cor])])
+            self.reli_tuned_cells.append(cellids[np.where(self.ii_tuned_cells[:,self.N_corridors*2+i_cor])])
+            self.tuned_cells.append(np.unique(np.concatenate((self.skaggs_tuned_cells[i_cor], self.spec_tuned_cells[i_cor], self.reli_tuned_cells[i_cor]))))
+        if (self.N_corridors > 1):
+            print('selective cells:', cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3])])
+            self.selective_cells = cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3])]
+            print('similar cells:', cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3+1])])
+            self.similar_cells = cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3+1])]
 
 
     def get_lap_indexes(self, corridor=-1, i_lap=-1):
@@ -1161,12 +1181,12 @@ class ImagingSessionData:
         # only laps with imaging data are selected - this will index the activity_tensor
         i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor)[0] 
         N_laps_corr = len(i_laps)
-        print('lap # in corridor ' + str(corridor) + ' with imaging data', 'lap number within session')
+        print('lap # in corridor ' + str(corridor) + ' with imaging data;    lap # within session')
         if (i_lap == -1):
             for i_lap in range(N_laps_corr):
-                print (i_lap, self.i_Laps_ImData[i_laps[i_lap]])
+                print (i_lap, '\t', self.i_Laps_ImData[i_laps[i_lap]])
         else :
-            print (i_lap, self.i_Laps_ImData[i_laps[i_lap]])
+            print (i_lap, '\t', self.i_Laps_ImData[i_laps[i_lap]])
 
 
 
@@ -1183,28 +1203,26 @@ class ImagingSessionData:
         N_cells_plotted = len(cellids)
 
         nbins = self.activity_tensor.shape[0]
-        corrids = np.unique(self.i_corridors)
-        n_corrid = len(corrids)
         ## we calculate the rate matrix for all corridors - we need to use the same colors for the images
         
         if (normalized):
             vmax = 1
         else: 
-            for i_corrid in range(n_corrid):
+            for i_corrid in range(self.N_corridors):
                 if (np.max(self.ratemaps[i_corrid]) > vmax):
                     vmax = np.max(self.ratemaps[i_corrid])
 
         if (corridor == -1):
 
-            fig, axs = plt.subplots(1, n_corrid, figsize=(6+n_corrid*2,8), sharex=True, sharey=True)
+            fig, axs = plt.subplots(1, self.N_corridors, figsize=(6+self.N_corridors*2,8), sharex=True, sharey=True)
             ims = []
 
             if (corridor_sort == -1): # if no corridor is geven for sorting...
-                corridor_sort = corrids[0]
+                corridor_sort = self.corridors[0]
 
             if (sorted):
                 suptitle_string = 'sorted by corridor ' + str(corridor_sort)
-                i_corrid = np.nonzero(corridor_sort == self.corridors)[0][0] - 1
+                i_corrid = np.nonzero(corridor_sort == self.corridors)[0][0]
                 rmp = np.array(self.ratemaps[i_corrid][:,cellids], copy=True)
                 ratemaps_to_sort = np.transpose(rmp)
                 sort_index, rmaps = self.sort_ratemaps(ratemaps_to_sort)
@@ -1212,11 +1230,11 @@ class ImagingSessionData:
                 sort_index = np.arange(len(cellids))
                 suptitle_string = 'unsorted'
 
-            for i_corrid in range(n_corrid):
+            for i_corrid in range(self.N_corridors):
                 if (N_cells_plotted == self.N_cells) :
-                    title_string = 'ratemap of all cells in corridor ' + str(corrids[i_corrid])
+                    title_string = 'ratemap of all cells in corridor ' + str(self.corridors[i_corrid])
                 else :
-                    title_string = 'ratemap of some cells in corridor ' + str(corrids[i_corrid])
+                    title_string = 'ratemap of some cells in corridor ' + str(self.corridors[i_corrid])
                 rmp = np.array(self.ratemaps[i_corrid][:,cellids], copy=True)
                 ratemaps_to_sort = np.transpose(rmp)
                 ratemaps_to_plot = ratemaps_to_sort[sort_index,:]
@@ -1236,9 +1254,9 @@ class ImagingSessionData:
                 plt.colorbar(ims[i_corrid], orientation='horizontal',ax=axs[i_corrid])
 
                 ## add reward zones
-                zone_starts = self.corridor_list.corridors[self.corridors[i_corrid+1]].reward_zone_starts
+                zone_starts = self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_starts 
                 if (len(zone_starts) > 0):
-                    zone_ends = self.corridor_list.corridors[self.corridors[i_corrid+1]].reward_zone_ends
+                    zone_ends = self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends
                     bottom, top = axs[i_corrid].get_ylim()
                     for i_zone in range(len(zone_starts)):
                         left = zone_starts[i_zone] * nbins             
@@ -1267,6 +1285,12 @@ class ImagingSessionData:
             else:
                 ratemaps_to_plot = ratemaps_to_sort
                 title_string = title_string + ' unsorted'
+
+            if (normalized):
+                for i in range(ratemaps_to_plot.shape[0]):
+                    rate_range = max(ratemaps_to_plot[i,:]) - min(ratemaps_to_plot[i,:])
+                    ratemaps_to_plot[i,:] = (ratemaps_to_plot[i,:] - min(ratemaps_to_plot[i,:])) / rate_range
+
             fig, ax_bottom = plt.subplots(figsize=(6,8))
             ax_bottom.set_title(title_string)
             im1 = ax_bottom.matshow(ratemaps_to_plot, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary')
@@ -1275,6 +1299,18 @@ class ImagingSessionData:
                 ax_bottom.set_yticklabels(cellids[sort_index])
             else:
                 ax_bottom.set_yticklabels(cellids)
+
+            zone_starts = self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_starts 
+            if (len(zone_starts) > 0):
+                zone_ends = self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends
+                bottom, top = ax_bottom.get_ylim()
+                for i_zone in range(len(zone_starts)):
+                    left = zone_starts[i_zone] * nbins             
+                    right = zone_ends[i_zone] * nbins              
+                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                    ax_bottom.add_patch(polygon)
+                    # print('adding reward zone to the ', i_corrid, 'th corridor, ', self.corridors[i_corrid+1])
+
             plt.colorbar(im1, orientation='horizontal')
             plt.show(block=False)       
 
@@ -1312,14 +1348,14 @@ class ImagingSessionData:
         for corr in range(len(self.corridors)):
             if self.corridors[corr]==corridor:
                 CI=corr-1#always corridor 0 starts
-                cell_info='\n'+ 'skgs: '+str(round(self.cell_skaggs[CI][cellid],2))+' %actF: '+str(round(self.cell_activelaps_df[CI][cellid],2))+' %actS: '+str(round(self.cell_activelaps[CI][cellid],2))+'\n'+'TunSp: '+str(round(self.cell_tuning_specificity[CI][cellid],2))+' FF: '+str(round(self.cell_Fano_factor[CI][cellid],2))+' rate: '+str(round(self.cell_rates[CI][0,cellid],2))+' rel: '+str(round(self.cell_reliability[CI][cellid],2))    
+                cell_info='\n'+ 'skgs: '+str(round(self.cell_skaggs[CI][cellid],2))+' %actF: '+str(round(self.cell_activelaps_df[CI][cellid],2))+' %actS: '+str(round(self.cell_activelaps[CI][cellid],2))+'\n'+'TunSp: '+str(round(self.cell_tuning_specificity[CI][cellid],2))+' FF: '+str(round(self.cell_Fano_factor[CI][cellid],2))+' rate: '+str(round(self.cell_rates[CI][cellid],2))+' rel: '+str(round(self.cell_reliability[CI][cellid],2))    
                 break
         if CI==-2:
             print('Warning: specified corridor does not exist in this session!')
         return(cell_info)
 
 
-    def plot_cell_laps(self, cellid, multipdf_object=-1, signal='dF', corridor=-1, reward=True, write_pdf=False, save_data=False, plot_laps='all'):
+    def plot_cell_laps(self, cellid, multipdf_object=-1, signal='dF', corridor=-1, reward=True, write_pdf=False, plot_laps='all'):
         ## plot the activity of a single cell in all trials in a given corridor
         ## signal can be 
         ##          'dF' when dF/F and spikes are plotted as a function of time
@@ -1328,18 +1364,16 @@ class ImagingSessionData:
 
         #process input corridors
         if (corridor == -1):
-            corridor = np.unique(self.i_corridors)
+            corridor = self.corridors
         else:
-            if corridor in np.unique(self.i_corridors):
-                corridor=np.array(corridor)
+            if corridor in self.corridors:
+                corridor=np.array([corridor])
             else:
                 print('Warning: specified corridor does not exist in this session!')
                 return
                 
         #plotting
         if (signal == 'dF'):
-            if (save_data):
-                print('data saving is only implemented for rate not dF')
             fig, ax = plt.subplots(1,corridor.size,squeeze=False, figsize=(6*corridor.size,8), sharex=True)
             for cor_index in range(corridor.size):
                 if corridor.size==1:
@@ -1398,28 +1432,27 @@ class ImagingSessionData:
                 plt.close()
 
         if (signal == 'rate'):
-            if corridor.size > 1:
-                #finding colormap ranges
-                min_intensity=0
-                max_intensity=100
-                for cor_index in range(corridor.size):
-                    corridor_to_plot=corridor[cor_index]
-                    
-                    #calculate rate matrix ...again :(
-                    i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor_to_plot)[0]
-                    
-                    total_spikes = self.activity_tensor[:,cellid,i_laps]
-                    total_time = self.activity_tensor_time[:,i_laps]
-                    rate_matrix = total_spikes / total_time
-                    
-                    loc_max=np.nanmax(rate_matrix[rate_matrix != np.inf])
-                    loc_min=np.nanmin(rate_matrix)
-                    if  loc_max > max_intensity :
-                        max_intensity = loc_max
-                    if  loc_min < min_intensity:
-                        min_intensity = loc_min
-                        
-            #main part of ratemap plotting
+            min_intensity=0
+            max_intensity=100
+
+            for cor_index in range(corridor.size):
+                corridor_to_plot=corridor[cor_index]
+                
+                #calculate rate matrix ...again :(
+                i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor_to_plot)[0]
+                
+                total_spikes = self.activity_tensor[:,cellid,i_laps]
+                total_time = self.activity_tensor_time[:,i_laps]
+                rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
+                
+                loc_max=np.nanmax(rate_matrix[rate_matrix != np.inf])
+                loc_min=np.nanmin(rate_matrix)
+                if  loc_max > max_intensity :
+                    max_intensity = loc_max
+                if  loc_min < min_intensity:
+                    min_intensity = loc_min
+
+            # main part of ratemap plotting
             # colormap: grey for 0-100 and red for higher
             # max_intensity: 100 or higher, the highest rate
             # min_intensity: 0 or lower, the lowest rate
@@ -1461,7 +1494,7 @@ class ImagingSessionData:
                 #calculate rate matrix
                 total_spikes = self.activity_tensor[:,cellid,i_laps]
                 total_time = self.activity_tensor_time[:,i_laps]
-                rate_matrix = total_spikes / total_time
+                rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
 
                 if (plot_laps == 'correct'):
                     i_error = np.nonzero(correct_reward[0,:] == 0)[0]
@@ -1473,7 +1506,7 @@ class ImagingSessionData:
                 #calculate average rates for plotting
                 average_firing_rate=np.nansum(rate_matrix, axis=1)/i_laps.size
                 std=np.nanstd(rate_matrix, axis=1)/np.sqrt(i_laps.size)
-                errorbar_x=np.arange(50)
+                errorbar_x=np.arange(self.N_pos_bins)
                 
                 #plotting
                 title_string = 'ratemap of cell ' + str(cellid) + ' in corridor ' + str(corridor_to_plot)+cell_info
@@ -1485,7 +1518,7 @@ class ImagingSessionData:
                 if corridor.size>1:
                     im1 = ax[0,cor_index].imshow(np.transpose(rate_matrix), aspect='auto', origin='lower',vmin=min_intensity, vmax=max_intensity, cmap=mymap)
                 else:
-                    im1 = ax[0,cor_index].imshow(np.transpose(rate_matrix), aspect='auto', origin='lower', cmap='mymap')
+                    im1 = ax[0,cor_index].imshow(np.transpose(rate_matrix), aspect='auto', origin='lower',vmin=min_intensity, vmax=max_intensity, cmap=mymap)
                 if (reward == True):
                     i_cor = np.nonzero(correct_reward[0,:])[0]
                     n_cor = len(i_cor)
@@ -1499,19 +1532,11 @@ class ImagingSessionData:
                 ax[1,cor_index].set_xlim(0, nbins+1)
                 ax[0,cor_index].set_facecolor(matcols.CSS4_COLORS['palegreen'])
 
-                if (save_data == True):
-                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_rate_corridor' + str(int(corridor_to_plot)) + '_cell' + str(cellid) + '.csv'
-                    with open(filename, mode='w') as rate_file:
-                        file_writer = csv.writer(rate_file, delimiter=',')
-                        for i_col in range(n_laps):
-                            file_writer.writerow(np.round(rate_matrix[:,i_col], 2))
-                    print('ratemap saved into file: ' + filename)
-
             ## add reward zones
             for cor_index in range(corridor.size):
-                zone_starts = self.corridor_list.corridors[self.corridors[cor_index+1]].reward_zone_starts
+                zone_starts = self.corridor_list.corridors[corridor[cor_index]].reward_zone_starts
                 if (len(zone_starts) > 0):
-                    zone_ends = self.corridor_list.corridors[self.corridors[cor_index+1]].reward_zone_ends
+                    zone_ends = self.corridor_list.corridors[corridor[cor_index]].reward_zone_ends
                     bottom, top = ax[0,cor_index].get_ylim()
                     for i_zone in range(len(zone_starts)):
                         left = zone_starts[i_zone] * nbins             
@@ -1537,9 +1562,9 @@ class ImagingSessionData:
         
         #process input corridors
         if (corridor == -1):
-            corridor = np.unique(self.i_corridors)
+            corridor = self.corridors
         else:
-            if corridor in np.unique(self.i_corridors):
+            if corridor in self.corridors:
                 corridor=np.array(corridor)
             else:
                 print('Warning: specified corridor does not exist in this session!')
@@ -1562,23 +1587,23 @@ class ImagingSessionData:
             sp_laps = self.activity_tensor[:,:,i_laps]
             sp = sp_laps[:,cellids,:]
             total_time = self.activity_tensor_time[:,i_laps]
-            popact_laps = np.nansum(sp, 1) / total_time
+            popact_laps = nan_divide(np.nansum(sp, 1), total_time, where=total_time > 0.025)
             
 
             #calculate for plotting average rates
-            xmids=np.arange(50)
+            xmids=np.arange(self.N_pos_bins)
             title_string = 'total activity in corridor ' + str(corridor_to_plot)
             if (bylaps == True):
                 if (cor_index==0):
-                    scale_factor = np.round(np.mean(popact_laps))
-                ax[0,cor_index].plot(popact_laps + np.arange(popact_laps.shape[1])*scale_factor)
+                    scale_factor = np.round(np.nanmean(popact_laps))
+                ax[0,cor_index].plot(popact_laps + np.arange(popact_laps.shape[1])*scale_factor, color='dodgerblue')
                 ax[0,cor_index].set_title(title_string)
                 ylab_text = 'lap number x ' + str(scale_factor) + ' / total activity'
                 ax[0,cor_index].set_ylabel(ylab_text)
                 ax[0,cor_index].set_xlabel('position bin')
             else:
-                mean_rate=np.sum(popact_laps, axis=1)/i_laps.size
-                se_rate=np.std(popact_laps, axis=1)/np.sqrt(i_laps.size)
+                mean_rate=np.nansum(popact_laps, axis=1)/np.sum(1 - np.isnan(popact_laps), axis=1)
+                se_rate=np.nanstd(popact_laps, axis=1)/np.sqrt(np.sum(1 - np.isnan(popact_laps), axis=1))
             
                 if (max(mean_rate + se_rate) > ymax):
                     ymax = max(mean_rate + se_rate)
@@ -1591,20 +1616,20 @@ class ImagingSessionData:
                 ax[0,cor_index].set_xlim(0, 51)
                 ax[0,cor_index].set_title(title_string)
 
-                if (save_data == True):
-                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_popact_corridor' + str(int(corridor_to_plot)) + name_string + '.csv'
-                    with open(filename, mode='w') as rate_file:
-                        file_writer = csv.writer(rate_file, delimiter=',')
-                        for i_col in range(n_laps):
-                            file_writer.writerow(np.round(popact_laps[:,i_col], 2))
-                    print('ratemap saved into file: ' + filename)
+                # if (save_data == True):
+                #     filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_popact_corridor' + str(int(corridor_to_plot)) + name_string + '.csv'
+                #     with open(filename, mode='w') as rate_file:
+                #         file_writer = csv.writer(rate_file, delimiter=',')
+                #         for i_col in range(n_laps):
+                #             file_writer.writerow(np.round(popact_laps[:,i_col], 2))
+                #     print('population activity saved into file: ' + filename)
 
                 ax[0,0].set_ylim(0, ymax)
-                    ## add reward zones
-        for cor_index in range(corridor.size):
-            zone_starts = self.corridor_list.corridors[self.corridors[cor_index+1]].reward_zone_starts
+
+            ## add reward zones
+            zone_starts = self.corridor_list.corridors[corridor_to_plot].reward_zone_starts
             if (len(zone_starts) > 0):
-                zone_ends = self.corridor_list.corridors[self.corridors[cor_index+1]].reward_zone_ends
+                zone_ends = self.corridor_list.corridors[corridor_to_plot].reward_zone_ends
                 bottom, top = ax[0,cor_index].get_ylim()
                 for i_zone in range(len(zone_starts)):
                     left = zone_starts[i_zone] * nbins             
@@ -1615,7 +1640,10 @@ class ImagingSessionData:
         plt.show(block=False)
 
 
-    def plot_session(self, save_data=False, selected_laps=None):
+    def plot_session(self, selected_laps=None):
+        ## plot the behavioral data during one session. 
+            # - speed
+            # - lick rate
         ## find the number of different corridors
         if (selected_laps is None):
             selected_laps = np.arange(self.n_laps)
@@ -1645,124 +1673,108 @@ class ImagingSessionData:
                 ids_all = np.where(self.i_corridors == corridor_types[row])
                 ids = np.intersect1d(ids_all, selected_laps)
 
-                ########################################
-                ## speed
-                avespeed = np.zeros(nbins)
-                n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
-                n_laps = len(ids)
-                n_correct = 0
-                n_valid = 0
-                maxspeed = 10
+                if (len(ids) > 2):
+                    ########################################
+                    ## speed
+                    avespeed = np.zeros(nbins)
+                    n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
+                    n_laps = len(ids)
+                    n_correct = 0
+                    n_valid = 0
+                    maxspeed = 10
 
-                speed_matrix = np.zeros((len(ids), nbins))
+                    speed_matrix = np.zeros((len(ids), nbins))
 
-                i_lap = 0
-                for lap in ids:
-                    if (self.ImLaps[lap].mode == 1): # only use the lap if it was a valid lap
-                        axs[row,0].step(self.ImLaps[lap].bincenters, self.ImLaps[lap].ave_speed, where='mid', c=speed_color_trial)
-                        speed_matrix[i_lap,:] =  np.round(self.ImLaps[lap].ave_speed, 2)
-                        nans_lap = np.isnan(self.ImLaps[lap].ave_speed)
-                        avespeed = nan_add(avespeed, self.ImLaps[lap].ave_speed)
-                        n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
-                        if (max(self.ImLaps[lap].ave_speed) > maxspeed): maxspeed = max(self.ImLaps[lap].ave_speed)
-                        n_correct = n_correct + self.ImLaps[lap].correct
-                        n_valid = n_valid + 1
-                    i_lap = i_lap + 1
-                maxspeed = min(maxspeed, 60)
-                P_correct = np.round(np.float(n_correct) / np.float(n_valid), 3)
+                    i_lap = 0
+                    for lap in ids:
+                        if (self.ImLaps[lap].mode == 1): # only use the lap if it was a valid lap
+                            axs[row,0].step(self.ImLaps[lap].bincenters, self.ImLaps[lap].ave_speed, where='mid', c=speed_color_trial)
+                            speed_matrix[i_lap,:] =  np.round(self.ImLaps[lap].ave_speed, 2)
+                            nans_lap = np.isnan(self.ImLaps[lap].ave_speed)
+                            avespeed = nan_add(avespeed, self.ImLaps[lap].ave_speed)
+                            n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
+                            if (max(self.ImLaps[lap].ave_speed) > maxspeed): maxspeed = max(self.ImLaps[lap].ave_speed)
+                            n_correct = n_correct + self.ImLaps[lap].correct
+                            n_valid = n_valid + 1
+                        i_lap = i_lap + 1
+                    maxspeed = min(maxspeed, 60)
+                    P_correct = np.round(np.float(n_correct) / np.float(n_valid), 3)
 
-                if (save_data == True):
-                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_speed_corridor' + str(int(corridor_types[row])) + '.csv'
-                    with open(filename, mode='w') as speed_file:
-                        file_writer = csv.writer(speed_file, delimiter=',')
-                        for i_row in range(len(ids)):
-                            file_writer.writerow(speed_matrix[i_row,:])
-                    print('speed data saved into file: ' + filename)
+                    avespeed = nan_divide(avespeed, n_lap_bins, n_lap_bins > 0)
+                    axs[row,0].step(self.ImLaps[lap].bincenters, avespeed, where='mid', c=speed_color)
+                    axs[row,0].set_ylim([-1,1.2*maxspeed])
 
-                avespeed = nan_divide(avespeed, n_lap_bins, n_lap_bins > 0)
-                axs[row,0].step(self.ImLaps[lap].bincenters, avespeed, where='mid', c=speed_color)
-                axs[row,0].set_ylim([-1,1.2*maxspeed])
-
-                if (row == 0):
-                    if (self.sessionID >= 0):
-                        plot_title = 'session:' + str(self.sessionID) + ': ' + str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
+                    if (row == 0):
+                        if (self.sessionID >= 0):
+                            plot_title = 'session:' + str(self.sessionID) + ': ' + str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
+                        else:
+                            plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
                     else:
                         plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
-                else:
-                    plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
 
-                ########################################
-                ## reward zones
+                    ########################################
+                    ## reward zones
 
-                if (self.ImLaps[lap].zones.shape[1] > 0):
-                    bottom, top = axs[row,0].get_ylim()
-                    left = self.ImLaps[lap].zones[0,0] * self.corridor_length_roxel
-                    right = self.ImLaps[lap].zones[1,0] * self.corridor_length_roxel
+                    if (self.ImLaps[lap].zones.shape[1] > 0):
+                        bottom, top = axs[row,0].get_ylim()
+                        left = self.ImLaps[lap].zones[0,0] * self.corridor_length_roxel
+                        right = self.ImLaps[lap].zones[1,0] * self.corridor_length_roxel
 
-                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-                    axs[row,0].add_patch(polygon)
-                    n_zones = np.shape(self.ImLaps[lap].zones)[1]
-                    if (n_zones > 1):
-                        for i in range(1, np.shape(self.ImLaps[lap].zones)[1]):
-                            left = self.ImLaps[lap].zones[0,i] * self.corridor_length_roxel
-                            right = self.ImLaps[lap].zones[1,i] * self.corridor_length_roxel
-                            polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-                            axs[row,0].add_patch(polygon)
-                    else: # we look for anticipatory licking tests
-                        P_statement = ', anticipatory P value not tested'
-                        for k in range(len(self.anticipatory)):
-                            if (self.anticipatory[k].corridor == corridor_types[row]):
-                                P_statement = ', anticipatory P = ' + str(round(self.anticipatory[k].test[1],5))
-                        if (add_anticipatory_test == True):
-                            plot_title = plot_title + P_statement
+                        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                        axs[row,0].add_patch(polygon)
+                        n_zones = np.shape(self.ImLaps[lap].zones)[1]
+                        if (n_zones > 1):
+                            for i in range(1, np.shape(self.ImLaps[lap].zones)[1]):
+                                left = self.ImLaps[lap].zones[0,i] * self.corridor_length_roxel
+                                right = self.ImLaps[lap].zones[1,i] * self.corridor_length_roxel
+                                polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                                axs[row,0].add_patch(polygon)
+                        else: # we look for anticipatory licking tests
+                            P_statement = ', anticipatory P value not tested'
+                            for k in range(len(self.anticipatory)):
+                                if (self.anticipatory[k].corridor == corridor_types[row]):
+                                    P_statement = ', anticipatory P = ' + str(round(self.anticipatory[k].test[1],5))
+                            if (add_anticipatory_test == True):
+                                plot_title = plot_title + P_statement
 
-                axs[row,0].set_title(plot_title)
+                    axs[row,0].set_title(plot_title)
 
-                ########################################
-                ## lick
-                ax2 = axs[row,0].twinx()
-                n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
-                maxrate = 10
-                avelick = np.zeros(nbins)
+                    ########################################
+                    ## lick
+                    ax2 = axs[row,0].twinx()
+                    n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
+                    maxrate = 10
+                    avelick = np.zeros(nbins)
 
-                lick_matrix = np.zeros((len(ids), nbins))
-                i_lap = 0
+                    lick_matrix = np.zeros((len(ids), nbins))
+                    i_lap = 0
 
-                for lap in ids:
-                    if (self.ImLaps[lap].mode == 1): # only use the lap if it was a valid lap
-                        ax2.step(self.ImLaps[lap].bincenters, self.ImLaps[lap].lick_rate, where='mid', c=lick_color_trial, linewidth=1)
-                        lick_matrix[i_lap,:] =  np.round(self.ImLaps[lap].lick_rate, 2)
-                        nans_lap = np.isnan(self.ImLaps[lap].lick_rate)
-                        avelick = nan_add(avelick, self.ImLaps[lap].lick_rate)
-                        n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
-                        if (np.nanmax(self.ImLaps[lap].lick_rate) > maxrate): maxrate = np.nanmax(self.ImLaps[lap].lick_rate)
-                    i_lap = i_lap + 1
-                maxrate = min(maxrate, 20)
+                    for lap in ids:
+                        if (self.ImLaps[lap].mode == 1): # only use the lap if it was a valid lap
+                            ax2.step(self.ImLaps[lap].bincenters, self.ImLaps[lap].lick_rate, where='mid', c=lick_color_trial, linewidth=1)
+                            lick_matrix[i_lap,:] =  np.round(self.ImLaps[lap].lick_rate, 2)
+                            nans_lap = np.isnan(self.ImLaps[lap].lick_rate)
+                            avelick = nan_add(avelick, self.ImLaps[lap].lick_rate)
+                            n_lap_bins = n_lap_bins +  np.logical_not(nans_lap)
+                            if (np.nanmax(self.ImLaps[lap].lick_rate) > maxrate): maxrate = np.nanmax(self.ImLaps[lap].lick_rate)
+                        i_lap = i_lap + 1
+                    maxrate = min(maxrate, 20)
 
-                if (save_data == True):
-                    filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_lick_corridor' + str(int(corridor_types[row])) + '.csv'
-                    with open(filename, mode='w') as lick_file:
-                        file_writer = csv.writer(lick_file, delimiter=',')
-                        for i_row in range(len(ids)):
-                            file_writer.writerow(lick_matrix[i_row,:])
-                    print('lick data saved into file: ' + filename)
+                    avelick = nan_divide(avelick, n_lap_bins, n_lap_bins > 0)
+                    ax2.step(self.ImLaps[lap].bincenters, avelick, where='mid', c=lick_color)
+                    ax2.set_ylim([-1,1.2*maxrate])
 
 
-                avelick = nan_divide(avelick, n_lap_bins, n_lap_bins > 0)
-                ax2.step(self.ImLaps[lap].bincenters, avelick, where='mid', c=lick_color)
-                ax2.set_ylim([-1,1.2*maxrate])
-
-
-                if (row==(nrow-1)):
-                    axs[row,0].set_ylabel('speed (cm/s)', color=speed_color)
-                    axs[row,0].tick_params(axis='y', labelcolor=speed_color)
-                    ax2.set_ylabel('lick rate (lick/s)', color=lick_color)
-                    ax2.tick_params(axis='y', labelcolor=lick_color)
-                    axs[row,0].set_xlabel('position (roxel)')
-                else:
-                    axs[row,0].set_xticklabels([])
-                    axs[row,0].tick_params(axis='y', labelcolor=speed_color)
-                    ax2.tick_params(axis='y', labelcolor=lick_color)
+                    if (row==(nrow-1)):
+                        axs[row,0].set_ylabel('speed (cm/s)', color=speed_color)
+                        axs[row,0].tick_params(axis='y', labelcolor=speed_color)
+                        ax2.set_ylabel('lick rate (lick/s)', color=lick_color)
+                        ax2.tick_params(axis='y', labelcolor=lick_color)
+                        axs[row,0].set_xlabel('position (roxel)')
+                    else:
+                        axs[row,0].set_xticklabels([])
+                        axs[row,0].tick_params(axis='y', labelcolor=speed_color)
+                        ax2.tick_params(axis='y', labelcolor=lick_color)
 
             plt.show(block=False)
         else:
@@ -1826,10 +1838,81 @@ class ImagingSessionData:
             plt.show(block=False)
 
 
+    def save_data(self, save_properties=True, save_ratemaps=True, save_laptime=True):
+
+        data_folder = self.suite2p_folder + 'analysed_data'
+        if not os.path.exists(data_folder):
+            os.makedirs(data_folder)
+
+        N_corridors = len(self.corridors)
+
+        # saving the cell properties - all cells included, a separate file is given for each corridor
+        # each line is a different cell
+        if (save_properties):
+            # cell_number   rate1   rate2   reliability1    reliability2    Fano1   Fano2   Skaggs1     Skaggs2     activeLaps1    activLaps2  activeLaps_dF1   activeLaps_dF2  specificity1    specificity2
+            colnames = ['#cell_number', 'rate', 'reliability', 'Fano_factor', 'Skaggs_info', 'active_laps', 'active_laps_dF', 'specificity']
+            for i_cor in np.arange(N_corridors):
+                allprops = np.array([np.arange(self.N_cells), self.cell_rates[i_cor], self.cell_reliability[i_cor], self.cell_Fano_factor[i_cor], self.cell_skaggs[i_cor], self.cell_activelaps[i_cor], self.cell_activelaps_df[i_cor], self.cell_tuning_specificity[i_cor]])
+                corridor_file = 'cell_properties_corridor_' + str(self.corridors[i_cor]) + '_N' + str(self.N_cells) + '.csv'
+                self.write_params(corridor_file)
+                filename = data_folder + '/' + corridor_file
+                with open(filename, mode='a') as property_file:
+                    file_writer = csv.writer(property_file, delimiter=' ')
+                    file_writer.writerow(colnames)
+                    for i_col in np.arange(allprops.shape[1]):
+                        file_writer.writerow(np.round(allprops[:,i_col], 4))
+                print('cell properties for corridor', self.corridors[i_cor], ' saved into file: ', filename)
+
+        # saving the ratemaps - all cells included, separate matrix for each of the corridors
+        # each line is a different cell
+        if (save_ratemaps):
+            for i_cor in np.arange(N_corridors):
+                ratemap_file = 'ratemaps_corridor_' + str(self.corridors[i_cor]) + '_N' + str(self.N_cells) + '.csv'
+                self.write_params(ratemap_file)
+                filename = data_folder + '/' + ratemap_file
+                with open(filename, mode='a') as rate_file:
+                    file_writer = csv.writer(rate_file, delimiter=' ')
+                    file_writer.writerow(('rows: firing rate of the ' + str(self.N_cells) + ' cells;',   'columns: position bins'))
+                    for i_col in np.arange(self.N_cells):
+                        file_writer.writerow(np.round(self.ratemaps[i_cor][:,i_col], 4))
+                print('ratemap for corridor', self.corridors[i_cor], ' saved into file: ', filename)
+
+
+        # saving behavioral and imaging data for all laps
+        # for each frame we save time, position, speed, lick, reward and spikes for each cells
+        if (save_laptime):
+            dt_im = self.ImLaps[1].dt_imaging
+            for i_lap in self.i_Laps_ImData:
+                lapfile = 'lapdata_lap_' + str(i_lap) + '_N' + str(self.N_cells) + '.csv'
+                self.write_params(lapfile)
+                filename = data_folder + '/' + lapfile
+                nframes = len(self.ImLaps[i_lap].frames_pos)
+                frames_lick = np.zeros(nframes)
+                for tt in self.ImLaps[i_lap].lick_times:
+                    if ((tt <= max(self.ImLaps[i_lap].frames_time) + dt_im) & (tt >= min(self.ImLaps[i_lap].frames_time) - dt_im)):
+                        i_frame = np.argmin((tt - self.ImLaps[i_lap].frames_time)**2)
+                        frames_lick[i_frame] = frames_lick[i_frame] + 1
+
+                frames_reward = np.zeros(nframes)
+                for tt in self.ImLaps[i_lap].reward_times:
+                    if ((tt <= max(self.ImLaps[i_lap].frames_time) + dt_im) & (tt >= min(self.ImLaps[i_lap].frames_time) - dt_im)):
+                        i_frame = np.argmin((tt - self.ImLaps[i_lap].frames_time)**2)
+                        frames_reward[i_frame] = frames_reward[i_frame] + 1
+
+
+                lapdata = np.vstack((self.ImLaps[i_lap].frames_time, self.ImLaps[i_lap].frames_pos, self.ImLaps[i_lap].frames_speed, frames_lick, frames_reward, self.ImLaps[i_lap].frames_spikes))
+                with open(filename, mode='a') as lap_file:
+                    file_writer = csv.writer(lap_file, delimiter=' ')
+                    file_writer.writerow(('rows: time, position, speed, lick, reward and spikes of the ' + str(self.N_cells) + ' cells;', 'columns: time bins'))
+                    for i_row in np.arange(lapdata.shape[0]):
+                        file_writer.writerow(np.round(lapdata[i_row,:], 4))
+            print('lapdata saved into file: ' + filename)
+
+
 class Lap_ImData:
     'common base class for individual laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, printout=False, speed_threshold=5):
         self.name = name
         self.lap = lap
 
@@ -1843,8 +1926,9 @@ class Lap_ImData:
         self.mode = mode # 1 if all elements are recorded in 'Go' mode
         self.actions = actions
 
-        self.speed_threshold = 5 ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
+        self.speed_threshold = speed_threshold ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
         self.corridor_length_roxel = (self.corridor_list.corridors[self.corridor].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.N_pos_bins = int(np.round(self.corridor_length_roxel / 70))
         self.speed_factor = 106.5 / 3500 ## constant to convert distance from pixel to cm
         self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
 
@@ -1853,9 +1937,8 @@ class Lap_ImData:
         self.n_zones = np.shape(self.zones)[1]
         self.preZoneRate = [None, None] # only if 1 lick zone; Compare the 210 roxels just before the zone with the preceeding 210 
 
-        self.dt = 0.01 # resampling frequency = 100 Hz
         # approximate frame period for imaging - 0.033602467
-        # only use it to convert spikes to rates!
+        # only use it to convert spikes to rates and to prepare uniform time axis!
         self.dt_imaging = 0.033602467
 
         self.frames_dF_F = lap_frames_dF_F
@@ -1863,139 +1946,121 @@ class Lap_ImData:
         self.frames_pos = lap_frames_pos
         self.frames_time = lap_frames_time
 
-        nbins = int(round(self.corridor_length_roxel / 70))
-        self.min_N_frames = nbins # we analyse imaging data if there are at least 1 frame in every spatial bin, on average
         self.n_cells = 1 # we still create the same np arrays even if there are no cells
-        if (not(np.isnan(self.frames_time).any())): # we have real data
-            if (len(self.frames_time) > self.min_N_frames): # we have more than 50 frames
-                self.n_cells = self.frames_dF_F.shape[0]
-            
-        ####################################################################
-        ## resample time and position with a uniform 100 Hz
         self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
-        
-        if (len(self.raw_time) > 2):
-            F = interp1d(self.raw_time,self.raw_position)
-            start_time = np.ceil(self.raw_time.min()/self.dt)*self.dt
-            end_time = np.floor(self.raw_time.max()/self.dt)*self.dt
-            Ntimes = int(round((end_time - start_time) / self.dt)) + 1
-            self.laptime = np.linspace(start_time, end_time, Ntimes)
-            ppos = F(self.laptime)
-    
-            self.lick_position = F(self.lick_times)
-            self.reward_position = F(self.reward_times)
 
-            # correct: if rewarded
-            if (len(self.reward_times) > 0):
+        ##################################################################################
+        ## lick position and reward position
+        ##################################################################################
+
+        F = interp1d(self.raw_time,self.raw_position)
+        self.lick_position = F(self.lick_times)
+        self.reward_position = F(self.reward_times)
+
+        # correct: if rewarded
+        if (len(self.reward_times) > 0):
+            self.correct = True
+        # correct: if no licking in the zone
+        lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * self.corridor_length_roxel) & (self.lick_position <= self.zones[1] * self.corridor_length_roxel + 1))[0]
+        if (self.corridor_list.corridors[self.corridor].reward == 'Left'):
+            if (len(lick_in_zone) == 0):
                 self.correct = True
-            # correct: if no licking in the zone
-            lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * self.corridor_length_roxel) & (self.lick_position <= self.zones[1] * self.corridor_length_roxel + 1))[0]
-            if (self.corridor_list.corridors[self.corridor].reward == 'Left'):
-                if (len(lick_in_zone) == 0):
-                    self.correct = True
+        else :
+            if ((len(lick_in_zone) == 0) & self.correct):
+                print ('Warning: rewarded lap with no lick in zone! lap number:' + str(self.lap))
+
+        ##################################################################################
+        ## speed vs. time
+        ##################################################################################
+        self.imaging_data = True
+
+        if (np.isnan(self.frames_time).any()): # we don't have imaging data
+            self.imaging_data = False
+            ## resample time uniformly for calculating speed
+            start_time = np.ceil(self.raw_time.min()/self.dt_imaging)*self.dt_imaging
+            end_time = np.floor(self.raw_time.max()/self.dt_imaging)*self.dt_imaging
+            Ntimes = int(round((end_time - start_time) / self.dt_imaging)) + 1
+            self.frames_time = np.linspace(start_time, end_time, Ntimes)
+            self.frames_pos = F(self.frames_time)
+
+        ## calculate the speed during the frames
+        speed = np.diff(self.frames_pos) * self.speed_factor / self.dt_imaging # cm / s       
+        speed_first = 2 * speed[0] - speed[1] # linear extrapolation: x1 - (x2 - x1)
+        self.frames_speed = np.hstack([speed_first, speed])
+
+        ##################################################################################
+        ## speed, lick and spiking vs. position
+        ##################################################################################
+
+        ####################################################################
+        ## calculate the lick-rate and the average speed versus location    
+        bin_counts = np.zeros(self.N_pos_bins)
+        fast_bin_counts = np.zeros(self.N_pos_bins)
+        total_speed = np.zeros(self.N_pos_bins)
+
+        for i_frame in range(len(self.frames_pos)):
+            bin_number = int(self.frames_pos[i_frame] // 70)
+            bin_counts[bin_number] += 1
+            if (self.frames_speed[i_frame] > self.speed_threshold):
+                fast_bin_counts[bin_number] += 1
+            total_speed[bin_number] = total_speed[bin_number] + self.frames_speed[i_frame]
+
+        self.T_pos = bin_counts * self.dt_imaging           # used for lick rate and average speed
+        self.T_pos_fast = fast_bin_counts * self.dt_imaging # used for spike rate calculations
+
+        total_speed = total_speed * self.dt_imaging
+        self.ave_speed = nan_divide(total_speed, self.T_pos, where=(self.T_pos > 0.025))
+
+        lbin_counts = np.zeros(self.N_pos_bins)
+        for lpos in self.lick_position:
+            lbin_number = int(lpos // 70)
+            lbin_counts[lbin_number] += 1
+        self.N_licks = lbin_counts
+        self.lick_rate = nan_divide(self.N_licks, self.T_pos, where=(self.T_pos > 0.025))
+    
+        ####################################################################
+        ## calculate the cell activations (spike rate) as a function of position
+        if (self.imaging_data == True):
+            self.n_cells = self.frames_dF_F.shape[0]
+            self.spks_pos = np.zeros((self.n_cells, self.N_pos_bins)) # sum of spike counts measured at a given position
+            self.event_rate = np.zeros((self.n_cells, self.N_pos_bins)) # spike rate 
+
+            for i_frame in range(len(self.frames_pos)):
+                bin_number = int(self.frames_pos[i_frame] // 70)
+                if (self.frames_speed[i_frame] > self.speed_threshold):
+                    ### we need to multiply the values with dt_imaging as this converts probilities to expected counts
+                    self.spks_pos[:,bin_number] = self.spks_pos[:,bin_number] + self.frames_spikes[:,i_frame] * self.dt_imaging
+            for bin_number in range(self.N_pos_bins):
+                if (self.T_pos_fast[bin_number] > 0): # otherwise the rate will remain 0
+                    self.event_rate[:,bin_number] = self.spks_pos[:,bin_number] / self.T_pos_fast[bin_number]
+
+
+        ####################################################################
+        ## Calculate the lick rate befor the reward zone - anticipatory licks 210 roxels before zone start
+        ## only when the number of zones is 1!
+
+        if (self.n_zones == 1):
+
+            zone_start = int(self.zones[0][0] * self.corridor_length_roxel)
+            zone_end = int(self.zones[1][0] * self.corridor_length_roxel)
+            if (len(self.lick_position) > 0):
+                lz_posbins = np.array([np.min((np.min(self.frames_pos)-1, np.min(self.lick_position)-1, 0)), zone_start-420, zone_start-210, zone_start, zone_end, self.corridor_length_roxel])
             else :
-                if ((len(lick_in_zone) == 0) & self.correct):
-                    print ('Warning: rewarded lap with no lick in zone! lap number:' + str(self.lap))
+                lz_posbins = np.array([np.min((np.min(self.frames_pos)-1, 0)), zone_start-420, zone_start-210, zone_start, zone_end, self.corridor_length_roxel])
 
-            ## smooth the position data with a 50 ms Gaussian kernel
-            # sdfilt = 0.05
-            # xfilt = np.arange(-4*sdfilt, 4*sdfilt+self.dt, self.dt)
-            # filt = np.exp(-(xfilt ** 2) / (2 * (sdfilt**2)))
-            # filt = filt  / sum(filt)
 
-            # dx1 = ppos[1] - ppos[0]
-            # dxx1 = ppos[0] - np.arange(20, 0, -1) * dx1
+            lz_bin_counts = np.zeros(5)
+            for pos in self.frames_pos:
+                bin_number = np.max(np.where(pos > lz_posbins))
+                lz_bin_counts[bin_number] += 1
+            T_lz_pos = lz_bin_counts * self.dt_imaging
 
-            # dx2 = ppos[-1] - ppos[-2]
-            # dxx2 = ppos[-1] + np.arange(20, 0, -1) * dx2
-
-            # pppos = np.hstack([dxx1, ppos, dxx2])
-            # pppos = np.hstack([np.repeat(ppos[0], 20), ppos, np.repeat(ppos[-1], 20)])
-            # smooth_position = np.convolve(pppos, filt, mode='valid')
-            self.smooth_position = ppos
-            
-            ## calculate the smoothed speed 
-            # self.speed = np.diff(np.hstack([self.smooth_position[0], self.smooth_position])) / self.dt # roxel [=rotational pixel] / s       
-            speed = np.diff(self.smooth_position) * self.speed_factor / self.dt # cm / s       
-            speed_first = 2 * speed[0] - speed[1] # linear extrapolation: x1 - (x2 - x1)
-            self.speed = np.hstack([speed_first, speed])
-
-            ## calculate the speed during the frames
-            if (not(np.isnan(self.frames_time).any())): # we real data
-                if (len(self.frames_time) > self.min_N_frames): # we have more than 50 frames
-                    FF = interp1d(self.laptime,self.speed, fill_value="extrapolate") 
-                    self.frames_speed = FF(self.frames_time)
-
-            ####################################################################
-            ## calculate the lick-rate and the average speed versus location    
-            bin_counts = np.zeros(50)
-            for pos in self.smooth_position:
-                bin_number = int(pos // 70)
-                bin_counts[bin_number] += 1
-            self.T_pos = bin_counts * self.dt
-    
-            lbin_counts = np.zeros(50)
+            lz_lbin_counts = np.zeros(5)
             for lpos in self.lick_position:
-                lbin_number = int(lpos // 70)
-                lbin_counts[lbin_number] += 1
-            self.N_licks = lbin_counts
-            self.lick_rate = nan_divide(self.N_licks, self.T_pos, where=(self.T_pos > 0.025))
-    
-            total_speed = np.zeros(50)
-            for i_frame in range(len(self.smooth_position)):
-                ind_bin = int(self.smooth_position[i_frame] // 70)
-                total_speed[ind_bin] = total_speed[ind_bin] + self.speed[i_frame]
-            total_speed = total_speed * self.dt
-            self.ave_speed = nan_divide(total_speed, self.T_pos, where=(self.T_pos > 0.025))
-    
-            ####################################################################
-            ## calculate the cell activations (spike rate) as a function of position
-            self.spks_pos = np.zeros((self.n_cells, 50)) # sum of spike counts measured at a given position
-            self.event_rate = np.zeros((self.n_cells, 50)) # spike rate 
-            # self.dF_F_pos = np.zeros((self.n_cells, 50))
-            if (not(np.isnan(self.frames_time).any())): # we real data
-                if (len(self.frames_time) > self.min_N_frames): # we have more than 50 frames
-                    for i_frame in range(len(self.frames_pos)):
-                        ind_bin = int(self.frames_pos[i_frame] // 70)
-                        if (self.frames_speed[ind_bin] > self.speed_threshold):
-                            ### we need to multiply the values with dt_imaging as this converts probilities to expected counts
-                            self.spks_pos[:,ind_bin] = self.spks_pos[:,ind_bin] + self.frames_spikes[:,i_frame] * self.dt_imaging
-                    for ind_bin in range(50):
-                        if (self.T_pos[ind_bin] > 0): # otherwise the rate will remain 0
-                            self.event_rate[:,ind_bin] = self.spks_pos[:,ind_bin] / self.T_pos[ind_bin]
-
-
-            ####################################################################
-            ## Calculate the lick rate befor the reward zone - anticipatory licks 210 roxels before zone start
-            ## only when the number of zones is 1!
-    
-            if (self.n_zones == 1):
-    
-                zone_start = int(self.zones[0][0] * self.corridor_length_roxel)
-                lz_posbins = [0, zone_start-420, zone_start-210, zone_start, self.corridor_length_roxel]
-    
-                lz_bin_counts = np.zeros(4)
-                for pos in self.smooth_position:
-                    bin_number = [ n for n,i in enumerate(lz_posbins) if i>=pos ][0] - 1
-                    lz_bin_counts[bin_number] += 1
-                T_lz_pos = lz_bin_counts * self.dt
-    
-                lz_lbin_counts = np.zeros(4)
-                for lpos in self.lick_position:
-                    lbin_number = [ n for n,i in enumerate(lz_posbins) if i>=lpos ][0] - 1
-                    lz_lbin_counts[lbin_number] += 1
-                lz_lick_rate = nan_divide(lz_lbin_counts, T_lz_pos, where=(T_lz_pos>0.025))
-                self.preZoneRate = [lz_lick_rate[1], lz_lick_rate[2]]
-        else:
-            self.lick_position = lick_times
-            self.reward_position = reward_times
-            self.smooth_position = position
-            self.speed = np.zeros(len(position))
-            self.T_pos = np.zeros(50)
-            self.N_licks = np.zeros(50)
-            self.ave_speed = np.zeros(50)
-            self.lick_rate = np.zeros(50)
-            self.preZoneRate = np.zeros(2)
+                lbin_number = np.max(np.where(lpos > lz_posbins))
+                lz_lbin_counts[lbin_number] += 1
+            lz_lick_rate = nan_divide(lz_lbin_counts, T_lz_pos, where=(T_lz_pos>0.025))
+            self.preZoneRate = [lz_lick_rate[1], lz_lick_rate[2]]
                 
 
     def plot_tx(self, fluo=False, th=25):
@@ -2004,11 +2069,11 @@ class Lap_ImData:
         fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), sharex=True, gridspec_kw={'height_ratios': [1, 3]})
 
         ## first, plot position versus time
-        ax_top.plot(self.laptime, self.smooth_position, c=colmap(50))
-        ax_top.plot(self.raw_time, self.raw_position, c=colmap(90))
+        ax_top.plot(self.frames_time, self.frames_pos, color=colmap(50))
+        ax_top.plot(self.raw_time, self.raw_position, color=colmap(90))
 
-        ax_top.scatter(self.lick_times, np.repeat(self.smooth_position.min(), len(self.lick_times)), marker="|", s=100, c=colmap(180))
-        ax_top.scatter(self.reward_times, np.repeat(self.smooth_position.min()+100, len(self.reward_times)), marker="|", s=100, c=colmap(230))
+        ax_top.scatter(self.lick_times, np.repeat(self.frames_pos.min(), len(self.lick_times)), marker="|", s=100, c=colmap(180))
+        ax_top.scatter(self.reward_times, np.repeat(self.frames_pos.min()+100, len(self.reward_times)), marker="|", s=100, c=colmap(230))
         ax_top.set_ylabel('position')
         ax_top.set_xlabel('time (s)')
         plot_title = 'Mouse: ' + self.name + ' position in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
@@ -2023,7 +2088,7 @@ class Lap_ImData:
             for i in range(self.n_cells):
             # for i in (252, 258, 275):
                 if (fluo & (i in act_cells)):
-                    ax_bottom.plot(self.frames_time, self.frames_dF_F[i,:] + i, alpha=0.5, c=colmap(np.remainder(i, 255)))
+                    ax_bottom.plot(self.frames_time, self.frames_dF_F[i,:] + i, alpha=0.5, color=colmap(np.remainder(i, 255)))
                 events = self.frames_spikes[i,:]
                 events = 50 * events / max_range
                 ii_events = np.nonzero(events)[0]
@@ -2039,56 +2104,18 @@ class Lap_ImData:
 
         plt.show(block=False)
        
-        # laptime = D1.ImLaps[200].laptime
-        # smooth_position = D1.ImLaps[200].smooth_position
-        # lick_times = D1.ImLaps[200].lick_times
-        # reward_times = D1.ImLaps[200].reward_times
-        # lap = D1.ImLaps[200].lap
-        # corridor = D1.ImLaps[200].corridor
-        # lick_rate = D1.ImLaps[200].lick_rate
-        # n_cells = D1.ImLaps[200].n_cells
-        # frames_time = D1.ImLaps[200].frames_time
-        # frames_dF_F = D1.ImLaps[200].frames_dF_F
-        # frames_spikes = D1.ImLaps[200].frames_spikes
-        # frames_pos = D1.ImLaps[200].frames_pos
-
-        # fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), gridspec_kw={'height_ratios': [1, 3]})
-        # ax_top.plot(laptime, smooth_position, c='g')
-
-        # ax_top.scatter(lick_times, np.repeat(smooth_position.min(), len(lick_times)), marker="|", s=100)
-        # ax_top.scatter(reward_times, np.repeat(smooth_position.min()+100, len(reward_times)), marker="|", s=100, c='r')
-        # ax_top.set_ylabel('position')
-        # ax_top.set_xlabel('time (s)')
-        # plot_title = 'Mouse: ' + name + ' position in lap ' + str(lap) + ' in corridor ' + str(corridor)
-        # ax_top.set_title(plot_title)
-
-        # if (n_cells > 1):
-        #     for i in (252, 258, 275):
-        #         ax_bottom.plot(frames_time, frames_dF_F[i,:] + i, c=cmap(np.remainder(i, 255)))
-        #         events = frames_spikes[i,:]
-        #         events = 10 * events / max(events)
-        #         ii_events = np.nonzero(events)[0]
-        #         ax_bottom.scatter(frames_time[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], c=cmap(np.remainder(i, 255)))
-
-        #     ax_bottom.set_ylabel('dF_F')
-        #     ax_bottom.set_xlabel('time (s)')
-        #     plot_title = 'dF/F of all neurons  in lap ' + str(lap) + ' in corridor ' + str(corridor)
-        #     ax_bottom.set_title(plot_title)
-        #     ax_bottom.set_ylim(250, 280)
-
-        # plt.show(block=False)
 
     def plot_xv(self):
         colmap = plt.cm.get_cmap('jet')   
         colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
 
         fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), sharex=True,  gridspec_kw={'height_ratios': [1, 3]})
-        ax_top.plot(self.smooth_position, self.speed, c=colmap(80))
+        ax_top.plot(self.frames_pos, self.frames_speed, c=colmap(80))
         ax_top.step(self.bincenters, self.ave_speed, where='mid', c=colmap(30))
         ax_top.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, color=colmap(180))
         ax_top.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, color=colmap(230))
         ax_top.set_ylabel('speed (cm/s)')
-        ax_top.set_ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
+        ax_top.set_ylim([min(0, self.frames_speed.min()), max(self.frames_speed.max(), 30)])
         ax_top.set_xlabel('position')
         plot_title = 'Mouse: ' + self.name + ' speed in lap ' + str(self.lap) + ' in corridor ' + str(self.corridor)
         ax_top.set_title(plot_title)
@@ -2121,7 +2148,7 @@ class Lap_ImData:
                 events = self.event_rate[i,:]
                 events = 50 * events / max_range
                 ii_events = np.nonzero(events)[0]
-                ax_bottom.scatter(self.bincenters[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, color=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
+                ax_bottom.scatter(self.bincenters[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
 
             ax_bottom.set_ylabel('event rate')
             ax_bottom.set_xlabel('position')
@@ -2140,98 +2167,12 @@ class Lap_ImData:
         area = (np.abs(x/max(x))*30)**2
         colors = 232
 
-        # plt.scatter(x, y, s=area, c=np.ones(4)*colors, cmap=colmap)
-        # plt.scatter(x, y, s=area, c=np.ones(4)*110, cmap=colmap, norm=colnorm)
-        # plt.figure(figsize=(4, 4))
-        # # plt.scatter(x, y, s=area, c=[3,45,112,213], alpha=0.7, cmap=colmap, norm=colnorm)
-        # plt.plot(x, y, alpha=0.7, c=colmap(23))
-        # plt.show(block=False)
-
-
-        # plt.figure(figsize=(4, 4))
-        # plt.plot(range(len(sk_old)), sk_old, 'rs', range(len(sk_D1)), sk_D1, 'g^')
-        # plt.show(block=False)
-
-        # np.nonzero(np.amax(D1.F_all, 1) > 700)[0]
-        # colmap = plt.cm.get_cmap('jet')   
-        # fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(10,8), gridspec_kw={'height_ratios': [1, 3]})
-        # ax_top.plot(range(17858), D1.F_all[734,])
-        
-        # act_cells = np.nonzero(np.amax(F_all[:,6000:9000], 1) > 700)[0]
-        # k = 0
-        # for i in range(1394):
-        # # for i in (252, 258, 275):
-        #   if (i in act_cells):
-        #       ii = np.random.randint(255)
-        #       ax_bottom.plot(range(17070), F_all[i,] + k, alpha=0.75, c=colmap(ii))
-        #       k = k + 500
-        # plt.show(block=False)
-
-        # # smooth_position = D1.ImLaps[200].smooth_position
-        # speed = D1.ImLaps[200].speed
-        # lick_position = D1.ImLaps[200].lick_position
-        # lick_times = D1.ImLaps[200].lick_times
-        # reward_position = D1.ImLaps[200].reward_position
-        # reward_times = D1.ImLaps[200].reward_times
-        # lap = D1.ImLaps[200].lap
-        # corridor = D1.ImLaps[200].corridor
-        # lick_rate = D1.ImLaps[200].lick_rate
-        # ave_speed = D1.ImLaps[200].ave_speed
-        # zones = D1.ImLaps[0].zones
-        # bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
-        # event_rate = D1.ImLaps[200].event_rate
-        # n_cells = D1.ImLaps[200].n_cells
-
-        # fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), gridspec_kw={'height_ratios': [1, 3]})
-        # ax_top.plot(smooth_position, speed, c=cmap(80))
-        # ax_top.plot(bincenters, ave_speed, c=cmap(30))
-        # ax_top.scatter(lick_position, np.repeat(speed.min(), len(lick_position)), marker="|", s=100, c=cmap(180))
-        # ax_top.scatter(reward_position, np.repeat(speed.min(), len(reward_position)), marker="|", s=100, c=cmap(230))
-        # ax_top.set_ylabel('speed (roxel/s)')
-        # ax_top.set_xlabel('position')
-        # plot_title = 'Mouse: ' + name + ' speed in lap ' + str(lap) + ' in corridor ' + str(corridor)
-        # ax_top.set_title(plot_title)
-
-        # bottom, top = ax_top.get_ylim()
-        # left = zones[0,0] * self.corridor_length_roxel
-        # right = zones[1,0] * self.corridor_length_roxel
-
-        # polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-        # ax_top.add_patch(polygon)
-        # if (np.shape(zones)[1] > 1):
-        #     for i in range(1, np.shape(zones)[1]):
-        #         left = zones[0,i] * self.corridor_length_roxel
-        #         right = zones[1,i] * self.corridor_length_roxel
-        #         polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-        #         ax_top.add_patch(polygon)
-
-
-        # ax2 = ax_top.twinx()
-        # ax2.step(bincenters, lick_rate, c=cmap(200), linewidth=1)
-        # ax2.set_ylabel('lick rate', color=cmap(200))
-        # ax2.tick_params(axis='y', labelcolor=cmap(200))
-        # ax2.set_ylim([-1,2*max(lick_rate)])
-
-        # next, plot dF/F versus time (or spikes)
-        # if (n_cells > 1):
-        #     for i in np.arange(250, 280):
-        #         ax_bottom.scatter(bincenters, np.ones(50) * i, s=event_rate[i,], c=cmap(np.remainder(i, 255)))
-        #     ax_bottom.set_ylabel('event rate')
-        #     ax_bottom.set_xlabel('position')
-        #     plot_title = 'event rate of all neurons  in lap ' + str(lap) + ' in corridor ' + str(corridor)
-        #     ax_bottom.set_title(plot_title)
-        #     ax_bottom.set_ylim(250, 280)
-
-
-        # plt.show(block=False)       
-
-
     def plot_txv(self):
         cmap = plt.cm.get_cmap('jet')   
         fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,6))
 
         ## first, plot position versus time
-        ax_top.plot(self.laptime, self.smooth_position, c=cmap(50))
+        ax_top.plot(self.frames_time, self.frames_pos, c=cmap(50))
         ax_top.plot(self.raw_time, self.raw_position, c=cmap(90))
 
         ax_top.scatter(self.lick_times, np.repeat(200, len(self.lick_times)), marker="|", s=100, color=cmap(180))
@@ -2244,13 +2185,13 @@ class Lap_ImData:
 
 
         ## next, plot speed versus position
-        ax_bottom.plot(self.smooth_position, self.speed, c=cmap(80))
+        ax_bottom.plot(self.frames_pos, self.frames_speed, c=cmap(80))
         ax_bottom.step(self.bincenters, self.ave_speed, where='mid', c=cmap(30))
         ax_bottom.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, color=cmap(180))
         ax_bottom.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, color=cmap(230))
         ax_bottom.set_ylabel('speed (cm/s)')
         ax_bottom.set_xlabel('position')
-        ax_bottom.set_ylim([min(0, self.speed.min()), max(self.speed.max(), 30)])
+        ax_bottom.set_ylim([min(0, self.frames_speed.min()), max(self.frames_speed.max(), 30)])
 
         bottom, top = plt.ylim()
         left = self.zones[0,0] * self.corridor_length_roxel
@@ -2299,6 +2240,10 @@ class anticipatory_Licks:
 
 
 def HolmBonfMat(P_mat, p_val):
+    ## P_mat is a matrix with the 
+    ## P-values of different tests in each row and
+    ## Cells in each column
+
     m = P_mat.shape[0]
     n_cells = P_mat.shape[1]
     i_significant = np.zeros_like(P_mat)
@@ -2318,3 +2263,134 @@ def HolmBonf(P_vec, p_val):
 
     return i_significant
 
+
+##########################################################
+def LocateImaging(trigger_log_file_string, TRIGGER_VOLTAGE_FILENAME):
+    # 1. TRIGGER_DATA  = np.array, 4 x N_triggers, each row is the 1. start time, 2, end time, duration, ITT
+    # 2. select only trigger data with ITT > 10 ms
+    # 3. find the shortest trigger
+    # 4. find candidate trigger times in the log_trigger by matching trigger duration
+    # 5. check the next ITTS in voltage recording and log trigger
+    # intputs: 
+    #   self.trigger_log_starts,        normal LETTERS: variables defined with LabView time axis
+    #   self.trigger_log_lengths, 
+    #   self.TRIGGER_VOLTAGE_VALUE,      CAPITAL LETTERS: variables defined with IMAGING time axis
+    #   self.TRIGGER_VOLTAGE_TIMES
+    #
+    # output:
+    #   self.imstart_time: singe scalar [s]: Labview time of the start of voltage-imaging recordings
+    #
+    # only works for 1 imaging session...
+    # self.imstart_time = 537.133055 # Bazsi's best guess
+    # print('Imaging time axis guessed by Bazsi...')
+    
+    #0)load recorded trigger 
+    trigger_log_starts = [] ## s
+    trigger_log_lengths = []      
+    trigger_log_file=open(trigger_log_file_string)
+    log_file_reader=csv.reader(trigger_log_file, delimiter=',')
+    next(log_file_reader, None)#skip the headers
+    for line in log_file_reader:             
+        trigger_log_starts.append(float(line[0])) # seconds
+        trigger_log_lengths.append(float(line[1]) / 1000) # convert to seconds from ms
+    print('trigger logfile loaded')
+    trigger_starts = np.array(trigger_log_starts)
+    trigger_lengths = np.array(trigger_log_lengths)
+
+
+    TRIGGER_VOLTAGE_VALUE = [] 
+    TRIGGER_VOLTAGE_TIMES = [] ## ms
+    trigger_signal_file=open(TRIGGER_VOLTAGE_FILENAME, 'r')
+    trigger_reader=csv.reader(trigger_signal_file, delimiter=',')
+    next(trigger_reader, None)
+    for line in trigger_reader:
+        TRIGGER_VOLTAGE_VALUE.append(float(line[1])) 
+        TRIGGER_VOLTAGE_TIMES.append(float(line[0]) / 1000) # converting it to seconds
+    TRIGGER_VOLTAGE=np.array(TRIGGER_VOLTAGE_VALUE)
+    TRIGGER_TIMES=np.array(TRIGGER_VOLTAGE_TIMES)
+    print('trigger voltage signal loaded')
+    
+    ## find trigger start and end times
+    rise_index=np.nonzero((TRIGGER_VOLTAGE[0:-1] < 1)&(TRIGGER_VOLTAGE[1:]>= 1))[0]+1#+1 needed otherwise we are pointing to the index just before the trigger
+    RISE_T=TRIGGER_TIMES[rise_index]
+    
+    fall_index=np.nonzero((TRIGGER_VOLTAGE[0:-1] > 1)&(TRIGGER_VOLTAGE[1:]<= 1))[0]+1
+    FALL_T=TRIGGER_TIMES[fall_index]
+    
+    # pairing rises with falls
+    if (RISE_T[0]>FALL_T[0]):
+        print('deleting first fall')
+        FALL_T = np.delete(FALL_T,0)
+    if (RISE_T[-1] > FALL_T[-1]):
+        print('deleting last rise')
+        RISE_T=np.delete(RISE_T,-1)
+
+    if np.size(RISE_T)!=np.size(FALL_T):
+        print(np.size(RISE_T),np.size(FALL_T))
+        print('trigger ascending and desending edges do not match! unable to locate imaging part')
+        imstart_time = np.nan
+        return imstart_time
+
+    #1) filling up TRIGGER_DATA array:
+    #TRIGGER_DATA: 0. start time, 1. end time, 2. duration, 3.ITT, 4. index
+    TRIGGER_DATA = np.zeros((np.size(RISE_T),5))
+    TRIGGER_DATA[:,0] = RISE_T
+    TRIGGER_DATA[:,1] = FALL_T
+    TRIGGER_DATA[:,2]=FALL_T-RISE_T # duration
+    TEMP_FALL = np.concatenate([[0],FALL_T]) 
+    TEMP_FALL = np.delete(TEMP_FALL,-1)
+    TRIGGER_DATA[:,3] = RISE_T - TEMP_FALL # previous down duration - Inter Trigger Time
+    TRIGGER_DATA[:,4] = np.arange(0,np.size(RISE_T))
+        
+    #2) keeping only triggers with ITT > 10 ms    
+    valid_indexes=np.nonzero(TRIGGER_DATA[:,3] > 0.010)[0]
+    TRIGGER_DATA_sub=TRIGGER_DATA[valid_indexes,:]
+    
+    #3) find the valid shortest trigger
+    minindex = np.argmin(TRIGGER_DATA_sub[:,2])
+    used_index = int(TRIGGER_DATA_sub[minindex][4])
+    n_extra_indexes = min(5,TRIGGER_DATA.shape[0]-used_index)
+    print('triggers after:',TRIGGER_DATA.shape[0]-used_index)
+    print('n_extra_indexes',n_extra_indexes)
+
+    #4)find the candidate trigger times
+    candidate_log_indexes = []
+    for i in range(len(trigger_lengths)):
+        if (abs(trigger_lengths[i] - TRIGGER_DATA[used_index][2]) < 0.007):
+            candidate_log_indexes.append(i)
+    print('candidate log indexes',candidate_log_indexes)
+
+    #5)check the next ITT-s, locate relevant behavior
+    print('min recorded trigger length:',TRIGGER_DATA[used_index,2])
+    if TRIGGER_DATA[used_index,2] > 0.600:
+        print('Warning! No short enough trigger in this recording! Unable to locate imaging')
+        imstart_time = np.nan
+        # return
+    else:
+        match_found = False
+        for i in range(len(candidate_log_indexes)):    
+            log_reference_index=candidate_log_indexes[i]
+            difs=[]
+            if len(trigger_starts) > log_reference_index + n_extra_indexes:
+                for j in range(n_extra_indexes):
+                    dif_log = trigger_starts[log_reference_index + j] - trigger_starts[log_reference_index]
+                    dif_mes = TRIGGER_DATA[used_index+j,0] - TRIGGER_DATA[used_index,0]
+                    delta = abs(dif_log - dif_mes)
+                    difs.append(delta)
+                # print(trigger_log_lengths[candidate_log_indexes[i]],'log',dif_log,'mes', dif_mes,'dif', delta)
+                if max(difs) < 0.009:
+                    if match_found==False:                      
+                        lap_time_of_first_frame = trigger_starts[log_reference_index] - TRIGGER_DATA[used_index,0]
+                        print('relevant behavior located, lap time of the first frame:',lap_time_of_first_frame, ', log reference index:', log_reference_index)
+                        match_found=True
+                    else:
+                        print('Warning! More than one trigger matches found!')
+            else:
+                print('slight warning - testing some late candidates failed')
+
+        if match_found==True:
+            imstart_time = lap_time_of_first_frame
+        else:
+            print('no precise trigger mach found: need to refine code or check device')
+            imstart_time = np.nan
+    return imstart_time
