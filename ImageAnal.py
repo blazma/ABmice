@@ -35,7 +35,7 @@ from ImShuffle import *
 
 class ImagingSessionData:
     'Base structure for both imaging and behaviour data'
-    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None, speed_threshold=5, randseed=123):
+    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False):
         self.datapath = datapath
         self.date_time = date_time
         self.name = name
@@ -48,6 +48,7 @@ class ImagingSessionData:
         self.randseed = randseed
         self.selected_laps = selected_laps
         self.speed_threshold = speed_threshold
+        self.elfiz = elfiz
 
         stagefilename = self.datapath + self.task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
@@ -107,36 +108,59 @@ class ImagingSessionData:
         ##################################################
         ## loading imaging data
         ##################################################
-        F_string = self.suite2p_folder + 'F.npy'
-        # Fneu_string = self.suite2p_folder + 'Fneu.npy'
-        spks_string = self.suite2p_folder + 'spks.npy'
-        iscell_string = self.suite2p_folder + 'iscell.npy'
-        
-        self.F_all = np.load(F_string) # npy array, N_ROI x N_frames, fluorescence traces of ROIs from suite2p
-        # self.Fneu = np.load(Fneu_string) # npy array, N_ROI x N_frames, fluorescence traces of neuropil from suite2p
-        self.spks_all = np.load(spks_string) # npy array, N_ROI x N_frames, spike events detected from suite2p
-        self.iscell = np.load(iscell_string) # np array, N_ROI x 2, 1st col: binary classified as cell. 2nd P_cell?
-        self.stat_string = self.suite2p_folder + 'stat.npy' # we may load these later if needed
-        self.ops_string = self.suite2p_folder + 'ops.npy'
-        print('suite2p data loaded')               
+        if (self.elfiz):
+            F_string = self.suite2p_folder + 'Vm_' + imaging_logfile_name + '.npy'
+            spks_string = self.suite2p_folder + 'spikes_' + imaging_logfile_name + '.npy'
+            time_string = self.suite2p_folder + 'frame_times_' + imaging_logfile_name + '.npy'
 
-        self.frame_times = np.nan # labview coordinates
-        self.LoadImaging_times(imaging_logfile_name, self.imstart_time)
-        self.frame_pos = np.zeros(len(self.frame_times)) # position and 
-        self.frame_laps = np.zeros(len(self.frame_times)) # lap number for the imaging frames, to be filled later
-        print('suite2p time axis loaded')       
+            self.F = np.load(F_string) # npy array, N_ROI x N_frames, fluorescence traces of ROIs from suite2p
+            self.raw_spks = np.load(spks_string) # npy array, N_ROI x N_frames, spike events detected from suite2p
+            print('elfiz data loaded')       
 
-        ## arrays containing only valid cells
-        self.neuron_index = np.nonzero(self.iscell[:,0])[0]
-        self.F = self.F_all[self.neuron_index,:]
-        self.raw_spks = self.spks_all[self.neuron_index,:]
-        self.dF_F = np.copy(self.F)
-        self.spks = np.copy(self.raw_spks) # could be normalized in calc_dF_F: spks / F / SD(F)
-        self.N_cells = self.F.shape[0]
-        # self.cell_SDs = np.sqrt(np.var(self.dF_F, 1)) - we calculate this later
-        self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
-        self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
-        self.calc_dF_F()
+            self.frame_times = np.load(time_string)[0] + self.imstart_time
+            print('elfiz time axis loaded')       
+            self.frame_pos = np.zeros(len(self.frame_times)) # position and 
+            self.frame_laps = np.zeros(len(self.frame_times)) # lap number for the imaging frames, to be filled later
+
+            ## arrays containing only valid cells
+            self.dF_F = np.copy(self.F)
+            self.spks = np.copy(self.raw_spks) # could be normalized in calc_dF_F: spks / F / SD(F)
+            self.N_cells = self.F.shape[0]
+            # cell_SDs = np.sqrt(np.var(dF_F, 1)) - we calculate this later
+            self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
+            self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
+            self.calc_SD_SNR_elfiz()
+        else :
+            F_string = self.suite2p_folder + 'F.npy'
+            # Fneu_string = self.suite2p_folder + 'Fneu.npy'
+            spks_string = self.suite2p_folder + 'spks.npy'
+            iscell_string = self.suite2p_folder + 'iscell.npy'
+            
+            self.F_all = np.load(F_string) # npy array, N_ROI x N_frames, fluorescence traces of ROIs from suite2p
+            # self.Fneu = np.load(Fneu_string) # npy array, N_ROI x N_frames, fluorescence traces of neuropil from suite2p
+            self.spks_all = np.load(spks_string) # npy array, N_ROI x N_frames, spike events detected from suite2p
+            self.iscell = np.load(iscell_string) # np array, N_ROI x 2, 1st col: binary classified as cell. 2nd P_cell?
+            self.stat_string = self.suite2p_folder + 'stat.npy' # we may load these later if needed
+            self.ops_string = self.suite2p_folder + 'ops.npy'
+            print('suite2p data loaded')               
+
+            self.frame_times = np.nan # labview coordinates
+            self.LoadImaging_times(imaging_logfile_name, self.imstart_time)
+            self.frame_pos = np.zeros(len(self.frame_times)) # position and 
+            self.frame_laps = np.zeros(len(self.frame_times)) # lap number for the imaging frames, to be filled later
+            print('suite2p time axis loaded')       
+
+            ## arrays containing only valid cells
+            self.neuron_index = np.nonzero(self.iscell[:,0])[0]
+            self.F = self.F_all[self.neuron_index,:]
+            self.raw_spks = self.spks_all[self.neuron_index,:]
+            self.dF_F = np.copy(self.F)
+            self.spks = np.copy(self.raw_spks) # could be normalized in calc_dF_F: spks / F / SD(F)
+            self.N_cells = self.F.shape[0]
+            # self.cell_SDs = np.sqrt(np.var(self.dF_F, 1)) - we calculate this later
+            self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
+            self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
+            self.calc_dF_F()
 
           
         ##################################################
@@ -153,9 +177,10 @@ class ImagingSessionData:
             print('Error: missing laps are found in the ExpStateMachineLog file! No analysis was performed, check the logfiles!')
             return
 
-        frame_time_lap_maze_pos = np.array((self.frame_times, self.frame_laps, self.frame_maze, self.frame_pos))
-        time_lap_maze_pos_FILE = self.suite2p_folder + 'frame_time_lap_maze_pos.npy'
-        np.save(time_lap_maze_pos_FILE, frame_time_lap_maze_pos)
+        if not elfiz:
+            frame_time_lap_maze_pos = np.array((self.frame_times, self.frame_laps, self.frame_maze, self.frame_pos))
+            time_lap_maze_pos_FILE = self.suite2p_folder + 'frame_time_lap_maze_pos.npy'
+            np.save(time_lap_maze_pos_FILE, frame_time_lap_maze_pos)
 
         ## in certain tasks, the same corridor may appear multiple times in different substages
         ## we need to keep this corridor in the list self.corridors for running self.get_lapdata()
@@ -205,8 +230,6 @@ class ImagingSessionData:
 
         self.candidate_PCs = [] # a list, each element is a vector of Trues and Falses of candidate place cells with at least 1 place field according to Hainmuller and Bartos 2018
         self.accepted_PCs = [] # a list, each element is a vector of Trues and Falses of accepted place cells after bootstrapping
-        ## warning: self.cell_corridor_similarity assumes 2 corridors
-        self.cell_corridor_similarity = np.zeros([2, self.N_cells]) # a matrix with the pearson R and P value of the correlation between the ratemaps in the two mazes
         self.Hainmuller_PCs()
 
         self.test_anticipatory()
@@ -428,6 +451,8 @@ class ImagingSessionData:
                 rise_index = np.array([int(len(sp_1s))])
             if (max(rise_index) < N_frames-1000):
                 rise_index = np.hstack([rise_index, int(len(sp_1s))])
+            if (len(fall_index) == 0):
+                fall_index = np.array([int(0)])
 
 
             # pairing rises with falls
@@ -454,47 +479,16 @@ class ImagingSessionData:
             self.cell_SNR[i_cell] = max(self.dF_F[i_cell,:]) / np.mean(sds)
             self.spks[i_cell,:] = self.spks[i_cell,:]# / baseline / self.cell_SDs[i_cell]
 
-        #     if (i_cell in cells):
-        #         title_string = 'cell: ' + str(i_cell) + ', SD: ' + str(round(self.cell_SDs[i_cell], 2)) + ', SNR:' + str(round(self.cell_SNR[i_cell], 2))
-        #         ax.plot(self.frame_times, self.dF_F[i_cell,:] + 10*i_plot, 'C0')
-        #         ax.plot(self.frame_times, self.spks[i_cell,:]/100 + 10*i_plot, 'C2')
-        #         ax.plot(self.frame_times, allspikes_1s/100 + 10*i_plot, 'C3')
-        #         ax.plot(self.frame_times, sp_1s/100 + 10*i_plot, 'C1')
-        #         ax.text(min(self.frame_times), 8 + 10*i_plot, title_string)
-        #         i_plot = i_plot + 1
-
-        # ax.set(xlabel='time (s)', ylabel='Fluorescence and spikes', ylim=[-1, 10*i_plot])
-        # plt.show(block=False)
-
-        # fig, ax = plt.subplots()
-        # ax.scatter(self.cell_SDs, self.cell_SNR, c='C0', alpha=0.5)
-        # ax.scatter(self.cell_SDs[cells], self.cell_SNR[cells], c='C1', alpha=0.5)
-        # ax.set(xlabel='SD', ylabel='SNR')
-        # plt.show(block=False)
-
-
-        # fig, ax = plt.subplots()
-        # ax.plot(D1.frame_times, D1.F[660,:], c='C0')
-        # ax.plot(D1.frame_times, D1.Fneu[660,:], c='C2')
-        # ax.plot(D1.frame_times, D1.Fneu[66,:], c='C1')
-        # ax.set(xlabel='time', ylabel='F')
-        # plt.show(block=False)
-
-        # cneu = np.zeros(D1.N_cells)
-        # cneu183 = np.zeros(D1.N_cells)
-        # for i_cell in range(D1.N_cells):
-        #     cneu[i_cell] = np.corrcoef(D1.F[i_cell,:], D1.Fneu[i_cell,:])[1,0]
-        #     cneu183[i_cell] = np.corrcoef(D1.F[183,:], D1.Fneu[i_cell,:])[1,0]
-        
-        # fig, ax = plt.subplots()
-        # ax.scatter(range(D1.N_cells), cneu183, c='C0')
-        # ax.set(xlabel='cell', ylabel='corr with 183')
-        # plt.show(block=False)
-
-
         print('SNR done')
 
         print('dF/F calculated for cell ROI-s')
+
+
+    def calc_SD_SNR_elfiz(self):
+        for i_cell in range(self.N_cells):
+            self.cell_SDs[i_cell] = np.random.rand()
+            self.cell_SNR[i_cell] = np.random.rand()
+
 
 
     ##############################################################
@@ -532,7 +526,7 @@ class ImagingSessionData:
         time_breaks = np.where(np.diff(laptime) > 1)[0]
         if (len(time_breaks) > 0):
             print('ExpStateMachineLog time interval > 1s: ', len(time_breaks), ' times')
-            print(laptime[time_breaks])
+            # print(laptime[time_breaks])
 
         lap = np.array(lap_array)
         logged_laps = np.unique(lap)
@@ -553,13 +547,12 @@ class ImagingSessionData:
         maze = np.array(maze_array)
         mode = np.array(mode_array)
         N_0lap = 0 # Counting the non-valid laps
-        self.n_laps = 0
 
         #################################################
         ## add position, and lap info into the imaging frames
         #################################################
         F = interp1d(laptime, pos) 
-        self.frame_pos = np.round(F(self.frame_times))
+        self.frame_pos = np.round(F(self.frame_times), 2)
         F = interp1d(laptime, lap) 
         self.frame_laps = F(self.frame_times) 
         F = interp1d(laptime, maze) 
@@ -575,11 +568,14 @@ class ImagingSessionData:
 
         ### include only a subset of laps
         if selected_laps is None:
-            select_laps = False
+            all_laps_set = np.unique(lap)
         else:
-            select_laps = True
+            all_laps_set = np.intersect1d(np.unique(lap), selected_laps)
 
-        for i_lap in np.unique(lap): 
+        self.n_laps = 0
+
+
+        for i_lap in all_laps_set: 
             y = lap == i_lap # index for the current lap
 
             mode_lap = np.prod(mode[y]) # 1 if all elements are recorded in 'Go' mode
@@ -632,21 +628,15 @@ class ImagingSessionData:
                     if not((action_lap[j]) in ['No', 'TrialReward']):
                         actions.append([t_lap[j], action_lap[j]])
 
-                ### include only a subset of laps
-                add_lap = True
-                if (select_laps):
-                    add_lap = False
-                    if (self.n_laps in selected_laps):
-                        add_lap = True
-
                 ## include only valid laps
+                add_lap = True
                 if (mode_lap == 0):
                     add_lap = False
 
                 ### imaging data    
                 iframes = np.where(self.frame_laps == i_lap)[0]
                 if ((len(iframes) > self.N_pos_bins) & (add_lap == True)): # there is imaging data belonging to this lap...
-                    # print(i, min(iframes), max(iframes))
+                    # print('frames:', min(iframes), max(iframes))
                     lap_frames_dF_F = self.dF_F[:,iframes]
                     lap_frames_spikes = self.spks[:,iframes]
                     lap_frames_time = self.frame_times[iframes]
@@ -658,10 +648,9 @@ class ImagingSessionData:
                     lap_frames_time = np.nan
                     lap_frames_pos = np.nan 
                     
-                # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
-                # Lap_ImData(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False):
-                self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold))
+                self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold, elfiz=self.elfiz))
                 self.n_laps = self.n_laps + 1
+                # print(self.n_laps)
             else:
                 N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anything with this...
 
@@ -674,7 +663,7 @@ class ImagingSessionData:
         valid_lap = np.zeros(len(self.i_Laps_ImData))
         k_lap = 0
         for i_lap in self.i_Laps_ImData:
-            if (self.ImLaps[i_lap].n_cells > 1):  # we only add imaging data when the lap is valid, so we don't need to test it again
+            if (self.ImLaps[i_lap].n_cells > 0):  # we only add imaging data when the lap is valid, so we don't need to test it again
                 valid_lap[k_lap] = 1
                 self.raw_activity_tensor[:,:,k_lap] = np.transpose(self.ImLaps[i_lap].spks_pos)
                 self.raw_activity_tensor_time[:,k_lap] = self.ImLaps[i_lap].T_pos_fast
@@ -706,15 +695,17 @@ class ImagingSessionData:
         self.cell_tuning_specificity=[]
 
         self.cell_rates = [] # a list, each element is a 1 x n_cells matrix with the average rate of the cells in the whole corridor
-        self.cell_corridor_selectivity = np.zeros([2,self.N_cells]) # a matrix with the selectivity index of the cells. Second row indicates the corridor with the highers rate.
-
+        if (self.task == 'contingency_learning'):
+            self.cell_pattern_rates = []
         self.ratemaps = [] # a list, each element is an array space x neurons x trials being the ratemaps of the cells in a given corridor
+
+        self.cell_corridor_selectivity = np.zeros([2,self.N_cells]) # a matrix with the selectivity index of the cells. Second row indicates the corridor with the highers rate.
         self.cell_corridor_similarity = np.zeros(self.N_cells) # a matrix with the similarity index of the cells.
 
         if (self.N_corridors > 0):
             for i_corridor in np.arange(self.N_corridors): # we exclude corridor 0
                 corridor = self.corridors[i_corridor]
-                if (sum(self.i_corridors == corridor) > 10):
+                if (sum(self.i_corridors[self.i_Laps_ImData] == corridor) > 5):
                     # select the laps in the corridor 
                     # only laps with imaging data are selected - this will index the activity_tensor
                     i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor)[0] 
@@ -731,15 +722,19 @@ class ImagingSessionData:
                     for i_cell in range(self.N_cells):
                     # for i_cell in range(total_spikes.shape[1]):
                         rate_matrix[:,i_cell] = total_spikes[:,i_cell] / total_time
-
-        
                     self.ratemaps.append(rate_matrix)
-        
+                    
                     print('calculating rate, reliability and Fano factor...')
-
                     ## average firing rate
                     rates = np.sum(total_spikes, axis=0) / np.sum(total_time)
                     self.cell_rates.append(rates)
+
+                    if (self.task == 'contingency_learning'):
+                        rates_pattern1 = np.sum(total_spikes[0:14,:], axis=0) / np.sum(total_time[0:14])
+                        rates_pattern2 = np.sum(total_spikes[14:28,:], axis=0) / np.sum(total_time[14:28])
+                        rates_pattern3 = np.sum(total_spikes[28:42,:], axis=0) / np.sum(total_time[28:42])
+                        rates_reward = np.sum(total_spikes[42:47,:], axis=0) / np.sum(total_time[42:47])
+                        self.cell_pattern_rates.append(np.vstack([rates_pattern1, rates_pattern2, rates_pattern3, rates_reward]))
 
                     ## reliability and Fano factor
                     reliability = np.zeros(self.N_cells)
@@ -772,8 +767,13 @@ class ImagingSessionData:
                     icorrids = self.i_corridors[self.i_Laps_ImData] # corridor ids with image data
                     i_laps_abs = self.i_Laps_ImData[np.nonzero(icorrids == corridor)[0]] # we need a different indexing here, for the ImLaps list and not fot  the activityTensor
                     k = 0
+                    if (self.elfiz):
+                        spike_threshold = 0.75
+                    else:
+                        spike_threshold = 25
+
                     for i_lap in i_laps_abs:#y=ROI
-                        act_cells = np.nonzero(np.amax(self.ImLaps[i_lap].frames_spikes, 1) > 25)[0]
+                        act_cells = np.nonzero(np.amax(self.ImLaps[i_lap].frames_spikes, 1) > spike_threshold)[0]
                         active_laps[act_cells, k] = 1
                         k = k + 1
 
@@ -838,6 +838,17 @@ class ImagingSessionData:
         self.cell_corridor_selectivity[0,:] = (max_rate - min_rate) / sumrate
         self.cell_corridor_selectivity[1,:] = i_corr_max
         
+        # in Rita's task, we also calculate corridor selectivity in the pattern and reward zones:
+        if (self.task == 'contingency_learning'):
+            rate_matrix = np.array(self.cell_pattern_rates)
+            max_rate = np.max(rate_matrix, axis=0)
+            i_corr_max = np.argmax(rate_matrix, axis=0)
+            min_rate = np.min(rate_matrix, axis=0)
+            sumrate = np.sum(rate_matrix, axis=0)
+            self.cell_pattern_selectivity = np.zeros(2*4*self.N_cells).reshape(2, 4, self.N_cells)
+            self.cell_pattern_selectivity[0,:,:] = (max_rate - min_rate) / sumrate
+            self.cell_pattern_selectivity[1,:,:] = i_corr_max
+
         print('calculating corridor similarity ...')
         map_mat = np.array(self.ratemaps)
         M = int(self.N_corridors * (self.N_corridors - 1) / 2)
@@ -967,7 +978,7 @@ class ImagingSessionData:
 
         ## we calculate the rate matrix for all corridors - we need to use the same colors for the images
         for corrid in self.corridors:
-            if (sum(self.i_corridors == corrid) > 10):
+            if (sum(self.i_corridors[self.i_Laps_ImData] == corrid) > 5):
                 # select the laps in the corridor 
                 i_corrid = int(np.nonzero(self.corridors == corrid)[0])
                 rate_matrix = self.ratemaps[i_corrid]
@@ -1019,14 +1030,9 @@ class ImagingSessionData:
                             candidate_cells[i_cell] = 1
 
                 self.candidate_PCs.append(candidate_cells)
-        
-        if (self.N_corridors == 2):
-            for i_cell in np.arange(self.N_corridors):
-                self.cell_corridor_similarity[:,i_cell] = scipy.stats.pearsonr(self.ratemaps[0][:,i_cell], self.ratemaps[1][:,i_cell])
-
 
     # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
-    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None):
+    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None, verbous=True):
 
         cellids = np.array(cellids)
         raw_spikes = self.raw_spks[cellids,:]
@@ -1042,7 +1048,8 @@ class ImagingSessionData:
         if os.path.exists(shuffle_path):
             calculate_shuffles = False
             if (self.check_params(shuffle_filename)):
-                print('loading shuffling P-values from file...')
+                if (verbous):
+                    print('loading shuffling P-values from file...')
                 ## load from file
                 shuffle_file=open(shuffle_path)
                 shuffle_file_reader=csv.reader(shuffle_file, delimiter=' ')
@@ -1055,21 +1062,26 @@ class ImagingSessionData:
                 if (self.N_corridors == 1):
                     expected_names = self.N_corridors * 4 + 1
                 if (self.N_corridors > 1):
-                    expected_names = self.N_corridors * 4 + 3
+                    if (self.task == 'contingency_learning'):
+                        expected_names = self.N_corridors * 4 + 3 + 4
+                    else:
+                        expected_names = self.N_corridors * 4 + 3
                 if not (len(Ps_names) == expected_names):
-                    print ('number of P-values read from the saved file for each cell does not match the number expected for a given number of corridor. We will perform shuffling.')
+                    if (verbous):
+                        print ('number of P-values read from the saved file for each cell does not match the number expected for a given number of corridor. We will perform shuffling.')
                     calculate_shuffles = True
 
                 # fill in the P-value array
                 file_data = next(shuffle_file_reader)
-                shuffle_Pvalues = np.array(file_data, dtype='float')
+                shuffle_Pvalues = np.array(file_data, dtype='float').reshape(1, expected_names)
                 for row in shuffle_file_reader:
                     shuffle_Pvalues = np.vstack((shuffle_Pvalues, np.array(row, dtype='float')))
 
                 ## check the cellids
                 cellids_from_file = shuffle_Pvalues[:,0]
                 if not np.array_equal(np.sort(cellids_from_file), np.sort(cellids)):
-                    print ('cellids of the saved file does not match the cellids provided. We will perform shuffling.')
+                    if (verbous):
+                        print ('cellids of the saved file does not match the cellids provided. We will perform shuffling.')
                     calculate_shuffles = True
             else:
                 calculate_shuffles = True
@@ -1078,8 +1090,10 @@ class ImagingSessionData:
         ## calculating shuffling - if appropriate file not found
         ##########################################################################
         if (calculate_shuffles):
-            print('calculating shuffles...')
-            shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode, batchsize=batchsize, randseed=self.randseed)
+            if (verbous):
+                print('calculating shuffles...')
+            shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode,    batchsize=batchsize, randseed=self.randseed, selected_laps=self.selected_laps, elfiz=self.elfiz)
+            # shuffle_stats = ImShuffle(D1.datapath,   D1.date_time,   D1.name,   D1.task,   D1.stage,   raw_spikes, D1.frame_times,   D1.frame_pos,   D1.frame_laps,   N_shuffle=N_shuffle, cellids=cellids, mode='shift', batchsize=25,        randseed=D1.randseed, selected_laps=np.arange(20,80), elfiz=True)
 
             NN = cellids.size
             N_corrids = len(shuffle_stats.ratemaps)
@@ -1088,17 +1102,34 @@ class ImagingSessionData:
                     print ('warning: number of corridors is different between shuffling and control!')
                     sanity_checks_passed = False            
             for i_cor in range(N_corrids):
-                if (sum(np.abs(shuffle_stats.cell_reliability[i_cor][:,n] - self.cell_reliability[i_cor][cellids]) > 0.0001) > 0):
-                    print ('warning: calculating reliability is different between shuffling and control!')
-                    sanity_checks_passed = False
+                if (self.elfiz == True): # we use a different time resolution for shuffling...
+                    if (np.abs(shuffle_stats.cell_reliability[i_cor][0,n] - self.cell_reliability[i_cor][0]) > 0.1):
+                        print ('warning: calculating reliability is different between shuffling and control!')
+                        sanity_checks_passed = False
+                    if (np.corrcoef(self.ratemaps[0][:,0], shuffle_stats.ratemaps[0][:,0,n])[0,1] < 0.75):
+                        print ('warning: ratemaps are different between shuffling and control!')
+                        sanity_checks_passed = False
+                else:
+                    if (sum(np.abs(shuffle_stats.cell_reliability[i_cor][:,n] - self.cell_reliability[i_cor][cellids]) > 0.0001) > 0):
+                        print ('warning: calculating reliability is different between shuffling and control!')
+                        sanity_checks_passed = False
+                    if (np.sum(np.abs(self.ratemaps[i_cor][:,cellids] - shuffle_stats.ratemaps[i_cor][:,:,n]) > 1e-5)):
+                        print ('warning: ratemaps are different between shuffling and control!')
+                        sanity_checks_passed = False
 
             if (sanity_checks_passed):
-                print ('Shuffling stats calculated succesfully')
+                if (verbous):
+                    print ('Shuffling stats calculated succesfully')
             else : 
-                print ('Shuffling failed, ask for help...')
-                return
+                if (verbous):
+                    print ('Shuffling failed, ask for help...')
+                return 
 
-            print('saving shuffling data into file...')
+            if (verbous):
+                print('saving shuffling data into file...')
+
+            # shuffle_Pvalues:
+            # cellids + N x Skaggs + N x specificits + N x reliability + (selectivity + similarity + (4 x pattern_selectivity)) + N x Hainmuller
 
             if (shuffle_stats.N_corridors > 1):# & (task == 'contingency_learning')):
                 shuffle_Pvalues = cellids
@@ -1118,6 +1149,11 @@ class ImagingSessionData:
 
                 shuffle_Pvalues = np.vstack((shuffle_Pvalues, shuffle_stats.P_corridor_similarity))
                 Ps_names = Ps_names + ['similarity']
+
+                if (self.task == 'contingency_learning'):
+                    for kk in np.arange(4):
+                        shuffle_Pvalues = np.vstack((shuffle_Pvalues, shuffle_stats.P_pattern_selectivity[kk,:]))
+                        Ps_names = Ps_names + ['pattern_selectivity_' + str(kk)]                
 
                 for i in np.arange(shuffle_stats.N_corridors):
                     shuffle_Pvalues = np.vstack((shuffle_Pvalues, shuffle_stats.accepted_PCs[i]))
@@ -1140,36 +1176,63 @@ class ImagingSessionData:
         ## processing the shuffling stats ...
         ##########################################################################
 
+        # shuffle_Pvalues:
+        # cellids + N x Skaggs + N x specificits + N x reliability + (selectivity + similarity + (4 x pattern_selectivity)) + N x Hainmuller
+
         self.shuffle_Pvalues = shuffle_Pvalues
         self.Ps_names = Ps_names
-        if (self.N_corridors == 1):
-            self.ii_tuned_cells = np.transpose(HolmBonfMat(np.transpose(self.shuffle_Pvalues[:,1:(self.N_corridors*3+1)]), 0.05))
+
+        # Pmatrix:
+        # N x Skaggs + N x specificits + N x reliability + (selectivity + similarity + (4 x pattern_selectivity))
+
+        if (self.N_corridors == 1): # we don't have selectivity and similarity
+            Pmatrix = np.transpose(self.shuffle_Pvalues[:,1:(self.N_corridors*3+1)])
+            self.ii_tuned_cells = np.transpose(HolmBonfMat(Pmatrix, 0.05))
         if (self.N_corridors > 1):
-            self.ii_tuned_cells = np.transpose(HolmBonfMat(np.transpose(self.shuffle_Pvalues[:,1:(self.N_corridors*3+3)]), 0.05))
+            if (self.task == 'contingency_learning'):# we have 4 + 1 selectivity and similarity
+                max_col_index = self.N_corridors*3+3+4 
+            else :# we have selectivity and similarity
+                max_col_index = self.N_corridors*3+3                
+            Pmatrix = np.transpose(self.shuffle_Pvalues[:,1:max_col_index])
+            self.ii_tuned_cells = np.transpose(HolmBonfMat(Pmatrix, 0.05))
 
         self.accepted_PCs = []
         self.tuned_cells = []
         self.skaggs_tuned_cells = []
         self.spec_tuned_cells = []
         self.reli_tuned_cells = []
+        if (self.task == 'contingency_learning'):
+            self.pattern_selective_cells = []
 
         # print(shuffle_Pvalues)
         # print(shuffle_Pvalues.shape)
         for i_cor in np.arange(self.N_corridors):
-            print(i_cor)
+            # print(i_cor)
             if (self.N_corridors == 1):
                 self.accepted_PCs.append(cellids[np.where(shuffle_Pvalues[:,self.N_corridors*3+1+i_cor])])
             if (self.N_corridors > 1):
-                self.accepted_PCs.append(cellids[np.where(shuffle_Pvalues[:,self.N_corridors*3+3+i_cor])])
+                if (self.task == 'contingency_learning'):
+                    Hainmuller_index = self.N_corridors*3+3+4+i_cor
+                else :
+                    Hainmuller_index = self.N_corridors*3+3+i_cor
+                self.accepted_PCs.append(cellids[np.where(shuffle_Pvalues[:,Hainmuller_index])])
             self.skaggs_tuned_cells.append(cellids[np.where(self.ii_tuned_cells[:,i_cor])])
             self.spec_tuned_cells.append(cellids[np.where(self.ii_tuned_cells[:,self.N_corridors+i_cor])])
             self.reli_tuned_cells.append(cellids[np.where(self.ii_tuned_cells[:,self.N_corridors*2+i_cor])])
             self.tuned_cells.append(np.unique(np.concatenate((self.skaggs_tuned_cells[i_cor], self.spec_tuned_cells[i_cor], self.reli_tuned_cells[i_cor]))))
+        if (verbous):
+            print('tuned cells:', self.tuned_cells)
         if (self.N_corridors > 1):
-            print('selective cells:', cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3])])
             self.selective_cells = cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3])]
-            print('similar cells:', cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3+1])])
             self.similar_cells = cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3+1])]
+            if (verbous):
+                print('selective cells:', self.selective_cells)
+                print('similar cells:', self.similar_cells)
+            if (self.task=='contingency_learning'):
+                for kk in np.arange(4):
+                    self.pattern_selective_cells.append(cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3+2+kk])])
+                if (verbous):
+                    print('pattern selective cells:', self.pattern_selective_cells)
 
 
     def get_lap_indexes(self, corridor=-1, i_lap=-1):
@@ -1390,11 +1453,15 @@ class ImagingSessionData:
                 spikes = []
                 times = []
                 for i_lap in i_laps:
-                    dFs.append(self.ImLaps[i_lap].frames_dF_F[cellid,:])
+                    dFs_normalised = self.ImLaps[i_lap].frames_dF_F[cellid,:]
+                    if (self.elfiz == True):
+                        dFs_normalised = (dFs_normalised - np.nanmin(dFs_normalised)) / 10
+                    tt = self.ImLaps[i_lap].frames_time - np.nanmin(self.ImLaps[i_lap].frames_time)
+                    # print(i_lap, np.nanmin(dFs_normalised), np.nanmin(tt), np.nanmax(tt))
+                    dFs.append(dFs_normalised)
                     spikes.append(self.ImLaps[i_lap].frames_spikes[cellid,:])
-                    tt = self.ImLaps[i_lap].frames_time
-                    times.append(tt - np.min(tt))
-                    reward_times.append(self.ImLaps[i_lap].reward_times - np.min(tt))
+                    times.append(tt)
+                    reward_times.append(self.ImLaps[i_lap].reward_times - np.nanmin(self.ImLaps[i_lap].frames_time))
     
                 colmap = plt.cm.get_cmap('jet')   
                 colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
@@ -1557,7 +1624,7 @@ class ImagingSessionData:
             
     
 
-    def plot_popact(self, cellids, corridor=-1, save_data=False, name_string='selected_cells', bylaps=False):
+    def plot_popact(self, cellids, corridor=-1, name_string='selected_cells', bylaps=False):
         ## plot the total population activity in all trials in a given corridor
         
         #process input corridors
@@ -1615,14 +1682,6 @@ class ImagingSessionData:
 
                 ax[0,cor_index].set_xlim(0, 51)
                 ax[0,cor_index].set_title(title_string)
-
-                # if (save_data == True):
-                #     filename = 'data/' + self.name + '/' + self.name + '_' + self.date_time + '_popact_corridor' + str(int(corridor_to_plot)) + name_string + '.csv'
-                #     with open(filename, mode='w') as rate_file:
-                #         file_writer = csv.writer(rate_file, delimiter=',')
-                #         for i_col in range(n_laps):
-                #             file_writer.writerow(np.round(popact_laps[:,i_col], 2))
-                #     print('population activity saved into file: ' + filename)
 
                 ax[0,0].set_ylim(0, ymax)
 
@@ -1846,6 +1905,9 @@ class ImagingSessionData:
 
         N_corridors = len(self.corridors)
 
+        if (self.elfiz):
+            save_laptime = False
+
         # saving the cell properties - all cells included, a separate file is given for each corridor
         # each line is a different cell
         if (save_properties):
@@ -1912,7 +1974,9 @@ class ImagingSessionData:
 class Lap_ImData:
     'common base class for individual laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, printout=False, speed_threshold=5):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, printout=False, speed_threshold=5, elfiz=False, verbous=0):
+        if (verbous > 0):
+            print('ImData initialised')
         self.name = name
         self.lap = lap
 
@@ -1925,6 +1989,7 @@ class Lap_ImData:
         self.corridor_list = corridor_list # a list containing the corridor properties in the given stage
         self.mode = mode # 1 if all elements are recorded in 'Go' mode
         self.actions = actions
+        self.elfiz=elfiz
 
         self.speed_threshold = speed_threshold ## cm / s 106 cm - 3500 roxels; roxel/s * 106.5/3500 = cm/s
         self.corridor_length_roxel = (self.corridor_list.corridors[self.corridor].length - 1024.0) / (7168.0 - 1024.0) * 3500
@@ -1932,6 +1997,8 @@ class Lap_ImData:
         self.speed_factor = 106.5 / 3500 ## constant to convert distance from pixel to cm
         self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
 
+        self.last_zone_start = max(self.corridor_list.corridors[self.corridor].reward_zone_starts)
+        self.last_zone_end = max(self.corridor_list.corridors[self.corridor].reward_zone_ends)
 
         self.zones = np.vstack([np.array(self.corridor_list.corridors[self.corridor].reward_zone_starts), np.array(self.corridor_list.corridors[self.corridor].reward_zone_ends)])
         self.n_zones = np.shape(self.zones)[1]
@@ -1939,7 +2006,10 @@ class Lap_ImData:
 
         # approximate frame period for imaging - 0.033602467
         # only use it to convert spikes to rates and to prepare uniform time axis!
-        self.dt_imaging = 0.033602467
+        if (self.elfiz==True):
+            self.dt_imaging = 0.0002 # s - 5000 Hz
+        else: 
+            self.dt_imaging = 0.033602467 # s - 33 Hz
 
         self.frames_dF_F = lap_frames_dF_F
         self.frames_spikes = lap_frames_spikes
@@ -1949,6 +2019,8 @@ class Lap_ImData:
         self.n_cells = 1 # we still create the same np arrays even if there are no cells
         self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
 
+        if (verbous > 0):
+            print('ImData established')
         ##################################################################################
         ## lick position and reward position
         ##################################################################################
@@ -1961,7 +2033,10 @@ class Lap_ImData:
         if (len(self.reward_times) > 0):
             self.correct = True
         # correct: if no licking in the zone
-        lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * self.corridor_length_roxel) & (self.lick_position <= self.zones[1] * self.corridor_length_roxel + 1))[0]
+        if (len(self.lick_times) > 0):
+            lick_in_zone = np.nonzero((self.lick_position > self.last_zone_start * self.corridor_length_roxel) & (self.lick_position <= self.last_zone_end * self.corridor_length_roxel + 1))[0]
+        else:
+            lick_in_zone = np.array([])
         if (self.corridor_list.corridors[self.corridor].reward == 'Left'):
             if (len(lick_in_zone) == 0):
                 self.correct = True
@@ -1969,6 +2044,8 @@ class Lap_ImData:
             if ((len(lick_in_zone) == 0) & self.correct):
                 print ('Warning: rewarded lap with no lick in zone! lap number:' + str(self.lap))
 
+        if (verbous > 0):
+            print('lick and reward position calculated')
         ##################################################################################
         ## speed vs. time
         ##################################################################################
@@ -1988,6 +2065,8 @@ class Lap_ImData:
         speed_first = 2 * speed[0] - speed[1] # linear extrapolation: x1 - (x2 - x1)
         self.frames_speed = np.hstack([speed_first, speed])
 
+        if (verbous > 0):
+            print('speed calculated')
         ##################################################################################
         ## speed, lick and spiking vs. position
         ##################################################################################
@@ -2017,6 +2096,8 @@ class Lap_ImData:
             lbin_counts[lbin_number] += 1
         self.N_licks = lbin_counts
         self.lick_rate = nan_divide(self.N_licks, self.T_pos, where=(self.T_pos > 0.025))
+        if (verbous > 0):
+            print('lick rate calculated')
     
         ####################################################################
         ## calculate the cell activations (spike rate) as a function of position
@@ -2028,12 +2109,16 @@ class Lap_ImData:
             for i_frame in range(len(self.frames_pos)):
                 bin_number = int(self.frames_pos[i_frame] // 70)
                 if (self.frames_speed[i_frame] > self.speed_threshold):
-                    ### we need to multiply the values with dt_imaging as this converts probilities to expected counts
-                    self.spks_pos[:,bin_number] = self.spks_pos[:,bin_number] + self.frames_spikes[:,i_frame] * self.dt_imaging
+                    if (self.elfiz):
+                        self.spks_pos[:,bin_number] = self.spks_pos[:,bin_number] + self.frames_spikes[:,i_frame]
+                    else: ### we need to multiply the values with dt_imaging as this converts probilities to expected counts
+                        self.spks_pos[:,bin_number] = self.spks_pos[:,bin_number] + self.frames_spikes[:,i_frame] * self.dt_imaging
             for bin_number in range(self.N_pos_bins):
                 if (self.T_pos_fast[bin_number] > 0): # otherwise the rate will remain 0
                     self.event_rate[:,bin_number] = self.spks_pos[:,bin_number] / self.T_pos_fast[bin_number]
 
+        if (verbous > 0):
+            print('ratemaps calculated')
 
         ####################################################################
         ## Calculate the lick rate befor the reward zone - anticipatory licks 210 roxels before zone start
@@ -2061,16 +2146,20 @@ class Lap_ImData:
                 lz_lbin_counts[lbin_number] += 1
             lz_lick_rate = nan_divide(lz_lbin_counts, T_lz_pos, where=(T_lz_pos>0.025))
             self.preZoneRate = [lz_lick_rate[1], lz_lick_rate[2]]
+            
+            if (verbous > 0):
+                print('Zone-Rates calculated')
                 
 
     def plot_tx(self, fluo=False, th=25):
         colmap = plt.cm.get_cmap('jet')   
+        vshift = 0
         colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
         fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), sharex=True, gridspec_kw={'height_ratios': [1, 3]})
 
         ## first, plot position versus time
-        ax_top.plot(self.frames_time, self.frames_pos, color=colmap(50))
-        ax_top.plot(self.raw_time, self.raw_position, color=colmap(90))
+        ax_top.plot(self.frames_time, self.frames_pos, color=colmap(90))
+        ax_top.plot(self.raw_time, self.raw_position, color=colmap(30))
 
         ax_top.scatter(self.lick_times, np.repeat(self.frames_pos.min(), len(self.lick_times)), marker="|", s=100, c=colmap(180))
         ax_top.scatter(self.reward_times, np.repeat(self.frames_pos.min()+100, len(self.reward_times)), marker="|", s=100, c=colmap(230))
@@ -2081,18 +2170,22 @@ class Lap_ImData:
         ax_top.set_ylim(0, self.corridor_length_roxel)
 
         ## next, plot dF/F versus time (or spikes)
-        if (self.n_cells > 1):
+        if (self.n_cells > 0):
             # act_cells = np.nonzero(np.amax(self.frames_dF_F, 1) > th)[0]
             act_cells = np.nonzero(np.amax(self.frames_spikes, 1) > th)[0]
             max_range = np.nanmax(self.event_rate)
             for i in range(self.n_cells):
             # for i in (252, 258, 275):
                 if (fluo & (i in act_cells)):
-                    ax_bottom.plot(self.frames_time, self.frames_dF_F[i,:] + i, alpha=0.5, color=colmap(np.remainder(i, 255)))
+                    dFs_normalised = self.frames_dF_F[i,:]
+                    if (self.elfiz):
+                        dFs_normalised = (dFs_normalised - min(dFs_normalised)) / 10
+                        vshift = 2
+                    ax_bottom.plot(self.frames_time, dFs_normalised + i, alpha=0.5, color=colmap(np.remainder(i, 255)))
                 events = self.frames_spikes[i,:]
                 events = 50 * events / max_range
                 ii_events = np.nonzero(events)[0]
-                ax_bottom.scatter(self.frames_time[ii_events], np.ones(len(ii_events)) * i, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
+                ax_bottom.scatter(self.frames_time[ii_events], np.ones(len(ii_events)) * i + vshift, s=events[ii_events], cmap=colmap, c=(np.ones(len(ii_events)) * np.remainder(i, 255)), norm=colnorm)
 
             ylab_string = 'dF_F, spikes (max: ' + str(np.round(max_range, 1)) +  ' )'
             ax_bottom.set_ylabel(ylab_string)
@@ -2110,7 +2203,7 @@ class Lap_ImData:
         colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
 
         fig, (ax_top, ax_bottom) = plt.subplots(2, 1, figsize=(6,8), sharex=True,  gridspec_kw={'height_ratios': [1, 3]})
-        ax_top.plot(self.frames_pos, self.frames_speed, c=colmap(80))
+        ax_top.plot(self.frames_pos, self.frames_speed, c=colmap(90))
         ax_top.step(self.bincenters, self.ave_speed, where='mid', c=colmap(30))
         ax_top.scatter(self.lick_position, np.repeat(5, len(self.lick_position)), marker="|", s=100, color=colmap(180))
         ax_top.scatter(self.reward_position, np.repeat(10, len(self.reward_position)), marker="|", s=100, color=colmap(230))
@@ -2141,7 +2234,7 @@ class Lap_ImData:
         ax2.set_ylim([-1,max(2*np.nanmax(self.lick_rate), 20)])
 
         ## next, plot event rates versus space
-        if (self.n_cells > 1):
+        if (self.n_cells > 0):
             max_range = np.nanmax(self.event_rate)
             # for i in np.arange(250, 280):
             for i in range(self.n_cells):
