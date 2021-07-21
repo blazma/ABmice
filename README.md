@@ -1,22 +1,19 @@
 ### General information
 
-Library for analysing the behavior of Mice in a virtual reality experiments
+Library for analysing electropysiology, imaging and behavioral data of Mice running in a virtual reality experiments
 
-author: Balazs B Ujfalussy, 2020 `balazs.ujfalussy@gmail.com`
+author: Balazs B Ujfalussy, 2021 `balazs.ujfalussy@gmail.com`
 
-Also includes a script generating the VR in Ogre, which was originally written by Luigs-Neumann (http://www.luigs-neumann.com/) but later modified by BBU. 
+Also includes a script generating the VR in Ogre, which was originally written by Luigs-Neumann (http://www.luigs-neumann.com/) but later modified by BBU.
 
-Run the Mouse_View.py in the rigth folder to analyse data for a selected mouse using a user interface.
-
-Mouse_ImView.py contains example scripts that can be run in an interactive python shell to analyse imaging data. Mouse_ImView_Demo.pdf contains a few demo for imaging analysis.
+See the Demo.pdf for demo. After placing the data in the right folders, run one of the example jupiter notebooks for an interactive demo:
+	Anal_AB057.ipynb: example for electrophysiology data
+	Anal_srb059.ipynb: example for imaging data with 100s of place cells
+	Anal_srb067.ipynb: example for imaging data with dendritic ROIs
 
 ### Requirements
 
-To run the code, you need python 2.7 or python 3.7 installed with the usual sciantific packages (numpy, scipy, matplotlib, tkinter). 
-
-- PyOgre runs on python 2.7 thus the original data is saved by machines running only python 2.7. 
-- The analysis of the imaging data requires python 3.7.
-- The data can be copyed to other machines running python 3.7 for analysis, but DO NOT COPY any data back into the machines doing the recordings!
+To run the code, you need python 3.7 installed with the usual sciantific packages (numpy, scipy, matplotlib, tkinter). The interface for the analysis uses jupyter notebooks.
 
 Folder structure: 
 	* All python files should be placed together in the same folder. 
