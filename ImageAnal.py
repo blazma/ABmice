@@ -41,6 +41,7 @@ class ImagingSessionData:
         self.name = name
         self.task = task
         self.suite2p_folder = suite2p_folder
+        self.imaging_logfile_name = imaging_logfile_name
 
         self.stage = 0
         self.stages = []
@@ -109,9 +110,9 @@ class ImagingSessionData:
         ## loading imaging data
         ##################################################
         if (self.elfiz):
-            F_string = self.suite2p_folder + 'Vm_' + imaging_logfile_name + '.npy'
-            spks_string = self.suite2p_folder + 'spikes_' + imaging_logfile_name + '.npy'
-            time_string = self.suite2p_folder + 'frame_times_' + imaging_logfile_name + '.npy'
+            F_string = self.suite2p_folder + 'Vm_' + self.imaging_logfile_name + '.npy'
+            spks_string = self.suite2p_folder + 'spikes_' + self.imaging_logfile_name + '.npy'
+            time_string = self.suite2p_folder + 'frame_times_' + self.imaging_logfile_name + '.npy'
 
             self.F = np.load(F_string) # npy array, N_ROI x N_frames, fluorescence traces of ROIs from suite2p
             self.raw_spks = np.load(spks_string) # npy array, N_ROI x N_frames, spike events detected from suite2p
@@ -145,7 +146,7 @@ class ImagingSessionData:
             print('suite2p data loaded')               
 
             self.frame_times = np.nan # labview coordinates
-            self.LoadImaging_times(imaging_logfile_name, self.imstart_time)
+            self.LoadImaging_times(self.imstart_time)
             self.frame_pos = np.zeros(len(self.frame_times)) # position and 
             self.frame_laps = np.zeros(len(self.frame_times)) # lap number for the imaging frames, to be filled later
             print('suite2p time axis loaded')       
@@ -336,11 +337,11 @@ class ImagingSessionData:
             if (line[1] == 'Stage'):
                 self.stage = int(round(float(line[2])))
 
-    def LoadImaging_times(self, imaging_logfile_name, offset):
+    def LoadImaging_times(self, offset):
         # function that reads the action_log_file and finds the current stage
         # minidom is an xml file interpreter for python
         # hope it works for python 3.7...
-        imaging_logfile = minidom.parse(imaging_logfile_name)
+        imaging_logfile = minidom.parse(self.imaging_logfile_name)
         voltage_rec = imaging_logfile.getElementsByTagName('VoltageRecording')
         voltage_delay = float(voltage_rec[0].attributes['absoluteTime'].value)
         ## the offset is the time of the first voltage signal in Labview time
@@ -1703,6 +1704,8 @@ class ImagingSessionData:
         ## plot the behavioral data during one session. 
             # - speed
             # - lick rate
+        ## selected laps: numpy array indexing the laps to be included in the plot
+
         ## find the number of different corridors
         if (selected_laps is None):
             selected_laps = np.arange(self.n_laps)
@@ -1900,6 +1903,9 @@ class ImagingSessionData:
     def save_data(self, save_properties=True, save_ratemaps=True, save_laptime=True):
 
         data_folder = self.suite2p_folder + 'analysed_data'
+        if (self.elfiz == True):
+            data_folder = self.suite2p_folder + 'analysed_data_' + self.imaging_logfile_name
+
         if not os.path.exists(data_folder):
             os.makedirs(data_folder)
 
