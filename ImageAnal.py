@@ -1033,7 +1033,14 @@ class ImagingSessionData:
                 self.candidate_PCs.append(candidate_cells)
 
     # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
-    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=None, verbous=True):
+    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=25, verbous=True):
+        ## cellids: numpy array - the index of the cells to be included in the analysis
+        ## n: integer, number of shuffles
+        ## mode: 'random' or 'shift'. 
+            # random: totally randomize the spike times; 
+            # shift: circularly shift spike times 
+        ## batchsize: integer. To make computation faster, shuffling is done in batches of size batchsize
+        ## verbous: True of False: information is gizev about the progress
 
         cellids = np.array(cellids)
         raw_spikes = self.raw_spks[cellids,:]
@@ -1067,22 +1074,22 @@ class ImagingSessionData:
                         expected_names = self.N_corridors * 4 + 3 + 4
                     else:
                         expected_names = self.N_corridors * 4 + 3
-                if not (len(Ps_names) == expected_names):
+
+                if (len(Ps_names) == expected_names):
+                    file_data = next(shuffle_file_reader)
+                    shuffle_Pvalues = np.array(file_data, dtype='float').reshape(1, expected_names)
+                    for row in shuffle_file_reader:
+                        shuffle_Pvalues = np.vstack((shuffle_Pvalues, np.array(row, dtype='float')))
+                    ## check the cellids
+                    cellids_from_file = shuffle_Pvalues[:,0]
+                    if not np.array_equal(np.sort(cellids_from_file), np.sort(cellids)):
+                        if (verbous):
+                            print ('cellids of the saved file does not match the cellids provided. We will perform shuffling.')
+                        calculate_shuffles = True
+
+                else :# fill in the P-value array
                     if (verbous):
                         print ('number of P-values read from the saved file for each cell does not match the number expected for a given number of corridor. We will perform shuffling.')
-                    calculate_shuffles = True
-
-                # fill in the P-value array
-                file_data = next(shuffle_file_reader)
-                shuffle_Pvalues = np.array(file_data, dtype='float').reshape(1, expected_names)
-                for row in shuffle_file_reader:
-                    shuffle_Pvalues = np.vstack((shuffle_Pvalues, np.array(row, dtype='float')))
-
-                ## check the cellids
-                cellids_from_file = shuffle_Pvalues[:,0]
-                if not np.array_equal(np.sort(cellids_from_file), np.sort(cellids)):
-                    if (verbous):
-                        print ('cellids of the saved file does not match the cellids provided. We will perform shuffling.')
                     calculate_shuffles = True
             else:
                 calculate_shuffles = True
@@ -1256,11 +1263,14 @@ class ImagingSessionData:
 
     def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1]), vmax=0):
         ## plot the average event rate of all cells in a given corridor
-        ## if corridor == -1 then the first corridor is used
-        ## normalized: each cell ratemap is normalized to have a max = 1
-        ## sorted: sorting the ramemaps by their peaks - not yet implemented
+        ## corridor: integer, the ID of a valid corridor
+        ##      if corridor == -1 then all corridors are used
+        ## normalized: True or False. If True then  each cell ratemap is normalized to have a max = 1
+        ## sorted: sorting the ramemaps by their peaks
         ## corridor_sort: which corridor to use for sorting the ratemaps
         ## cellids: np array with the indexes of the cells to be plotted. when -1: all cells are plotted
+        ## vmax: float. If ratemaps are not normalised then the max range of the colors will be at least vmax. 
+                # If one of the ratemaps has a higher peak, then vmax is replaced by that peak 
         
         if (cellids[0] == -1):
             cellids = np.array(range(self.activity_tensor.shape[1]))
@@ -1411,7 +1421,7 @@ class ImagingSessionData:
         CI=-2#the specified corridor's index among nonzero corridors
         for corr in range(len(self.corridors)):
             if self.corridors[corr]==corridor:
-                CI=corr-1#always corridor 0 starts
+                CI=corr#-1#always corridor 0 starts
                 cell_info='\n'+ 'skgs: '+str(round(self.cell_skaggs[CI][cellid],2))+' %actF: '+str(round(self.cell_activelaps_df[CI][cellid],2))+' %actS: '+str(round(self.cell_activelaps[CI][cellid],2))+'\n'+'TunSp: '+str(round(self.cell_tuning_specificity[CI][cellid],2))+' FF: '+str(round(self.cell_Fano_factor[CI][cellid],2))+' rate: '+str(round(self.cell_rates[CI][cellid],2))+' rel: '+str(round(self.cell_reliability[CI][cellid],2))    
                 break
         if CI==-2:
@@ -1627,7 +1637,12 @@ class ImagingSessionData:
 
     def plot_popact(self, cellids, corridor=-1, name_string='selected_cells', bylaps=False):
         ## plot the total population activity in all trials in a given corridor
-        
+        ## cellids: numpy array. The index of the cells included in the population activity
+        ## corridor: integer, the ID of a valid corridor
+        ##      if corridor == -1 then all corridors are used
+        ## bylaps: True or False. If True then population activity is plotted lap by lap
+
+
         #process input corridors
         if (corridor == -1):
             corridor = self.corridors
@@ -1901,6 +1916,12 @@ class ImagingSessionData:
 
 
     def save_data(self, save_properties=True, save_ratemaps=True, save_laptime=True):
+        # Saves the primary data into a folder in csv format.
+        # separate file is created for each corridor and lap.
+        # 
+        # save_properties: True or False. If True, the cell properties are saved. 
+        # save_ratemaps: True or False. If True, the ratemaps are saved.
+        # save_laptime: True or False. If True, the raw data is saved for each lap.
 
         data_folder = self.suite2p_folder + 'analysed_data'
         if (self.elfiz == True):
@@ -2158,6 +2179,10 @@ class Lap_ImData:
                 
 
     def plot_tx(self, fluo=False, th=25):
+        ## fluo: True or Fasle, whether fluoresnece data should be plotted.
+        ## th: threshold for plotting the fluorescence data - only cells with spikes > th are shown
+        ##      when plotting elphys data, th should be -0.5 to show the voltage trace
+
         colmap = plt.cm.get_cmap('jet')   
         vshift = 0
         colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
