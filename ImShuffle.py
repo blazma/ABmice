@@ -303,11 +303,14 @@ class ImShuffle:
                     self.accepted_PCs[i_cor] = np.hstack((self.accepted_PCs[i_cor], self.accepted_PCs_batch[i_cor]))
                     self.ratemaps[i_cor] = np.concatenate((self.ratemaps[i_cor], self.ratemaps_batch[i_cor]), axis=1)
 
+                # matrix, N x M
                 self.cell_corridor_selectivity = np.concatenate((self.cell_corridor_selectivity, self.cell_corridor_selectivity_batch))
                 self.P_corridor_selectivity = np.concatenate((self.P_corridor_selectivity, self.P_corridor_selectivity_batch))
-                if (self.task == 'contingency_learning'):            
-                    self.cell_pattern_selectivity = np.concatenate((self.cell_pattern_selectivity, self.cell_pattern_selectivity_batch))
-                    self.P_pattern_selectivity = np.concatenate((self.P_pattern_selectivity, self.P_pattern_selectivity_batch))
+                if (self.task == 'contingency_learning'):
+                    # 4 x N x M = N_corridor x 4 x N_cell x N_shuffle            
+                    self.cell_pattern_selectivity = np.concatenate((self.cell_pattern_selectivity, self.cell_pattern_selectivity_batch), axis=1)
+                    # np.zeros([4, batchsize])
+                    self.P_pattern_selectivity = np.concatenate((self.P_pattern_selectivity, self.P_pattern_selectivity_batch), axis=1)
 
                 self.cell_corridor_similarity = np.concatenate((self.cell_corridor_similarity, self.cell_corridor_similarity_batch)) 
                 self.P_corridor_similarity = np.concatenate((self.P_corridor_similarity, self.P_corridor_similarity_batch))
@@ -658,7 +661,7 @@ class ImShuffle:
 
         # in Rita's task, we also calculate corridor selectivity in the pattern and reward zones:
         if (self.task == 'contingency_learning'):
-            rate_matrix = np.array(self.cell_pattern_rates_batch) # K x 4 x N x M
+            rate_matrix = np.array(self.cell_pattern_rates_batch) # K x 4 x N x M = N_corridor x 4 x N_cell x N_shuffle
             max_rate = np.max(rate_matrix, axis=0) # 4 x N x M
             min_rate = np.min(rate_matrix, axis=0)
             sumrate = np.sum(rate_matrix, axis=0)
