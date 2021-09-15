@@ -331,6 +331,7 @@ class ImShuffle:
         mode_array=[]
         lick_array=[]
         action=[]
+        substage=[]
 
         data_log_file_string=datapath + 'data/' + name + '_' + task + '/' + date_time + '/' + date_time + '_' + name + '_' + task + '_ExpStateMashineLog.txt'
         data_log_file=open(data_log_file_string)
@@ -344,9 +345,11 @@ class ImShuffle:
             mode_array.append(line[6] == 'Go')
             lick_array.append(line[9] == 'TRUE')
             action.append(str(line[14]))
+            substage.append(str(line[17]))
 
         laptime = np.array(time_array)
         lap = np.array(lap_array)
+        sstage = np.array(substage)
 
         pos = np.array(position_array)
         lick = np.array(lick_array)
@@ -379,6 +382,15 @@ class ImShuffle:
                 corridor = self.all_corridors[int(maze_lap)] # the maze_lap is the index of the available corridors in the given stage
             else:
                 corridor = -1
+
+            sstage_lap = np.unique(sstage[y])
+            if (len(sstage_lap) > 1):
+                print('More than one substage in lap ', self.n_laps)
+                corridor = -2
+
+            if (sum(y) < self.N_pos_bins):
+                print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in lap ', self.n_laps)
+                corridor = -3
 
             if (corridor > 0):
                 i_corrids.append(corridor) # list with the index of corridors in each run
@@ -667,7 +679,7 @@ class ImShuffle:
             sumrate = np.sum(rate_matrix, axis=0)
             self.cell_pattern_selectivity_batch = (max_rate - min_rate) / sumrate
         
-        print('calculating corridor similarity ...')
+        print('calculating corridor similarity ...  Number of corridors:', self.N_corridors)
         minibatchsize = self.activity_tensor.shape[1]
 
         map_mat = np.array(self.ratemaps_batch) # K x L x N x M
@@ -677,6 +689,7 @@ class ImShuffle:
         for i_cor in np.arange(self.N_corridors-1):
             for j_cor in np.arange(i_cor+1, self.N_corridors):
                 for i_cell in np.arange(minibatchsize):
+                    # print(i_cor, j_cor)
                     X = np.transpose(map_mat[i_cor,:,i_cell,:])
                     Y = np.transpose(map_mat[j_cor,:,i_cell,:])
                     similarity_matrix[m,i_cell,] = Mcorrcoef(X,Y, zero_var_out=0)

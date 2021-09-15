@@ -19,6 +19,7 @@ import csv
 from matplotlib.patches import Polygon
 import sys
 from sys import version_info
+from sys import platform
 import copy
 import time
 import os
@@ -31,6 +32,11 @@ from utils import *
 from Stages import *
 from Corridors import *
 from ImShuffle import *
+
+if (platform == 'darwin'):
+    csv_kwargs = {'delimiter':' '}
+else:
+    csv_kwargs = {'delimiter':' ', 'newline':''}
 
 
 class ImagingSessionData:
@@ -207,11 +213,13 @@ class ImagingSessionData:
             self.N_corridors = len(self.corridors)
 
         self.N_ImLaps = len(self.i_Laps_ImData)
-
+        print('number of laps with imaging data:', self.N_ImLaps)
         self.raw_activity_tensor = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
         self.raw_activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # a tensor with space x trials containing the time spent at each location in each lap
         self.activity_tensor = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # same as the activity tensor spatially smoothed
         self.activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # same as the activity tensor time spatially smoothed
+        print('laps with image data:')
+        print(self.i_Laps_ImData)
         self.combine_lapdata() ## fills in the cell_activity tensor
 
         self.cell_activelaps=[] # a list, each element is a vector with the % of significantly spiking laps of the cells in a corridor
@@ -244,7 +252,7 @@ class ImagingSessionData:
 
         param_filename = data_folder + '/' + filename
         with open(param_filename, mode='w') as paramfile:
-            file_writer = csv.writer(paramfile, delimiter=' ')
+            file_writer = csv.writer(paramfile, **csv_kwargs)
             file_writer.writerow(('#name:', self.name))
             file_writer.writerow(('#task:', self.task))
             file_writer.writerow(('#date_time:', self.date_time))
@@ -570,8 +578,10 @@ class ImagingSessionData:
         ### include only a subset of laps
         if selected_laps is None:
             all_laps_set = np.unique(lap)
+            # print('we select all laps', all_laps_set)
         else:
             all_laps_set = np.intersect1d(np.unique(lap), selected_laps)
+            # print('sel of selected all laps', all_laps_set)
 
         self.n_laps = 0
 
@@ -586,19 +596,24 @@ class ImagingSessionData:
                 corridor = self.all_corridors[int(maze_lap)] # the maze_lap is the index of the available corridors in the given stage
             else:
                 corridor = -1
+            # print('corridor in lap ', self.n_laps, ':', corridor)
 
-            if (corridor > 0):
+            sstage_lap = np.unique(sstage[y])
+            if (len(sstage_lap) > 1):
+                print('More than one substage in lap ', self.n_laps)
+                corridor = -2
+
+            if (sum(y) < self.N_pos_bins):
+                print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in lap ', self.n_laps)
+                corridor = -3
+
+            if (corridor > 0):    
                 i_corrids.append(corridor) # list with the index of corridors in each run
                 t_lap = laptime[y]
                 pos_lap = pos[y]
-    
+
                 lick_lap = lick[y] ## vector of Trues and Falses
                 t_licks = t_lap[lick_lap] # time of licks
-    
-                sstage_lap = np.unique(sstage[y])
-                if (len(sstage_lap) > 1):
-                    print('More than one substage in lap ', self.n_laps)
-                    return 
 
                 if (sstage_lap != current_sstage):
                     print('############################################################')
@@ -619,10 +634,13 @@ class ImagingSessionData:
                 valid_lap = False
                 if (len(t_reward) > 0): # lap is valid if the animal got reward
                     valid_lap = True
+                    # print('rewarded lap', self.n_laps)
                 if (max(pos_lap) > (self.corridor_length_roxel * self.last_zone_end)): # # lap is valid if the animal left the last reward zone
                     valid_lap = True
+                    # print('valid lap', self.n_laps)
                 if (valid_lap == False):
                     mode_lap = 0
+                    # print('invalid lap', self.n_laps)
 
                 actions = []
                 for j in range(len(action_lap)):
@@ -636,6 +654,8 @@ class ImagingSessionData:
 
                 ### imaging data    
                 iframes = np.where(self.frame_laps == i_lap)[0]
+                # print('In lap ', self.n_laps, ' we have ', len(t_lap), 'datapoints and ', len(iframes), 'frames')
+
                 if ((len(iframes) > self.N_pos_bins) & (add_lap == True)): # there is imaging data belonging to this lap...
                     # print('frames:', min(iframes), max(iframes))
                     lap_frames_dF_F = self.dF_F[:,iframes]
@@ -1174,7 +1194,7 @@ class ImagingSessionData:
 
             self.write_params(shuffle_filename)
             with open(shuffle_path, mode='a') as shuffle_file:
-                file_writer = csv.writer(shuffle_file, delimiter=' ')
+                file_writer = csv.writer(shuffle_file, **csv_kwargs)
                 file_writer.writerow(Ps_names)
                 for i_row in np.arange(shuffle_Pvalues.shape[0]):
                     file_writer.writerow(np.round(shuffle_Pvalues[i_row,:], 6))
@@ -1945,8 +1965,8 @@ class ImagingSessionData:
                 corridor_file = 'cell_properties_corridor_' + str(self.corridors[i_cor]) + '_N' + str(self.N_cells) + '.csv'
                 self.write_params(corridor_file)
                 filename = data_folder + '/' + corridor_file
-                with open(filename, mode='a') as property_file:
-                    file_writer = csv.writer(property_file, delimiter=' ')
+                with open(filename, mode='a', newline='') as property_file:
+                    file_writer = csv.writer(property_file, **csv_kwargs)
                     file_writer.writerow(colnames)
                     for i_col in np.arange(allprops.shape[1]):
                         file_writer.writerow(np.round(allprops[:,i_col], 4))
@@ -1960,7 +1980,7 @@ class ImagingSessionData:
                 self.write_params(ratemap_file)
                 filename = data_folder + '/' + ratemap_file
                 with open(filename, mode='a') as rate_file:
-                    file_writer = csv.writer(rate_file, delimiter=' ')
+                    file_writer = csv.writer(rate_file, **csv_kwargs)
                     file_writer.writerow(('rows: firing rate of the ' + str(self.N_cells) + ' cells;',   'columns: position bins'))
                     for i_col in np.arange(self.N_cells):
                         file_writer.writerow(np.round(self.ratemaps[i_cor][:,i_col], 4))
@@ -1991,7 +2011,7 @@ class ImagingSessionData:
 
                 lapdata = np.vstack((self.ImLaps[i_lap].frames_time, self.ImLaps[i_lap].frames_pos, self.ImLaps[i_lap].frames_speed, frames_lick, frames_reward, self.ImLaps[i_lap].frames_spikes))
                 with open(filename, mode='a') as lap_file:
-                    file_writer = csv.writer(lap_file, delimiter=' ')
+                    file_writer = csv.writer(lap_file, **csv_kwargs)
                     file_writer.writerow(('rows: time, position, speed, lick, reward and spikes of the ' + str(self.N_cells) + ' cells;', 'columns: time bins'))
                     for i_row in np.arange(lapdata.shape[0]):
                         file_writer.writerow(np.round(lapdata[i_row,:], 4))
@@ -2515,6 +2535,5 @@ def LocateImaging(trigger_log_file_string, TRIGGER_VOLTAGE_FILENAME):
         if match_found==True:
             imstart_time = lap_time_of_first_frame
         else:
-            print('no precise trigger mach found: need to refine code or check device')
-            imstart_time = np.nan
+            sys.exit('no precise trigger mach found: need to refine code or check device')
     return imstart_time
