@@ -360,6 +360,7 @@ class ImagingSessionData:
 
         frames = imaging_logfile.getElementsByTagName('Frame')
         self.frame_times = np.zeros(len(frames)) # this is already in labview time
+        self.im_reftime = float(frames[1].attributes['relativeTime'].value) - float(frames[1].attributes['absoluteTime'].value)
         for i in range(len(frames)):
             self.frame_times[i] = float(frames[i].attributes['relativeTime'].value) + corrected_offset
         if (len(self.frame_times) != self.F_all.shape[1]):
@@ -567,6 +568,8 @@ class ImagingSessionData:
         F = interp1d(laptime, maze) 
         self.frame_maze = F(self.frame_times) 
 
+        self.all_corridor_start_time = []
+        self.all_corridor_start_IDs = []
         ## frame_laps is NOT integer for frames between laps
         ## however, it MAY not be integer even even for frames within a lap...
         #################################################
@@ -606,10 +609,13 @@ class ImagingSessionData:
             if (sum(y) < self.N_pos_bins):
                 print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in lap ', self.n_laps)
                 corridor = -3
+            
+            t_lap = laptime[y]
+            self.all_corridor_start_time.append(min(t_lap))          
+            self.all_corridor_start_IDs.append(int(corridor))
 
             if (corridor > 0):    
                 i_corrids.append(corridor) # list with the index of corridors in each run
-                t_lap = laptime[y]
                 pos_lap = pos[y]
 
                 lick_lap = lick[y] ## vector of Trues and Falses
@@ -1279,6 +1285,34 @@ class ImagingSessionData:
         else :
             print (i_lap, '\t', self.i_Laps_ImData[i_laps[i_lap]])
 
+    def plot_dF_lapstarts(self, cellid):
+        corridor_types = np.unique(np.array(self.all_corridor_start_IDs))
+        colors = ['coral', 'lime', 'peru', 'deepskyblue', 'olive', 'deeppink', 'teal']
+
+        fig, ax = plt.subplots(2,1,squeeze=False, figsize=(10,6), sharex=True, sharey=True)
+        ax[0,0].plot(self.frame_times - self.im_reftime, self.dF_F[cellid,:], '-k', alpha=0.5)
+        ax[0,0].plot(self.frame_times - self.im_reftime, self.spks[cellid,:] * 0.033602467, '-', c='deepskyblue', alpha=0.5)
+        ax[0,0].set_title('absolute time - old')
+        # ax[0,0].vlines(np.array(self.all_corridor_start_time) - self.im_reftime, 0, 200, colors=np.array(self.all_corridor_start_IDs) + 1)
+        ax[1,0].plot(self.frame_times, self.dF_F[cellid,:], '-k', alpha=0.5)
+        ax[1,0].plot(self.frame_times, self.spks[cellid,:] * 0.033602467, '-', c='deepskyblue', alpha=0.5)
+        ax[1,0].set_title('relative time - new')
+
+        i_col = 0
+        for c_type in corridor_types:
+            ii = np.where(np.array(self.all_corridor_start_IDs) == c_type)[0]
+            if (c_type == 0):
+                corr_color = 'silver'
+            else:
+                corr_color = colors[int(i_col)]
+                i_col = i_col + 1
+            corrname = 'corridor' + str(c_type)
+            ax[0,0].vlines(np.array(self.all_corridor_start_time)[ii], 0, 2, colors=corr_color)
+            ax[1,0].vlines(np.array(self.all_corridor_start_time)[ii], 0, 2, colors=corr_color, label=corrname)
+
+        ax[1,0].set_xlim(min(self.frame_times), max(self.frame_times))       
+        ax[1,0].legend()
+        plt.show(block=False)
 
 
     def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1]), vmax=0):
