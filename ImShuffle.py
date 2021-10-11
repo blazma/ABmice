@@ -37,7 +37,7 @@ def breakpoints(Nframes, Lmin=500, Nbreak=5):
 
 class ImShuffle:
     'Base structure for shuffling analysis of imaging data'
-    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False):
+    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False, min_Nlaps=5):
         ###########################################
         ## setting basic parameters for the session
         ###########################################
@@ -53,6 +53,7 @@ class ImShuffle:
         self.selected_laps = selected_laps
         self.speed_threshold = speed_threshold
         self.elfiz = elfiz
+        self.minimum_Nlaps = min_Nlaps
 
         stagefilename = datapath + self.task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
@@ -222,17 +223,14 @@ class ImShuffle:
             #   but the corridor will not 
             #   we also do NOT include corridor 0 here
             if (self.N_all_corridors > 1):
-                N_laps_corr = np.zeros(self.N_all_corridors) 
-                for i_corridor in np.arange(self.N_all_corridors):
-                    corridor = self.all_corridors[i_corridor]
-                    N_laps_corr[i_corridor] = sum(self.i_corridors == corridor)
-
-                self.corridors = self.all_corridors[np.where(N_laps_corr > 3)[0]]
+                corridors, N_laps_corr = np.unique(self.i_corridors[self.i_Laps_ImData], return_counts=True)
+                self.corridors = corridors[np.flatnonzero(N_laps_corr >= self.minimum_Nlaps)]
                 self.N_corridors = len(self.corridors)
-
             else :
                 self.corridors = np.setdiff1d(self.all_corridors, 0)
                 self.N_corridors = len(self.corridors)
+
+            print('corridors: ', self.corridors, '; number of corridors:', self.N_corridors)
 
             self.N_ImLaps = len(self.i_Laps_ImData)
 
@@ -334,7 +332,7 @@ class ImShuffle:
         substage=[]
 
         data_log_file_string=datapath + 'data/' + name + '_' + task + '/' + date_time + '/' + date_time + '_' + name + '_' + task + '_ExpStateMashineLog.txt'
-        data_log_file=open(data_log_file_string)
+        data_log_file=open(data_log_file_string, newline='')
         log_file_reader=csv.reader(data_log_file, delimiter=',')
         next(log_file_reader, None)#skip the headers
         for line in log_file_reader:
@@ -373,7 +371,7 @@ class ImShuffle:
 
 
         for i_lap in all_laps_set:
-            y = lap == i_lap # index for the current lap
+            y = np.flatnonzero(lap == i_lap) # index for the current lap
 
             mode_lap = np.prod(mode[y]) # 1 if all elements are recorded in 'Go' mode
 
@@ -400,8 +398,8 @@ class ImShuffle:
                 lick_lap = lick[y] ## vector of Trues and Falses
                 t_licks = t_lap[lick_lap] # time of licks
     
-                istart = np.where(y)[0][0]
-                iend = np.where(y)[0][-1] + 1
+                istart = np.min(y)
+                iend = np.max(y) + 1
                 action_lap = action[istart:iend]
     
                 reward_indices = [j for j, x in enumerate(action_lap) if x == "TrialReward"]
@@ -509,117 +507,116 @@ class ImShuffle:
         if (self.N_corridors > 0):
             for i_corridor in np.arange(self.N_corridors):
                 corridor = self.corridors[i_corridor]
-                if (sum(self.i_corridors[self.i_Laps_ImData] == corridor) > 5):
-                    # select the laps in the corridor 
-                    # only laps with imaging data are selected - this will index the activity_tensor
-                    i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor)[0] 
-                    N_laps_corr = len(i_laps)
+                # select the laps in the corridor 
+                # only laps with imaging data are selected - this will index the activity_tensor
+                i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor)[0] 
+                N_laps_corr = len(i_laps)
 
-                    time_matrix_1 = self.activity_tensor_time[:,i_laps]
-                    total_time = np.sum(time_matrix_1, axis=1) # bins x cells -> bins; time spent in each location
+                time_matrix_1 = self.activity_tensor_time[:,i_laps]
+                total_time = np.sum(time_matrix_1, axis=1) # bins x cells -> bins; time spent in each location
 
-                    act_tensor_1 = self.activity_tensor[:,:,i_laps,:] ## bin x cells x laps x shuffle; all activity in all laps in corridor i
-                    total_spikes = np.sum(act_tensor_1, axis=2) ##  bin x cells x shuffle; total activity of the cells in corridor i
+                act_tensor_1 = self.activity_tensor[:,:,i_laps,:] ## bin x cells x laps x shuffle; all activity in all laps in corridor i
+                total_spikes = np.sum(act_tensor_1, axis=2) ##  bin x cells x shuffle; total activity of the cells in corridor i
 
-                    rate_matrix = np.zeros_like(total_spikes) ## event rate 
-                    
-                    for i_cell in range(minibatchsize):
-                        for i_shuffle in range(self.N_shuffle+1):
-                            rate_matrix[:,i_cell,i_shuffle] = total_spikes[:,i_cell,i_shuffle] / total_time
+                rate_matrix = np.zeros_like(total_spikes) ## event rate 
+                
+                for i_cell in range(minibatchsize):
+                    for i_shuffle in range(self.N_shuffle+1):
+                        rate_matrix[:,i_cell,i_shuffle] = total_spikes[:,i_cell,i_shuffle] / total_time
 
-                    self.ratemaps_batch.append(rate_matrix)
+                self.ratemaps_batch.append(rate_matrix)
 
-                    print('calculating rate, reliability and Fano factor...')
+                print('calculating rate, reliability and Fano factor...')
 
-                    ## average firing rate
-                    rates = np.sum(total_spikes, axis=0) / np.sum(total_time) # cells x shuffle
-                    self.cell_rates_batch.append(rates)
+                ## average firing rate
+                rates = np.sum(total_spikes, axis=0) / np.sum(total_time) # cells x shuffle
+                self.cell_rates_batch.append(rates)
 
-                    if (self.task == 'contingency_learning'):
-                        rates_pattern1 = np.sum(total_spikes[0:14,:,:], axis=0) / np.sum(total_time[0:14]) # N x M
-                        rates_pattern2 = np.sum(total_spikes[14:28,:,:], axis=0) / np.sum(total_time[14:28])
-                        rates_pattern3 = np.sum(total_spikes[28:42,:,:], axis=0) / np.sum(total_time[28:42])
-                        rates_reward = np.sum(total_spikes[42:47,:,:], axis=0) / np.sum(total_time[42:47])
-                        self.cell_pattern_rates_batch.append(np.stack([rates_pattern1, rates_pattern2, rates_pattern3, rates_reward])) # 4 x N x M
-
-
-                    ## reliability and Fano factor
-                    reliability = np.zeros((minibatchsize, self.N_shuffle+1))
-                    P_reliability_batch = np.zeros(minibatchsize)
-                    Fano_factor = np.zeros((minibatchsize, self.N_shuffle+1))
-                    for i_cell in range(minibatchsize):
-                        for i_shuffle in range(self.N_shuffle+1):
-                            laps_rates = nan_divide(act_tensor_1[:,i_cell,:,i_shuffle], time_matrix_1, where=(time_matrix_1 > 0.025))
-                            corrs_cell = vcorrcoef(np.transpose(laps_rates), rate_matrix[:,i_cell,i_shuffle])
-                            reliability[i_cell, i_shuffle] = np.nanmean(corrs_cell)
-                            Fano_factor[i_cell, i_shuffle] = np.nanmean(nan_divide(np.nanvar(laps_rates, axis=1), rate_matrix[:,i_cell,i_shuffle], rate_matrix[:,i_cell,i_shuffle] > 0))
-
-                        shuffle_ecdf = reliability[i_cell, 0:self.N_shuffle]
-                        data_point = reliability[i_cell, self.N_shuffle]
-                        P_reliability_batch[i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
-
-                    self.cell_reliability_batch.append(reliability)
-                    self.P_reliability_batch.append(P_reliability_batch)
-                    self.cell_Fano_factor_batch.append(Fano_factor)
+                if (self.task == 'contingency_learning'):
+                    rates_pattern1 = np.sum(total_spikes[0:14,:,:], axis=0) / np.sum(total_time[0:14]) # N x M
+                    rates_pattern2 = np.sum(total_spikes[14:28,:,:], axis=0) / np.sum(total_time[14:28])
+                    rates_pattern3 = np.sum(total_spikes[28:42,:,:], axis=0) / np.sum(total_time[28:42])
+                    rates_reward = np.sum(total_spikes[42:47,:,:], axis=0) / np.sum(total_time[42:47])
+                    self.cell_pattern_rates_batch.append(np.stack([rates_pattern1, rates_pattern2, rates_pattern3, rates_reward])) # 4 x N x M
 
 
-                    print('calculating Skaggs spatial info...')
-                    ## Skaggs spatial info
-                    skaggs_matrix=np.zeros((minibatchsize, self.N_shuffle+1))
-                    P_skaggs_batch = np.zeros(minibatchsize)
-                    P_x=total_time/np.sum(total_time)
-                    for i_cell in range(minibatchsize):
-                        for i_shuffle in range(self.N_shuffle+1):
-                            mean_firing = rates[i_cell,i_shuffle]
-                            lambda_x = rate_matrix[:,i_cell,i_shuffle]
-                            i_nonzero = np.nonzero(lambda_x > 0)
-                            skaggs_matrix[i_cell,i_shuffle] = np.sum(lambda_x[i_nonzero]*np.log2(lambda_x[i_nonzero]/mean_firing)*P_x[i_nonzero]) / mean_firing
+                ## reliability and Fano factor
+                reliability = np.zeros((minibatchsize, self.N_shuffle+1))
+                P_reliability_batch = np.zeros(minibatchsize)
+                Fano_factor = np.zeros((minibatchsize, self.N_shuffle+1))
+                for i_cell in range(minibatchsize):
+                    for i_shuffle in range(self.N_shuffle+1):
+                        laps_rates = nan_divide(act_tensor_1[:,i_cell,:,i_shuffle], time_matrix_1, where=(time_matrix_1 > 0.025))
+                        corrs_cell = vcorrcoef(np.transpose(laps_rates), rate_matrix[:,i_cell,i_shuffle])
+                        reliability[i_cell, i_shuffle] = np.nanmean(corrs_cell)
+                        Fano_factor[i_cell, i_shuffle] = np.nanmean(nan_divide(np.nanvar(laps_rates, axis=1), rate_matrix[:,i_cell,i_shuffle], rate_matrix[:,i_cell,i_shuffle] > 0))
 
-                        shuffle_ecdf = skaggs_matrix[i_cell, 0:self.N_shuffle]
-                        data_point = skaggs_matrix[i_cell, self.N_shuffle]
-                        P_skaggs_batch[i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
+                    shuffle_ecdf = reliability[i_cell, 0:self.N_shuffle]
+                    data_point = reliability[i_cell, self.N_shuffle]
+                    P_reliability_batch[i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
 
-                    self.cell_skaggs_batch.append(skaggs_matrix)
-                    self.P_skaggs_batch.append(P_skaggs_batch)
-                     
-                    ## active laps/ all laps spks
-                    #use raw spks instead activity tensor
-                    print('calculating proportion of active laps...')
-                    active_laps = np.zeros((minibatchsize, N_laps_corr, self.N_shuffle+1))
+                self.cell_reliability_batch.append(reliability)
+                self.P_reliability_batch.append(P_reliability_batch)
+                self.cell_Fano_factor_batch.append(Fano_factor)
 
-                    icorrids = self.i_corridors[self.i_Laps_ImData] # corridor ids with image data
-                    i_laps_abs = self.i_Laps_ImData[np.nonzero(icorrids == corridor)[0]]
-                    k = 0
-                    for i_lap in i_laps_abs:#y=ROI
-                        for i_shuffle in range(self.N_shuffle+1):
-                            act_cells = np.nonzero(np.amax(self.shuffle_ImLaps[i_lap].frames_spikes[:,:,i_shuffle], 1) > 25)[0] # cells * frames * shuffle
-                            active_laps[act_cells, k, i_shuffle] = 1 # cells * laps * shuffle
-                        k = k + 1
 
-                    active_laps_ratio = np.sum(active_laps, 1) / N_laps_corr
-                    self.cell_activelaps_batch.append(active_laps_ratio)
-                    
-                    ## linear tuning specificity
-                    print('calculating linear tuning specificity ...')
-                    tuning_spec=np.zeros((minibatchsize, self.N_shuffle+1))
-                    P_tuning_specificity_batch = np.zeros(minibatchsize)
-                    xbins = (np.arange(self.N_pos_bins) + 0.5) * self.corridor_length_cm / self.N_pos_bins
-                    
-                    for i_cell in range(minibatchsize):
-                        for i_shuffle in range(self.N_shuffle+1):
-                            rr = np.copy(rate_matrix[:,i_cell,i_shuffle])
-                            rr[rr < np.mean(rr)] = 0
-                            Px = rr / np.sum(rr)
-                            mu = np.sum(Px * xbins)
-                            sigma = np.sqrt(np.sum(Px * xbins**2) - mu**2)
-                            tuning_spec[i_cell,i_shuffle] = self.corridor_length_cm / sigma
+                print('calculating Skaggs spatial info...')
+                ## Skaggs spatial info
+                skaggs_matrix=np.zeros((minibatchsize, self.N_shuffle+1))
+                P_skaggs_batch = np.zeros(minibatchsize)
+                P_x=total_time/np.sum(total_time)
+                for i_cell in range(minibatchsize):
+                    for i_shuffle in range(self.N_shuffle+1):
+                        mean_firing = rates[i_cell,i_shuffle]
+                        lambda_x = rate_matrix[:,i_cell,i_shuffle]
+                        i_nonzero = np.nonzero(lambda_x > 0)
+                        skaggs_matrix[i_cell,i_shuffle] = np.sum(lambda_x[i_nonzero]*np.log2(lambda_x[i_nonzero]/mean_firing)*P_x[i_nonzero]) / mean_firing
 
-                        shuffle_ecdf = tuning_spec[i_cell, 0:self.N_shuffle]
-                        data_point = tuning_spec[i_cell, self.N_shuffle]
-                        P_tuning_specificity_batch[i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
+                    shuffle_ecdf = skaggs_matrix[i_cell, 0:self.N_shuffle]
+                    data_point = skaggs_matrix[i_cell, self.N_shuffle]
+                    P_skaggs_batch[i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
 
-                    self.cell_tuning_specificity_batch.append(tuning_spec)
-                    self.P_tuning_specificity_batch.append(P_tuning_specificity_batch)
+                self.cell_skaggs_batch.append(skaggs_matrix)
+                self.P_skaggs_batch.append(P_skaggs_batch)
+                 
+                ## active laps/ all laps spks
+                #use raw spks instead activity tensor
+                print('calculating proportion of active laps...')
+                active_laps = np.zeros((minibatchsize, N_laps_corr, self.N_shuffle+1))
+
+                icorrids = self.i_corridors[self.i_Laps_ImData] # corridor ids with image data
+                i_laps_abs = self.i_Laps_ImData[np.nonzero(icorrids == corridor)[0]]
+                k = 0
+                for i_lap in i_laps_abs:#y=ROI
+                    for i_shuffle in range(self.N_shuffle+1):
+                        act_cells = np.nonzero(np.amax(self.shuffle_ImLaps[i_lap].frames_spikes[:,:,i_shuffle], 1) > 25)[0] # cells * frames * shuffle
+                        active_laps[act_cells, k, i_shuffle] = 1 # cells * laps * shuffle
+                    k = k + 1
+
+                active_laps_ratio = np.sum(active_laps, 1) / N_laps_corr
+                self.cell_activelaps_batch.append(active_laps_ratio)
+                
+                ## linear tuning specificity
+                print('calculating linear tuning specificity ...')
+                tuning_spec=np.zeros((minibatchsize, self.N_shuffle+1))
+                P_tuning_specificity_batch = np.zeros(minibatchsize)
+                xbins = (np.arange(self.N_pos_bins) + 0.5) * self.corridor_length_cm / self.N_pos_bins
+                
+                for i_cell in range(minibatchsize):
+                    for i_shuffle in range(self.N_shuffle+1):
+                        rr = np.copy(rate_matrix[:,i_cell,i_shuffle])
+                        rr[rr < np.mean(rr)] = 0
+                        Px = rr / np.sum(rr)
+                        mu = np.sum(Px * xbins)
+                        sigma = np.sqrt(np.sum(Px * xbins**2) - mu**2)
+                        tuning_spec[i_cell,i_shuffle] = self.corridor_length_cm / sigma
+
+                    shuffle_ecdf = tuning_spec[i_cell, 0:self.N_shuffle]
+                    data_point = tuning_spec[i_cell, self.N_shuffle]
+                    P_tuning_specificity_batch[i_cell] = sum(shuffle_ecdf > data_point) / float(self.N_shuffle)
+
+                self.cell_tuning_specificity_batch.append(tuning_spec)
+                self.P_tuning_specificity_batch.append(P_tuning_specificity_batch)
 
             # # self.cell_rates_batch = [] # a list, each element is a 5 x n_cells matrix with the average rate of the cells in the total corridor, pattern zones 1-3 and reward zone
             # if ((self.task == 'contingency_learning') & (self.N_corridors == 3)):
@@ -894,68 +891,65 @@ class ImShuffle:
         self.accepted_PCs_batch = [] # a list, each element is a vector of Trues and Falses of accepted place cells after bootstrapping
 
         ## we calculate the rate matrix for all corridors - we need to use the same colors for the images
-        for corrid in np.unique(self.i_corridors):
-            # select the laps in the corridor 
-            # only laps with imaging data are selected - this will index the activity_tensor
-            if (sum(self.i_corridors[self.i_Laps_ImData] == corrid) > 5):
-                i_corrid = int(np.nonzero(self.corridors == corrid)[0] - 1)
-                rate_matrix = self.ratemaps_batch[i_corrid]
-                cell_number = rate_matrix.shape[1]
+        for i_corrid in np.arange(self.N_corridors):
+            corrid = self.corridors[i_corrid]
+            rate_matrix = self.ratemaps_batch[i_corrid]
+            cell_number = rate_matrix.shape[1]
 
-                candidate_cells = np.zeros((cell_number, self.N_shuffle+1))
-                accepted_cells = np.zeros(cell_number)
-                
-                i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corrid)[0] 
-                N_laps_corr = len(i_laps)
-                act_tensor_1 = self.activity_tensor[:,:,i_laps,:] ## bin x cells x laps x shuffle; all activity in all laps in corridor i
+            candidate_cells = np.zeros((cell_number, self.N_shuffle+1))
+            accepted_cells = np.zeros(cell_number)
+            
+            i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corrid)[0] 
+            N_laps_corr = len(i_laps)
+            act_tensor_1 = self.activity_tensor[:,:,i_laps,:] ## bin x cells x laps x shuffle; all activity in all laps in corridor i
 
-                for i_cell in np.arange(rate_matrix.shape[1]):
-                    for i_shuffle in np.arange(rate_matrix.shape[2]):
-                        rate_i = rate_matrix[:,i_cell,i_shuffle]
+            for i_cell in np.arange(rate_matrix.shape[1]):
+                for i_shuffle in np.arange(rate_matrix.shape[2]):
+                    rate_i = rate_matrix[:,i_cell,i_shuffle]
 
-                        ### calculate the baseline, peak and threshold for each cell
-                        ## Hainmuller: average of the lowest 25%; 
-                        baseline = np.mean(np.sort(rate_i)[:12])
-                        peak_rate = np.max(rate_i)
-                        threshold = baseline + 0.25 * (peak_rate - baseline)
+                    ### calculate the baseline, peak and threshold for each cell
+                    ## Hainmuller: average of the lowest 25%; 
+                    baseline = np.mean(np.sort(rate_i)[:12])
+                    peak_rate = np.max(rate_i)
+                    threshold = baseline + 0.25 * (peak_rate - baseline)
 
-                        ## 1) find the longest contiguous region of above threshold for at least 3 bins...
-                        placefield_start = np.nan
-                        placefield_length = 0
-                        candidate_start = 0
-                        candidate_length = 0
-                        for k in range(self.N_pos_bins):
-                            if (rate_i[k] > threshold):
-                                candidate_length = candidate_length + 1
-                                if (candidate_length == 1):
-                                    candidate_start = k
-                                elif ((candidate_length > 2) & (candidate_length > placefield_length)):
-                                    placefield_length = candidate_length
-                                    placefield_start = candidate_start
-                            else:
-                                candidate_length = 0
+                    ## 1) find the longest contiguous region of above threshold for at least 3 bins...
+                    placefield_start = np.nan
+                    placefield_length = 0
+                    candidate_start = 0
+                    candidate_length = 0
+                    for k in range(self.N_pos_bins):
+                        if (rate_i[k] > threshold):
+                            candidate_length = candidate_length + 1
+                            if (candidate_length == 1):
+                                candidate_start = k
+                            elif ((candidate_length > 2) & (candidate_length > placefield_length)):
+                                placefield_length = candidate_length
+                                placefield_start = candidate_start
+                        else:
+                            candidate_length = 0
 
-                        if (not(np.isnan(placefield_start))):
-                            ##  2) with average rate at least 7x the average rate outside
-                            index_infield = np.arange(placefield_start,(placefield_start+placefield_length))
-                            index_outfield = np.setdiff1d(np.arange(self.N_pos_bins), index_infield)
-                            rate_inField = np.mean(rate_i[index_infield])
-                            rate_outField = np.mean(rate_i[index_outfield])
+                    if (not(np.isnan(placefield_start))):
+                        ##  2) with average rate at least 7x the average rate outside
+                        index_infield = np.arange(placefield_start,(placefield_start+placefield_length))
+                        index_outfield = np.setdiff1d(np.arange(self.N_pos_bins), index_infield)
+                        rate_inField = np.mean(rate_i[index_infield])
+                        rate_outField = np.mean(rate_i[index_outfield])
 
 
-                            ## significant (total spike is larger than 0.6) transient in the field in at least 20% of the runs
-                            lapsums = act_tensor_1[index_infield,i_cell,:,i_shuffle].sum(0) # only laps in this corridor
+                        ## significant (total spike is larger than 0.6) transient in the field in at least 20% of the runs
+                        lapsums = act_tensor_1[index_infield,i_cell,:,i_shuffle].sum(0) # only laps in this corridor
 
-                            if ( ( (sum(lapsums > 0.6) / float(N_laps_corr)) > 0.2)  & ( (rate_inField / rate_outField) > 7) ):
-                                # accepted_cells[i_cell] = 1
-                                candidate_cells[i_cell, i_shuffle] = 1
+                        if ( ( (sum(lapsums > 0.6) / float(N_laps_corr)) > 0.2)  & ( (rate_inField / rate_outField) > 7) ):
+                            # accepted_cells[i_cell] = 1
+                            candidate_cells[i_cell, i_shuffle] = 1
 
-                    place_cell_P = np.sum(candidate_cells[i_cell, 0:self.N_shuffle]) / self.N_shuffle
-                    if ((candidate_cells[i_cell,self.N_shuffle]==1) & (place_cell_P < 0.05)):
-                        accepted_cells[i_cell] = 1
+                place_cell_P = np.sum(candidate_cells[i_cell, 0:self.N_shuffle]) / self.N_shuffle
+                if ((candidate_cells[i_cell,self.N_shuffle]==1) & (place_cell_P < 0.05)):
+                    accepted_cells[i_cell] = 1
 
-                self.candidate_PCs_batch.append(candidate_cells)
-                self.accepted_PCs_batch.append(accepted_cells.astype(int))
+            self.candidate_PCs_batch.append(candidate_cells)
+            self.accepted_PCs_batch.append(accepted_cells.astype(int))
         
         # if (self.N_corridors == 2):
         #     for i_cell in np.arange(rate_matrix.shape[1]):
