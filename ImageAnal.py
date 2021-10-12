@@ -36,7 +36,8 @@ from ImShuffle import *
 if (platform == 'darwin'):
     csv_kwargs = {'delimiter':' '}
 else:
-    csv_kwargs = {'delimiter':' ', 'newline':''}
+    # csv_kwargs = {'delimiter':' ', 'newline':''}
+    csv_kwargs = {'delimiter':' '}
 
 
 class ImagingSessionData:
