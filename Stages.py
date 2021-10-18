@@ -73,29 +73,34 @@ class Stage_collection:
 # 			1		d			8-10			pseudo		1e				Pavl/Oper  	both		3_cheese
 # 			1		e			11				pseudo		2-5				Pavl/Oper  	both		1_cheese
 
-# color 	2		a			12,17			pseudo		6-9 			correct 	correct		green_striped
-# 	 		3		a			13,16			pseudo		6-9 			correct 	correct		purple_striped
-# 	 		4		a			14,19			pseudo		6-9 			correct 	correct		green_square
-# 	 		5		a			15,18			pseudo		6-9 			correct 	correct		purple_square
+# color 	2		a			12,17			pseudo		6-9 			correct 	correct		R: green (striped)
+# 	 		3		a			13,16			pseudo		6-9 			correct 	correct		R: purple (striped)
+# 	 		4		a			14,19			pseudo		6-9 			correct 	correct		R: green (square)
+# 	 		5		a			15,18			pseudo		6-9 			correct 	correct		R: purple (square)
 
-# pattern	6		a			12,15			pseudo		10, 12			correct 	correct		square_purple
-# 	 		7		a			13,14			pseudo		10, 12			correct 	correct		stripe_purple
-# 	 		8		a			16,19			pseudo		10, 12			correct 	correct		square_green
-# 	 		9		a			17,18			pseudo		10, 12			correct 	correct		stripe_green
+# pattern	6		a			12,15			pseudo		10, 12			correct 	correct		R: square (purple)
+# 	 		7		a			13,14			pseudo		10, 12			correct 	correct		R: stripe (purple)
+# 	 		8		a			16,19			pseudo		10, 12			correct 	correct		R: square (green)
+# 	 		9		a			17,18			pseudo		10, 12			correct 	correct		R: stripe (green)
 
-# compound	10		a			12,14,17,19		pseudo		14				correct 	correct		green
-# 	 		11		a			13,15,16,18		pseudo		15				correct 	correct		purple
-# 	 		12		a			12,15,16,19		pseudo		16				correct 	correct		square
-# 	 		13		a			13,14,17,18		pseudo		17				correct 	correct		striped
+# compound	10		a			12,14,17,19		pseudo		14				correct 	correct		R: green
+# 	 		11		a			13,15,16,18		pseudo		15				correct 	correct		R: purple
+# 	 		12		a			12,15,16,19		pseudo		16				correct 	correct		R: square
+# 	 		13		a			13,14,17,18		pseudo		17				correct 	correct		R: striped
 
-# switching	14		a			12,14,17,19		pseudo		14				correct 	correct		green ->
+# switching	14		a			12,14,17,19		pseudo		11				correct 	correct		green ->
 # 					b			13,15,16,18		pseudo		11				correct 	correct				 -> purple
-# 	 		15		a			13,15,16,18		pseudo		15				correct 	correct		purple -> 
+# 	 		15		a			13,15,16,18		pseudo		12				correct 	correct		purple -> 
 # 	 				b			12,15,16,19		pseudo		12				correct 	correct				-> square
-# 	 		16		a			12,15,16,19		pseudo		16				correct 	correct		square ->
+# 	 		16		a			12,15,16,19		pseudo		13				correct 	correct		square ->
 # 	 				b			13,14,17,18		pseudo		13				correct 	correct				 -> striped
-# 	 		17		a			13,14,17,18		pseudo		17				correct 	correct		striped -> 
+# 	 		17		a			13,14,17,18		pseudo		10				correct 	correct		striped -> 
 # 	 				b			12,14,17,19		pseudo		10				correct 	correct				 -> green
+
+# reversal	18		a			12,17    		pseudo		18				correct 	correct		reversal 1
+# 	 				b			12,15    		pseudo		6				correct 	correct		
+# 	 				c			13,14    		pseudo		7				correct 	correct		
+
 
 
 # CONDITIONS:
@@ -129,10 +134,12 @@ class Stage_collection:
 # stage_list.add_stage(level='compound', stage=12, corridors=[12, 15, 16, 19], next_stage=[16], rule='correct', condition='both', name='square')
 # stage_list.add_stage(level='compound', stage=13, corridors=[13, 14, 17, 18], next_stage=[17], rule='correct', condition='both', name='stripe')
 
-# stage_list.add_stage(level='switching', stage=14, corridors=[12, 14, 17, 19, 13, 15, 16, 18], next_stage=[11], rule='correct', condition='both', name='green -> purple', random='10min switch', substages=[0,0,0,0,1,1,1,1])
-# stage_list.add_stage(level='switching', stage=15, corridors=[13, 15, 16, 18, 12, 15, 16, 19], next_stage=[12], rule='correct', condition='both', name='purple -> square', random='10min switch', substages=[0,0,0,0,1,1,1,1])
-# stage_list.add_stage(level='switching', stage=16, corridors=[12, 15, 16, 19, 13, 14, 17, 18], next_stage=[13], rule='correct', condition='both', name='square -> stripe', random='10min switch', substages=[0,0,0,0,1,1,1,1])
-# stage_list.add_stage(level='switching', stage=17, corridors=[13, 14, 17, 18, 12, 14, 17, 19], next_stage=[10], rule='correct', condition='both', name='stripe -> green', random='10min switch', substages=[0,0,0,0,1,1,1,1])
+# stage_list.add_stage(level='switching', stage=14, corridors=[12, 14, 17, 19, 13, 15, 16, 18], next_stage=[11], rule='correct', condition='both', name='green -> purple', substages=[0,0,0,0,1,1,1,1])
+# stage_list.add_stage(level='switching', stage=15, corridors=[13, 15, 16, 18, 12, 15, 16, 19], next_stage=[12], rule='correct', condition='both', name='purple -> square', substages=[0,0,0,0,1,1,1,1])
+# stage_list.add_stage(level='switching', stage=16, corridors=[12, 15, 16, 19, 13, 14, 17, 18], next_stage=[13], rule='correct', condition='both', name='square -> stripe', substages=[0,0,0,0,1,1,1,1])
+# stage_list.add_stage(level='switching', stage=17, corridors=[13, 14, 17, 18, 12, 14, 17, 19], next_stage=[10], rule='correct', condition='both', name='stripe -> green', substages=[0,0,0,0,1,1,1,1])
+
+# stage_list.add_stage(level='switching', stage=18, corridors=[12, 17, 12, 15, 13, 14], next_stage=[7], rule='correct', condition='both', name='reversal 1', substages=[0,0,1,1,2,2])
 
 # stage_list.print_table()
 
@@ -250,8 +257,8 @@ class Stage_collection:
 # diff_2	3		a			14-15			pseudo		3				Pavl/Oper  	both		near-far 
 # 			3		b			17				pseudo		3				Pavl/Oper  	both		new corridor
 # diff_3	4		a			14-15			pseudo		4				Pavl/Oper  	both		near-far 
-# 			4		b			14				pseudo		4				Pavl/Oper  	both		near
-# 			4		c			15				pseudo		4				Pavl/Oper  	both		far
+# 			4		b			16				pseudo		4				Pavl/Oper  	both		near
+# 			4		c			18				pseudo		4				Pavl/Oper  	both		far
 
 # stage_list = Stage_collection('.', 'NearFarLong')
 # stage_list.add_stage(level='lick&run', stage=0, corridors=[0], next_stage=[1], rule='pretrain', condition='either', name='pretrain')
@@ -259,7 +266,7 @@ class Stage_collection:
 # stage_list.add_stage(level='lick_zone', stage=1, corridors=[1,2,3,4,5,6,7,8,9,10,11], next_stage=[2], rule='Pavlovian', condition='either', name='9 -> 1 lick zone', substages=[0,1,1,1,2,2,2,3,3,3,4])
 # stage_list.add_stage(level='diff_1', stage=2, corridors=[12, 13, 14, 15], next_stage=[3], rule='Pavlovian', condition='both', name='near-far', substages=[0,0,1,1])
 # stage_list.add_stage(level='diff_2', stage=3, corridors=[14,15,17], next_stage=[3], rule='Pavlovian', condition='both', name='near-far+new', substages=[0,0,1])
-# stage_list.add_stage(level='diff_2', stage=3, corridors=[14,15,16,18], next_stage=[4], rule='Pavlovian', condition='both', name='near-far-blocks', substages=[0,0,1,2])
+# stage_list.add_stage(level='diff_3', stage=4, corridors=[14,15,16,18], next_stage=[4], rule='Pavlovian', condition='both', name='near-far-blocks', substages=[0,0,1,2])
 
 # stage_list.print_table()
 
