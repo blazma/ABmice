@@ -202,6 +202,8 @@ class ImagingSessionData:
         #   but the corridor will not 
         #   we also do NOT include corridor 0 here
         if (self.N_all_corridors > 1):
+            # print('i laps with imaging data:', self.i_Laps_ImData)
+            # print('i of corridors: ', self.i_corridors)
             corridors, N_laps_corr = np.unique(self.i_corridors[self.i_Laps_ImData], return_counts=True)
             self.corridors = corridors[np.flatnonzero(N_laps_corr >= self.minimum_Nlaps)]
             self.N_corridors = len(self.corridors)
@@ -2408,8 +2410,6 @@ class Lap_ImData:
         plt.show(block=False)       
 
 
-
-
 class anticipatory_Licks:
     'simple class for containing anticipatory licking data'
     def __init__(self, baseline_rate, anti_rate, corridor):
@@ -2426,10 +2426,13 @@ class anticipatory_Licks:
         else:
             greater = False
         self.corridor = int(corridor)
-        self.test = scipy.stats.wilcoxon(self.baseline, self.anti_rate)
         self.anti = False
-        if ((self.test[1] < 0.01 ) & (greater == True)):
-            self.anti = True
+        if (self.m_anti > 0):
+            self.test = scipy.stats.wilcoxon(self.baseline, self.anti_rate)
+            if ((self.test[1] < 0.01 ) & (greater == True)):
+                self.anti = True
+        else:
+            self.test = [np.nan, 1]
 
 
 def HolmBonfMat(P_mat, p_val):
