@@ -154,7 +154,9 @@ class ImagingSessionData:
             print('suite2p data loaded')               
 
             self.frame_times = np.nan # labview coordinates
-            self.LoadImaging_times(self.imstart_time)
+            imtimes_success = self.LoadImaging_times(self.imstart_time)
+            if (imtimes_success == False):
+                return 
             self.frame_pos = np.zeros(len(self.frame_times)) # position and 
             self.frame_laps = np.zeros(len(self.frame_times)) # lap number for the imaging frames, to be filled later
             print('suite2p time axis loaded')       
@@ -363,14 +365,20 @@ class ImagingSessionData:
         for i in range(len(frames)):
             self.frame_times[i] = float(frames[i].attributes['relativeTime'].value) + corrected_offset
         if (len(self.frame_times) != self.F_all.shape[1]):
-            print('Warning: imaging frame number does not match suite2p frame number! Something is wrong!')
-            N_frames = min([len(self.frame_times), self.F_all.shape[1]])
-            if (len(self.frame_times) < self.F_all.shape[1]):
-                self.F_all = self.F_all[:, 1:N_frames]
-                self.spks_all = self.spks_all[:, 1:N_frames]
-                # self.Fneu = self.Fneu[:, 1:N_frames]
-            else:
-                self.frame_times = self.frame_times[0:N_frames]   
+            print('ERROR: imaging frame number does not match suite2p frame number! Something is wrong!')
+            print('shape of the dF array:', self.F_all.shape)
+            print('shape of spikes array:', self.spks_all.shape[1])
+            print('suite2p frame number:', self.F_all.shape[1])
+            print('imaging frame number:', len(self.frame_times))
+            raise ValueError('ERROR: imaging frame number does not match suite2p frame number! Something is wrong!')
+
+            # N_frames = min([len(self.frame_times), self.F_all.shape[1]])
+            # if (len(self.frame_times) < self.F_all.shape[1]):
+            #     self.F_all = self.F_all[:, 0:N_frames]
+            #     self.spks_all = self.spks_all[:, 0:N_frames]
+            #     # self.Fneu = self.Fneu[:, 0:N_frames]
+            # else:
+            #     self.frame_times = self.frame_times[0:N_frames]   
 
     def LoadExpLog(self, exp_log_file_string): # BBU: just reads the raw data, no separation into laps
         position=[]
@@ -570,6 +578,10 @@ class ImagingSessionData:
         F = interp1d(laptime, maze) 
         self.frame_maze = F(self.frame_times) 
 
+        print ('length of frame_times:', len(self.frame_times))
+        print ('length of frame_laps:', len(self.frame_laps))
+        print ('shape of dF_F:', np.shape(self.dF_F))
+
         self.all_corridor_start_time = []
         self.all_corridor_start_IDs = []
         ## frame_laps is NOT integer for frames between laps
@@ -662,11 +674,13 @@ class ImagingSessionData:
                     add_lap = False
 
                 ### imaging data    
-                iframes = np.where(self.frame_laps == i_lap)[0]
+                iframes = np.flatnonzero(self.frame_laps == i_lap)
+
                 # print('In lap ', self.n_laps, ' we have ', len(t_lap), 'datapoints and ', len(iframes), 'frames')
 
                 if ((len(iframes) > self.N_pos_bins) & (add_lap == True)): # there is imaging data belonging to this lap...
                     # print('frames:', min(iframes), max(iframes))
+                    print('max of iframes:', max(iframes))
                     lap_frames_dF_F = self.dF_F[:,iframes]
                     lap_frames_spikes = self.spks[:,iframes]
                     lap_frames_time = self.frame_times[iframes]
