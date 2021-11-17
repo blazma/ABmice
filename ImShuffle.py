@@ -71,7 +71,7 @@ class ImShuffle:
             self.corridor_list = pickle.load(input_file, encoding='latin1')
         input_file.close()
 
-        self.all_corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])# we always add corridor 0 - that is the grey zone
+        self.all_corridors_raw = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])# we always add corridor 0 - that is the grey zone
 
         ## in certain tasks, the same corridor may appear multiple times in different substages
         ## Labview uses different indexes for corridors in different substages, therefore 
@@ -80,7 +80,7 @@ class ImShuffle:
 
         self.last_zone_start = 0
         self.last_zone_end = 0
-        for i_corridor in self.all_corridors:
+        for i_corridor in self.all_corridors_raw:
             if (i_corridor > 0):
                 if (max(self.corridor_list.corridors[i_corridor].reward_zone_starts) > self.last_zone_start):
                     self.last_zone_start = max(self.corridor_list.corridors[i_corridor].reward_zone_starts)
@@ -88,7 +88,7 @@ class ImShuffle:
                     self.last_zone_end = max(self.corridor_list.corridors[i_corridor].reward_zone_ends)
 
         self.speed_factor = 106.5 / 3500.0 ## constant to convert distance from pixel to cm
-        self.corridor_length_roxel = (self.corridor_list.corridors[self.all_corridors[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
+        self.corridor_length_roxel = (self.corridor_list.corridors[self.all_corridors_raw[1]].length - 1024.0) / (7168.0 - 1024.0) * 3500
         self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
         self.N_pos_bins = int(np.round(self.corridor_length_roxel / 70))
 
@@ -215,7 +215,7 @@ class ImShuffle:
             ## in certain tasks, the same corridor may appear multiple times in different substages
             ## we need to keep this corridor in the list self.all_corridors for running self.get_lapdata()
             ## but we should remove the redundancy after the data is loaded
-            self.all_corridors = np.unique(self.all_corridors)
+            self.all_corridors = np.unique(self.all_corridors_raw)
             self.N_all_corridors = len(self.all_corridors)
 
             ## only analyse corridors with at least 3 laps 
@@ -377,7 +377,7 @@ class ImShuffle:
 
             maze_lap = np.unique(maze[y])
             if (len(maze_lap) == 1):
-                corridor = self.all_corridors[int(maze_lap)] # the maze_lap is the index of the available corridors in the given stage
+                corridor = self.all_corridors_raw[int(maze_lap)] # the maze_lap is the index of the available corridors in the given stage
             else:
                 corridor = -1
 
