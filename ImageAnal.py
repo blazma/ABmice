@@ -187,6 +187,7 @@ class ImagingSessionData:
         if (self.n_laps == -1):
             print('Error: missing laps are found in the ExpStateMachineLog file! No analysis was performed, check the logfiles!')
             return
+        print('laps with im data: ', self.i_Laps_ImData)
 
         if not elfiz:
             frame_time_lap_maze_pos = np.array((self.frame_times, self.frame_laps, self.frame_maze, self.frame_pos))
@@ -566,7 +567,6 @@ class ImagingSessionData:
         lick = np.array(lick_array)
         maze = np.array(maze_array)
         mode = np.array(mode_array)
-        N_0lap = 0 # Counting the non-valid laps
 
         #################################################
         ## add position, and lap info into the imaging frames
@@ -592,18 +592,11 @@ class ImagingSessionData:
         i_ImData = [] # index of laps with imaging data
         i_corrids = [] # ID of corridor for the current lap
 
-        ### include only a subset of laps
-        if selected_laps is None:
-            all_laps_set = np.unique(lap)
-            # print('we select all laps', all_laps_set)
-        else:
-            all_laps_set = np.intersect1d(np.unique(lap), selected_laps)
-            # print('sel of selected all laps', all_laps_set)
+        self.n_laps = 0 # counting only the laps loaded for analysis
+        lap_count = 0 # counting all laps except grey zone
+        N_0lap = 0 # counting the non-valid laps
 
-        self.n_laps = 0
-
-
-        for i_lap in all_laps_set: 
+        for i_lap in np.unique(lap): 
             y = np.flatnonzero(lap == i_lap) # index for the current lap
 
             mode_lap = np.prod(mode[y]) # 1 if all elements are recorded in 'Go' mode
@@ -625,79 +618,95 @@ class ImagingSessionData:
                 print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in lap ', self.n_laps)
                 corridor = -3
             
+            # print('processing corridor', corridor, 'in lap', i_lap)
+
             t_lap = laptime[y]
             self.all_corridor_start_time.append(min(t_lap))          
             self.all_corridor_start_IDs.append(int(corridor))
             
             if (corridor > 0):    
-                i_corrids.append(corridor) # list with the index of corridors in each run
-                pos_lap = pos[y]
-
-                lick_lap = lick[y] ## vector of Trues and Falses
-                t_licks = t_lap[lick_lap] # time of licks
-
-                if (sstage_lap != current_sstage):
-                    print('############################################################')
-                    print('substage change detected!')
-                    print('first lap in substage ', sstage_lap, 'is lap', self.n_laps, ', which started at t', t_lap[0])
-                    print('the time of the change in imaging time is: ', t_lap[0] - self.imstart_time)
-                    print('############################################################')
-                    current_sstage = sstage_lap
-
-                istart = np.min(y) # action is not a np.array, array indexing does not work
-                iend = np.max(y) + 1
-                action_lap = action[istart:iend]
-    
-                reward_indices = [j for j, x in enumerate(action_lap) if x == "TrialReward"]
-                t_reward = t_lap[reward_indices]
-
-                ## detecting invalid laps - terminated before the animal could receive reward
-                valid_lap = False
-                if (len(t_reward) > 0): # lap is valid if the animal got reward
-                    valid_lap = True
-                    # print('rewarded lap', self.n_laps)
-                if (max(pos_lap) > (self.corridor_length_roxel * self.last_zone_end)): # # lap is valid if the animal left the last reward zone
-                    valid_lap = True
-                    # print('valid lap', self.n_laps)
-                if (valid_lap == False):
-                    mode_lap = 0
-                    # print('invalid lap', self.n_laps)
-
-                actions = []
-                for j in range(len(action_lap)):
-                    if not((action_lap[j]) in ['No', 'TrialReward']):
-                        actions.append([t_lap[j], action_lap[j]])
-
-                ## include only valid laps
-                add_lap = True
-                if (mode_lap == 0):
-                    add_lap = False
-
-                ### imaging data    
-                iframes = np.flatnonzero(self.frame_laps == i_lap)
-
-                # print('In lap ', self.n_laps, ' we have ', len(t_lap), 'datapoints and ', len(iframes), 'frames')
-
-                if ((len(iframes) > self.N_pos_bins) & (add_lap == True)): # there is imaging data belonging to this lap...
-                    # print('frames:', min(iframes), max(iframes))
-                    print('max of iframes:', max(iframes))
-                    lap_frames_dF_F = self.dF_F[:,iframes]
-                    lap_frames_spikes = self.spks[:,iframes]
-                    lap_frames_time = self.frame_times[iframes]
-                    lap_frames_pos = self.frame_pos[iframes]
-                    i_ImData.append(self.n_laps)
+                # if we select laps, then we check lap ID:
+                if (selected_laps is None):
+                    add_lap = True 
                 else:
-                    lap_frames_dF_F = np.nan
-                    lap_frames_spikes = np.nan
-                    lap_frames_time = np.nan
-                    lap_frames_pos = np.nan 
-                    
-                self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold, elfiz=self.elfiz))
-                self.n_laps = self.n_laps + 1
-                # print(self.n_laps)
+                    if (np.isin(lap_count, selected_laps)):
+                        add_lap = True 
+                    else:
+                        add_lap = False
+
+                if (add_lap):        
+                    i_corrids.append(corridor) # list with the index of corridors in each run
+                    pos_lap = pos[y]
+
+                    lick_lap = lick[y] ## vector of Trues and Falses
+                    t_licks = t_lap[lick_lap] # time of licks
+
+                    if (sstage_lap != current_sstage):
+                        print('############################################################')
+                        print('substage change detected!')
+                        print('first lap in substage ', sstage_lap, 'is lap', self.n_laps, ', which started at t', t_lap[0])
+                        print('the time of the change in imaging time is: ', t_lap[0] - self.imstart_time)
+                        print('############################################################')
+                        current_sstage = sstage_lap
+
+                    istart = np.min(y) # action is not a np.array, array indexing does not work
+                    iend = np.max(y) + 1
+                    action_lap = action[istart:iend]
+        
+                    reward_indices = [j for j, x in enumerate(action_lap) if x == "TrialReward"]
+                    t_reward = t_lap[reward_indices]
+
+                    ## detecting invalid laps - terminated before the animal could receive reward
+                    valid_lap = False
+                    if (len(t_reward) > 0): # lap is valid if the animal got reward
+                        valid_lap = True
+                        # print('rewarded lap', self.n_laps)
+                    if (max(pos_lap) > (self.corridor_length_roxel * self.last_zone_end)): # # lap is valid if the animal left the last reward zone
+                        valid_lap = True
+                        # print('valid lap', self.n_laps)
+                    if (valid_lap == False):
+                        mode_lap = 0
+                        # print('invalid lap', self.n_laps)
+
+                    actions = []
+                    for j in range(len(action_lap)):
+                        if not((action_lap[j]) in ['No', 'TrialReward']):
+                            actions.append([t_lap[j], action_lap[j]])
+
+                    ## include only valid laps
+                    add_ImLap = True
+                    if (mode_lap == 0):
+                        add_ImLap = False
+                        print('lap mode = 0')
+
+                    ### imaging data    
+                    iframes = np.flatnonzero(self.frame_laps == i_lap)
+
+                    # print('In lap ', self.n_laps, ' we have ', len(t_lap), 'datapoints and ', len(iframes), 'frames')
+
+                    if ((len(iframes) > self.N_pos_bins) & (add_ImLap == True)): # there is imaging data belonging to this lap...
+                        # print('frames:', min(iframes), max(iframes))
+                        # print('max of iframes:', max(iframes))
+                        lap_frames_dF_F = self.dF_F[:,iframes]
+                        lap_frames_spikes = self.spks[:,iframes]
+                        lap_frames_time = self.frame_times[iframes]
+                        lap_frames_pos = self.frame_pos[iframes]
+                        i_ImData.append(self.n_laps)
+                    else:
+                        lap_frames_dF_F = np.nan
+                        lap_frames_spikes = np.nan
+                        lap_frames_time = np.nan
+                        lap_frames_pos = np.nan 
+                        
+                    self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold, elfiz=self.elfiz))
+                    self.n_laps = self.n_laps + 1
+                    lap_count = lap_count + 1
+                else :
+                    print('lap ', lap_count, ' skipped.')
+                    lap_count = lap_count + 1
+                    # print(self.n_laps)
             else:
                 N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anything with this...
-
 
         self.i_Laps_ImData = np.array(i_ImData) # index of laps with imaging data
         self.i_corridors = np.array(i_corrids) # ID of corridor for the current lap
