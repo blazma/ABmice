@@ -353,7 +353,6 @@ class ImShuffle:
         lick = np.array(lick_array)
         maze = np.array(maze_array)
         mode = np.array(mode_array)
-        N_0lap = 0 # Counting the non-valid laps
 
         #################################################
         ## position, and lap info has been already added to the imaging frames
@@ -361,16 +360,12 @@ class ImShuffle:
         i_ImData = [] # index of laps with imaging data
         i_corrids = [] # ID of corridor for the current lap
 
-        ### include only a subset of laps
-        if selected_laps is None:
-            all_laps_set = np.unique(lap)
-        else:
-            all_laps_set = np.intersect1d(np.unique(lap), selected_laps)
-
-        self.n_laps = 0
+        self.n_laps = 0 # counting only the laps loaded for analysis
+        lap_count = 0 # counting all laps except grey zone
+        N_0lap = 0 # counting the non-valid laps
 
 
-        for i_lap in all_laps_set:
+        for i_lap in np.unique(lap):
             y = np.flatnonzero(lap == i_lap) # index for the current lap
 
             mode_lap = np.prod(mode[y]) # 1 if all elements are recorded in 'Go' mode
@@ -391,64 +386,77 @@ class ImShuffle:
                 corridor = -3
 
             if (corridor > 0):
-                i_corrids.append(corridor) # list with the index of corridors in each run
-                t_lap = laptime[y]
-                pos_lap = pos[y]
-    
-                lick_lap = lick[y] ## vector of Trues and Falses
-                t_licks = t_lap[lick_lap] # time of licks
-    
-                istart = np.min(y)
-                iend = np.max(y) + 1
-                action_lap = action[istart:iend]
-    
-                reward_indices = [j for j, x in enumerate(action_lap) if x == "TrialReward"]
-                t_reward = t_lap[reward_indices]
-    
-                ## detecting invalid laps - terminated before the animal could receive reward
-                valid_lap = False
-                if (len(t_reward) > 0): # lap is valid if the animal got reward
-                    valid_lap = True
-                if (max(pos_lap) > (self.corridor_length_roxel * self.last_zone_end)): # # lap is valid if the animal left the last reward zone
-                    valid_lap = True
-                if (valid_lap == False):
-                    mode_lap = 0
-
-                actions = []
-                for j in range(len(action_lap)):
-                    if not((action_lap[j]) in ['No', 'TrialReward']):
-                        actions.append([t_lap[j], action_lap[j]])
-
-                ### include only a subset of laps
-                add_lap = True
-                if (mode_lap == 0):
-                    add_lap = False
-
-                ### imaging data    
-                iframes = np.where(self.frame_laps == i_lap)[0]
-                # print(self.n_laps, len(iframes), i_lap)
-
-                if ((len(iframes) > self.N_pos_bins) & (add_lap == True)): # there is imaging data belonging to this lap...
-                    # print('imaging data found', min(iframes), max(iframes))
-                    lap_frames_spikes = self.shuffle_spikes[:,iframes,:]
-                    lap_frames_time = self.frame_times[iframes]
-                    lap_frames_pos = self.frame_pos[iframes]
-                    i_ImData.append(self.n_laps)
+                # if we select laps, then we check lap ID:
+                if (selected_laps is None):
+                    add_lap = True 
                 else:
-                    # print('no imaging data found in lap', self.n_laps)
-                    lap_frames_spikes = np.nan
-                    lap_frames_time = np.nan
-                    lap_frames_pos = np.nan 
-                    
-                # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
-                self.shuffle_ImLaps.append(Shuffle_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold, elfiz=self.elfiz, dt_imaging=self.dt_imaging))
-                self.n_laps = self.n_laps + 1
+                    if (np.isin(lap_count, selected_laps)):
+                        add_lap = True 
+                    else:
+                        add_lap = False
+
+                if (add_lap):        
+                    i_corrids.append(corridor) # list with the index of corridors in each run
+                    t_lap = laptime[y]
+                    pos_lap = pos[y]
+        
+                    lick_lap = lick[y] ## vector of Trues and Falses
+                    t_licks = t_lap[lick_lap] # time of licks
+        
+                    istart = np.min(y)
+                    iend = np.max(y) + 1
+                    action_lap = action[istart:iend]
+        
+                    reward_indices = [j for j, x in enumerate(action_lap) if x == "TrialReward"]
+                    t_reward = t_lap[reward_indices]
+        
+                    ## detecting invalid laps - terminated before the animal could receive reward
+                    valid_lap = False
+                    if (len(t_reward) > 0): # lap is valid if the animal got reward
+                        valid_lap = True
+                    if (max(pos_lap) > (self.corridor_length_roxel * self.last_zone_end)): # # lap is valid if the animal left the last reward zone
+                        valid_lap = True
+                    if (valid_lap == False):
+                        mode_lap = 0
+
+                    actions = []
+                    for j in range(len(action_lap)):
+                        if not((action_lap[j]) in ['No', 'TrialReward']):
+                            actions.append([t_lap[j], action_lap[j]])
+
+                    ### include only a subset of laps
+                    add_lap = True
+                    if (mode_lap == 0):
+                        add_lap = False
+
+                    ### imaging data    
+                    iframes = np.where(self.frame_laps == i_lap)[0]
+                    # print(self.n_laps, len(iframes), i_lap)
+
+                    if ((len(iframes) > self.N_pos_bins) & (add_lap == True)): # there is imaging data belonging to this lap...
+                        # print('imaging data found', min(iframes), max(iframes))
+                        lap_frames_spikes = self.shuffle_spikes[:,iframes,:]
+                        lap_frames_time = self.frame_times[iframes]
+                        lap_frames_pos = self.frame_pos[iframes]
+                        i_ImData.append(self.n_laps)
+                    else:
+                        # print('no imaging data found in lap', self.n_laps)
+                        lap_frames_spikes = np.nan
+                        lap_frames_time = np.nan
+                        lap_frames_pos = np.nan 
+                        
+                    # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
+                    self.shuffle_ImLaps.append(Shuffle_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold, elfiz=self.elfiz, dt_imaging=self.dt_imaging))
+                    self.n_laps = self.n_laps + 1
+                    lap_count = lap_count + 1                    
+                else:
+                    # print('lap ', lap_count, ' skipped.')
+                    lap_count = lap_count + 1
             else:
                 N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anythin with this...
 
         self.i_Laps_ImData = np.array(i_ImData) # index of laps with imaging data
         self.i_corridors = np.array(i_corrids) # ID of corridor for the current lap
-        # self.cell_activity = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials
 
     def combine_lapdata_shuffle(self): ## fills in the cell_activity tensor
         # self.raw_activity_tensor = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
