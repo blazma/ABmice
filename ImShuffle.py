@@ -37,7 +37,7 @@ def breakpoints(Nframes, Lmin=500, Nbreak=5):
 
 class ImShuffle:
     'Base structure for shuffling analysis of imaging data'
-    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False, min_Nlaps=5):
+    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None, selected_laps=None, speed_threshold=5, randseed=476, elfiz=False, min_Nlaps=5):
         ###########################################
         ## setting basic parameters for the session
         ###########################################
@@ -167,6 +167,10 @@ class ImShuffle:
             i_end = i_end + 1
         i_minibatch = 0
 
+        rngP = np.random.default_rng(self.randseed)
+        rngI = np.random.default_rng(self.randseed+1)
+        rngS = np.random.default_rng(self.randseed+2)
+
         while (i_start < self.N_cells):
             batchsize = i_end - i_start # the last cycle in the loop will have a different size...
             batch_ids = np.arange(i_start, i_end)
@@ -181,14 +185,14 @@ class ImShuffle:
                     ## we break up the array into 6 pieces of at least 500 frames, permuting them and circularly shifting by at least 500 frames
                     Nbreak = 5
                     sections = breakpoints(Nframes=self.N_frames, Lmin=500, Nbreak=Nbreak)
-                    order = np.random.permutation(Nbreak + 1)
+                    order = rngP.permutation(Nbreak + 1)
                     k = 0
                     for j in range(Nbreak+1):
                         i_section = order[j]
                         spks[:,k:(k+int(sections[1,i_section]))] = self.raw_spikes[batch_ids,int(sections[0,i_section]):int(sections[0,i_section]+sections[1,i_section])]
                         k = k + int(sections[1,i_section])
 
-                    n_roll = np.random.randint((self.N_frames - 1000)) + 500
+                    n_roll = rngI.integers((self.N_frames - 1000)) + 500
                     spks_rolled = np.roll(spks, n_roll, axis=1)
                     self.shuffle_spikes[:,:,i_shuffle] = spks_rolled
             else:
@@ -197,7 +201,7 @@ class ImShuffle:
                 for i_shuffle in range(self.N_shuffle):
                     spks = np.copy(self.raw_spikes[batch_ids,:])
                     spks = np.moveaxis(spks, 1, 0)
-                    np.random.shuffle(spks)
+                    rngS.shuffle(spks)
                     spks = np.moveaxis(spks, 1, 0)
                     self.shuffle_spikes[:,:,i_shuffle] = spks
 

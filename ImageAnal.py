@@ -58,6 +58,8 @@ class ImagingSessionData:
         self.speed_threshold = speed_threshold
         self.elfiz = elfiz
         self.minimum_Nlaps = 5
+        self.substage_change_laps = [0]
+        self.substage_change_time = [0]
 
         stagefilename = self.datapath + self.task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
@@ -215,13 +217,13 @@ class ImagingSessionData:
             self.N_corridors = len(self.corridors)
 
         self.N_ImLaps = len(self.i_Laps_ImData)
-        print('number of laps with imaging data:', self.N_ImLaps)
+        # print('number of laps with imaging data:', self.N_ImLaps)
         self.raw_activity_tensor = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # a tensor with space x neurons x trials containing the spikes
         self.raw_activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # a tensor with space x trials containing the time spent at each location in each lap
         self.activity_tensor = np.zeros((self.N_pos_bins, self.N_cells, self.N_ImLaps)) # same as the activity tensor spatially smoothed
         self.activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # same as the activity tensor time spatially smoothed
-        print('laps with image data:')
-        print(self.i_Laps_ImData)
+        # print('laps with image data:')
+        # print(self.i_Laps_ImData)
         self.combine_lapdata() ## fills in the cell_activity tensor
 
         self.cell_activelaps=[] # a list, each element is a vector with the % of significantly spiking laps of the cells in a corridor
@@ -611,11 +613,11 @@ class ImagingSessionData:
             sstage_lap = np.unique(sstage[y])
             
             if (len(sstage_lap) > 1):
-                print('More than one substage in lap ', self.n_laps)
+                print('More than one substage in a lap before lap ', self.n_laps)
                 corridor = -2
 
             if (sum(y) < self.N_pos_bins):
-                print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in lap ', self.n_laps)
+                print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in a lap before lap', self.n_laps)
                 corridor = -3
             
             # print('processing corridor', corridor, 'in lap', i_lap)
@@ -648,6 +650,9 @@ class ImagingSessionData:
                         print('the time of the change in imaging time is: ', t_lap[0] - self.imstart_time)
                         print('############################################################')
                         current_sstage = sstage_lap
+                        self.substage_change_laps.append(self.n_laps)
+                        self.substage_change_time.append(t_lap[0] - self.imstart_time)
+
 
                     istart = np.min(y) # action is not a np.array, array indexing does not work
                     iend = np.max(y) + 1
@@ -702,7 +707,7 @@ class ImagingSessionData:
                     self.n_laps = self.n_laps + 1
                     lap_count = lap_count + 1
                 else :
-                    print('lap ', lap_count, ' skipped.')
+                    # print('lap ', lap_count, ' skipped.')
                     lap_count = lap_count + 1
                     # print(self.n_laps)
             else:
@@ -1805,7 +1810,7 @@ class ImagingSessionData:
         plt.show(block=False)
 
 
-    def plot_session(self, selected_laps=None):
+    def plot_session(self, selected_laps=None, average=True):
         ## plot the behavioral data during one session. 
             # - speed
             # - lick rate
@@ -1823,12 +1828,18 @@ class ImagingSessionData:
             nrow = len(corridor_types)
             nbins = len(self.ImLaps[0].bincenters)
             cmap = plt.cm.get_cmap('jet')   
-
             rowHeight = 2
             if (nrow > 4):
                 rowHeight = 1.5
-            fig, axs = plt.subplots(nrows=nrow, ncols=1, figsize=(8,rowHeight*nrow), squeeze=False)
             # plt.figure(figsize=(5,2*nrow))
+
+            if (average):
+                reward_zone_color = 'green'
+                fig, axs = plt.subplots(nrows=nrow, ncols=1, figsize=(8,rowHeight*nrow), squeeze=False)
+            else:
+                reward_zone_color = 'fuchsia'
+                fig, axs = plt.subplots(nrows=nrow, ncols=1, figsize=(8,rowHeight*nrow*3), squeeze=False)
+
             speed_color = cmap(30)
             speed_color_trial = (speed_color[0], speed_color[1], speed_color[2], (0.05))
 
@@ -1855,7 +1866,8 @@ class ImagingSessionData:
                     i_lap = 0
                     for lap in ids:
                         if (self.ImLaps[lap].mode == 1): # only use the lap if it was a valid lap
-                            axs[row,0].step(self.ImLaps[lap].bincenters, self.ImLaps[lap].ave_speed, where='mid', c=speed_color_trial)
+                            if (average):
+                                axs[row,0].step(self.ImLaps[lap].bincenters, self.ImLaps[lap].ave_speed, where='mid', c=speed_color_trial)
                             speed_matrix[i_lap,:] =  np.round(self.ImLaps[lap].ave_speed, 2)
                             nans_lap = np.isnan(self.ImLaps[lap].ave_speed)
                             avespeed = nan_add(avespeed, self.ImLaps[lap].ave_speed)
@@ -1868,8 +1880,12 @@ class ImagingSessionData:
                     P_correct = np.round(np.float(n_correct) / np.float(n_valid), 3)
 
                     avespeed = nan_divide(avespeed, n_lap_bins, n_lap_bins > 0)
-                    axs[row,0].step(self.ImLaps[lap].bincenters, avespeed, where='mid', c=speed_color)
-                    axs[row,0].set_ylim([-1,1.2*maxspeed])
+                    if (average):
+                        axs[row,0].step(self.ImLaps[lap].bincenters, avespeed, where='mid', c=speed_color)
+                        axs[row,0].set_ylim([-1,1.2*maxspeed])
+                    else:
+                        im = axs[row,0].imshow(speed_matrix, cmap='viridis', aspect='auto', vmin=0, vmax=maxspeed, extent=(0, self.corridor_length_roxel, 0, n_valid), origin='lower')
+                        plt.colorbar(im, orientation='vertical',ax=axs[row, 0])
 
                     if (row == 0):
                         if (self.sessionID >= 0):
@@ -1887,15 +1903,21 @@ class ImagingSessionData:
                         left = self.ImLaps[lap].zones[0,0] * self.corridor_length_roxel
                         right = self.ImLaps[lap].zones[1,0] * self.corridor_length_roxel
 
-                        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-                        axs[row,0].add_patch(polygon)
+                        if (average):
+                            polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color=reward_zone_color, alpha=0.15)
+                            axs[row,0].add_patch(polygon)
+                        else :
+                            axs[row,0].vlines((left, right), ymin=bottom, ymax=top, colors=reward_zone_color, lw=3)
                         n_zones = np.shape(self.ImLaps[lap].zones)[1]
                         if (n_zones > 1):
                             for i in range(1, np.shape(self.ImLaps[lap].zones)[1]):
                                 left = self.ImLaps[lap].zones[0,i] * self.corridor_length_roxel
                                 right = self.ImLaps[lap].zones[1,i] * self.corridor_length_roxel
-                                polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-                                axs[row,0].add_patch(polygon)
+                                if (average):
+                                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color=reward_zone_color, alpha=0.15)
+                                    axs[row,0].add_patch(polygon)
+                                else :
+                                    axs[row,0].vlines((left, right), ymin=bottom, ymax=top, colors=reward_zone_color, lw=3)
                         else: # we look for anticipatory licking tests
                             P_statement = ', anticipatory P value not tested'
                             for k in range(len(self.anticipatory)):
@@ -1908,17 +1930,34 @@ class ImagingSessionData:
 
                     ########################################
                     ## lick
-                    ax2 = axs[row,0].twinx()
+                    if (average):
+                        ax2 = axs[row,0].twinx()
                     n_lap_bins = np.zeros(nbins) # number of laps in a given bin (data might be NAN for some laps)
                     maxrate = 10
                     avelick = np.zeros(nbins)
 
                     lick_matrix = np.zeros((len(ids), nbins))
                     i_lap = 0
+                    i_sstage = 0
+                    if (len(self.substage_change_laps) > 1): # we have substage switch
+                        # the substage of the first lap: 
+                        # which is the largast switch before the fist lap?
+                        i_sstage = max(np.flatnonzero(self.substage_change_laps <= ids[0])) + 1
+
 
                     for lap in ids:
                         if (self.ImLaps[lap].mode == 1): # only use the lap if it was a valid lap
-                            ax2.step(self.ImLaps[lap].bincenters, self.ImLaps[lap].lick_rate, where='mid', c=lick_color_trial, linewidth=1)
+                            if (average): 
+                                ax2.step(self.ImLaps[lap].bincenters, self.ImLaps[lap].lick_rate, where='mid', c=lick_color_trial, linewidth=1)
+                            else:
+                                if (len(self.ImLaps[lap].reward_times) > 0):
+                                    axs[row,0].plot(self.ImLaps[lap].reward_position, np.ones(len(self.ImLaps[lap].reward_position)) * i_lap + 0.5, 'o', ms=4, color='deepskyblue')
+                                if (len(self.ImLaps[lap].lick_times) > 0):
+                                    axs[row,0].plot(self.ImLaps[lap].lick_position, np.ones(len(self.ImLaps[lap].lick_position)) * i_lap + 0.5, 'oC1', ms=1)
+                                    if (len(self.substage_change_laps) > i_sstage):
+                                        if (lap >= self.substage_change_laps[i_sstage]):
+                                            axs[row,0].hlines(i_lap, xmin=0, xmax=self.corridor_length_roxel, colors='crimson', lw=3)
+                                            i_sstage = i_sstage + 1
                             lick_matrix[i_lap,:] =  np.round(self.ImLaps[lap].lick_rate, 2)
                             nans_lap = np.isnan(self.ImLaps[lap].lick_rate)
                             avelick = nan_add(avelick, self.ImLaps[lap].lick_rate)
@@ -1928,20 +1967,28 @@ class ImagingSessionData:
                     maxrate = min(maxrate, 20)
 
                     avelick = nan_divide(avelick, n_lap_bins, n_lap_bins > 0)
-                    ax2.step(self.ImLaps[lap].bincenters, avelick, where='mid', c=lick_color)
-                    ax2.set_ylim([-1,1.2*maxrate])
+                    if (average):
+                        ax2.step(self.ImLaps[lap].bincenters, avelick, where='mid', c=lick_color)
+                        ax2.set_ylim([-1,1.2*maxrate])
 
 
                     if (row==(nrow-1)):
-                        axs[row,0].set_ylabel('speed (cm/s)', color=speed_color)
-                        axs[row,0].tick_params(axis='y', labelcolor=speed_color)
-                        ax2.set_ylabel('lick rate (lick/s)', color=lick_color)
-                        ax2.tick_params(axis='y', labelcolor=lick_color)
+                        if (average): 
+                            axs[row,0].set_ylabel('speed (cm/s)', color=speed_color)
+                            axs[row,0].tick_params(axis='y', labelcolor=speed_color)
+                            ax2.set_ylabel('lick rate (lick/s)', color=lick_color)
+                            ax2.tick_params(axis='y', labelcolor=lick_color)
+                        else:
+                            axs[row,0].set_ylabel('laps')
                         axs[row,0].set_xlabel('position (roxel)')
                     else:
                         axs[row,0].set_xticklabels([])
-                        axs[row,0].tick_params(axis='y', labelcolor=speed_color)
-                        ax2.tick_params(axis='y', labelcolor=lick_color)
+                        if (average): 
+                            axs[row,0].tick_params(axis='y', labelcolor=speed_color)
+                            ax2.tick_params(axis='y', labelcolor=lick_color)
+                        else:
+                            axs[row,0].set_ylabel('laps')
+
 
             plt.show(block=False)
         else:
@@ -2180,6 +2227,20 @@ class Lap_ImData:
             Ntimes = int(round((end_time - start_time) / self.dt_imaging)) + 1
             self.frames_time = np.linspace(start_time, end_time, Ntimes)
             self.frames_pos = F(self.frames_time)
+        else:
+            self.n_cells = self.frames_dF_F.shape[0]
+
+        # if (max(self.frames_time) < self.raw_time.max() - self.dt_imaging): # imiging finished before end of lap...
+        #     ## we need to amend the frames_time, frames_pos and frames_spikes and frames_dF
+        #     start_time = max(self.frames_time) + self.dt_imaging
+        #     end_time = np.floor(self.raw_time.max()/self.dt_imaging)*self.dt_imaging
+        #     Ntimes = int(round((end_time - start_time) / self.dt_imaging)) + 1
+        #     new_frames_time = np.linspace(start_time, end_time, Ntimes)
+        #     L_new_frames = len(new_frames_time)
+        #     self.frames_pos = np.hstack((self.frames_pos, F(new_frames_time)))
+        #     self.frames_spikes = np.hstack((self.frames_spikes,  np.full((self.n_cells, L_new_frames), np.nan)))
+        #     self.frames_dF_F = np.hstack((self.frames_dF_F,  np.full((self.n_cells, L_new_frames), np.nan)))
+        #     self.frames_time = np.hstack((self.frames_time, new_frames_time))
 
         ## calculate the speed during the frames
         speed = np.diff(self.frames_pos) * self.speed_factor / self.dt_imaging # cm / s       
@@ -2224,7 +2285,6 @@ class Lap_ImData:
         ####################################################################
         ## calculate the cell activations (spike rate) as a function of position
         if (self.imaging_data == True):
-            self.n_cells = self.frames_dF_F.shape[0]
             self.spks_pos = np.zeros((self.n_cells, self.N_pos_bins)) # sum of spike counts measured at a given position
             self.event_rate = np.zeros((self.n_cells, self.N_pos_bins)) # spike rate 
 
@@ -2378,12 +2438,12 @@ class Lap_ImData:
         plt.show(block=False)       
 
 
-        colmap = plt.cm.get_cmap('jet')
-        colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
-        x = np.random.rand(4)
-        y = np.random.rand(4)
-        area = (np.abs(x/max(x))*30)**2
-        colors = 232
+        # colmap = plt.cm.get_cmap('jet')
+        # colnorm = matcols.Normalize(vmin=0, vmax=255, clip=False)
+        # x = np.random.rand(4)
+        # y = np.random.rand(4)
+        # area = (np.abs(x/max(x))*30)**2
+        # colors = 232
 
     def plot_txv(self):
         cmap = plt.cm.get_cmap('jet')   

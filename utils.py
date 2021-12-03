@@ -43,9 +43,11 @@ def nan_divide(a, b, where=True):
 
 def nan_add(a, b):
     'addition function that handles NANs by replacing them with zero - USE with CAUTION!'
-    a[np.isnan(a)] = 0
-    b[np.isnan(b)] = 0
-    x = np.array(a + b)
+    aa = a.copy()
+    bb = b.copy()
+    aa[np.isnan(aa)] = 0
+    bb[np.isnan(bb)] = 0
+    x = np.array(aa + bb)
     return x
 
 def pol2cart(rho, phi):
