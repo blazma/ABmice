@@ -141,6 +141,7 @@ class ImagingSessionData:
             self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
             self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
             self.calc_SD_SNR_elfiz()
+            self.alc_active_elfiz()
         else :
             F_string = self.suite2p_folder + 'F.npy'
             # Fneu_string = self.suite2p_folder + 'Fneu.npy'
@@ -174,6 +175,7 @@ class ImagingSessionData:
             self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
             self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
             self.calc_dF_F()
+            self.calc_active()
 
           
         ##################################################
@@ -426,6 +428,7 @@ class ImagingSessionData:
 
         self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
         self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
+        self.cell_baselines = np.zeros(self.N_cells) # a vector with the baseline F of the cells
 
         ## to calculate the SD and SNR, we need baseline periods with no spikes for at least 1 sec
         frame_rate = int(np.ceil(1/np.median(np.diff(self.frame_times))))
@@ -493,11 +496,13 @@ class ImagingSessionData:
             fall_ind = fall_index[long_index]
 
             sds = np.zeros(len(rise_ind))
+            bases = np.zeros(len(rise_ind))
             for k in range(len(rise_ind)):
                 i_start = fall_ind[k] + L_after_spike
                 i_end = rise_ind[k] - L_before_spike
                 sds[k] = np.sqrt(np.var(self.dF_F[i_cell,i_start:i_end]))
-
+                bases[k] = np.average(self.dF_F[i_cell,i_start:i_end])
+            self.cell_baselines[i_cell] = np.mean(bases)
             self.cell_SDs[i_cell] = np.mean(sds)
             self.cell_SNR[i_cell] = max(self.dF_F[i_cell,:]) / np.mean(sds)
             self.spks[i_cell,:] = self.spks[i_cell,:]# / baseline / self.cell_SDs[i_cell]
@@ -511,6 +516,44 @@ class ImagingSessionData:
         for i_cell in range(self.N_cells):
             self.cell_SDs[i_cell] = np.random.rand()
             self.cell_SNR[i_cell] = np.random.rand()
+	
+    def calc_active_elfiz(self):
+        self.active_cells=np.array([0])
+	
+    def calc_active(self, events_per_ten_m = 5, sd_times = 3, refract_seconds = 5):
+        #events_per_ten_m - we want at least this many events per 10 minutes to consider a cell active
+        #sd_times - events should be above this many times the baseline sd
+        #refract_seconds - refractoryness of event detection in seconds
+        
+        # creating the gaussian filter
+        sdfilt = 3
+        N = 10
+        sampling_time = 1
+        xfilt = np.arange(-N*sdfilt, N*sdfilt + sampling_time, sampling_time)
+        filt = np.exp(-(xfilt**2) / (2*(sdfilt**2)))
+        filt = filt/sum(filt)
+        
+        # calculating events
+        dt = np.median(np.diff(self.frame_times))
+        active_threshold = (self.frame_times[-1]-self.frame_times[0])/(10*60)*events_per_ten_m        
+        refractoriness = int(refract_seconds/dt) 
+        
+        n_events = np.zeros([self.N_cells])
+        
+        for i in range(self.N_cells):
+            temp = np.hstack([np.repeat(self.dF_F[i,0], N*sdfilt),self.dF_F[i,:], np.repeat(self.dF_F[i,-1], N*sdfilt)])
+            dF_F_s = np.convolve(temp, filt, mode = 'valid')
+            threshold=self.cell_baselines[i]+self.cell_SDs[i]*sd_times
+            rises = np.nonzero((dF_F_s[0:-1] < threshold) & (dF_F_s[1:]>= threshold))[0]
+            valid = np.ones_like(rises)
+            for j in range(rises.size-1):
+                if valid[j]:
+                    ind = np.nonzero((rises > rises[j]) & ((rises-rises[j]) < refractoriness))[0]
+                    valid[ind] = 0
+            n_events[i]=np.size(np.nonzero(valid==1)[0])
+        #return
+        self.active_cells = np.nonzero(n_events>active_threshold)[0]
+        self.N_events = np.array(n_events)
 
 
 
