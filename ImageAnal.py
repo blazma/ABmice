@@ -141,7 +141,7 @@ class ImagingSessionData:
             self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
             self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
             self.calc_SD_SNR_elfiz()
-            self.alc_active_elfiz()
+            self.calc_active_elfiz()
         else :
             F_string = self.suite2p_folder + 'F.npy'
             # Fneu_string = self.suite2p_folder + 'Fneu.npy'
@@ -539,12 +539,15 @@ class ImagingSessionData:
         refractoriness = int(refract_seconds/dt) 
         
         n_events = np.zeros([self.N_cells])
+        self.events=np.zeros(self.F.shape)
         
         for i in range(self.N_cells):
             temp = np.hstack([np.repeat(self.dF_F[i,0], N*sdfilt),self.dF_F[i,:], np.repeat(self.dF_F[i,-1], N*sdfilt)])
             dF_F_s = np.convolve(temp, filt, mode = 'valid')
             threshold=self.cell_baselines[i]+self.cell_SDs[i]*sd_times
             rises = np.nonzero((dF_F_s[0:-1] < threshold) & (dF_F_s[1:]>= threshold))[0]
+            
+            self.events[i,rises]=1 #here we do not take refractoriness into account
             valid = np.ones_like(rises)
             for j in range(rises.size-1):
                 if valid[j]:
@@ -739,14 +742,16 @@ class ImagingSessionData:
                         lap_frames_spikes = self.spks[:,iframes]
                         lap_frames_time = self.frame_times[iframes]
                         lap_frames_pos = self.frame_pos[iframes]
+                        lap_frames_events = self.events[:,iframes]
                         i_ImData.append(self.n_laps)
                     else:
                         lap_frames_dF_F = np.nan
                         lap_frames_spikes = np.nan
                         lap_frames_time = np.nan
                         lap_frames_pos = np.nan 
+                        lap_frames_events = np.nan
                         
-                    self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold, elfiz=self.elfiz))
+                    self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, lap_frames_events, speed_threshold=self.speed_threshold, elfiz=self.elfiz))
                     self.n_laps = self.n_laps + 1
                     lap_count = lap_count + 1
                 else :
@@ -787,7 +792,28 @@ class ImagingSessionData:
         self.activity_tensor = self.activity_tensor[:,:,i_valid_laps]
         self.activity_tensor_time = self.activity_tensor_time[:,i_valid_laps]
 
-
+    def speed_vs_activity(self):
+#        print('IMAGED LAPS',len(self.ImLaps))
+        plt.figure('events')
+        plt.xlabel('speed')
+        plt.ylabel('events')
+        plt.title('speed vs. events')
+        plt.figure('active cells')
+        plt.xlabel('speed')
+        plt.ylabel('active cells')
+        plt.title('speed vs. N active')
+        for i in range(len(self.ImLaps)):
+            if self.ImLaps[i].imaging_data==True:
+#                print(self.ImLaps[i].frames_dF_F.shape)
+                av_speed = np.average(self.ImLaps[i].frames_speed)
+                sum_events = np.sum(self.ImLaps[i].frames_events)
+                n_active_cells = np.nonzero(np.sum(self.ImLaps[i].frames_events, axis=1))[0].size
+                plt.figure('events')
+                plt.scatter(av_speed, sum_events)
+                plt.figure('active cells')
+                plt.scatter(av_speed, n_active_cells)
+        plt.show()
+        
     def calculate_properties(self, nSD=4):
         self.cell_reliability = []
         self.cell_Fano_factor = []
@@ -2181,7 +2207,7 @@ class ImagingSessionData:
 class Lap_ImData:
     'common base class for individual laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, printout=False, speed_threshold=5, elfiz=False, verbous=0):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, lap_frames_events, printout=False, speed_threshold=5, elfiz=False, verbous=0):
         if (verbous > 0):
             print('ImData initialised')
         begin_time = datetime.now()
@@ -2224,6 +2250,7 @@ class Lap_ImData:
         self.frames_spikes = lap_frames_spikes
         self.frames_pos = lap_frames_pos
         self.frames_time = lap_frames_time
+        self.frames_events = lap_frames_events
 
         self.n_cells = 1 # we still create the same np arrays even if there are no cells
         self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
