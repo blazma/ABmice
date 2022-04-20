@@ -119,6 +119,10 @@ class ImagingSessionData:
         ##################################################
         ## loading imaging data
         ##################################################
+        
+        self.even_odd_rate_calculated = False
+        self.start_end_rate_calculated = False
+        
         if (self.elfiz):
             F_string = self.suite2p_folder + 'Vm_' + self.imaging_logfile_name + '.npy'
             spks_string = self.suite2p_folder + 'spikes_' + self.imaging_logfile_name + '.npy'
@@ -175,8 +179,7 @@ class ImagingSessionData:
             self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
             self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
             self.calc_dF_F()
-            self.calc_active()
-
+            self.detect_events()
           
         ##################################################
         ## loading behavioral data
@@ -188,6 +191,7 @@ class ImagingSessionData:
         self.i_corridors = np.zeros(1) # np array with the index of corridors in each run
 
         self.get_lapdata(self.datapath, self.date_time, self.name, self.task, selected_laps=self.selected_laps) # collects all behavioral and imaging data and sort it into laps, storing each in a Lap_ImData object
+        self.calc_active()
         if (self.n_laps == -1):
             print('Error: missing laps are found in the ExpStateMachineLog file! No analysis was performed, check the logfiles!')
             return
@@ -525,6 +529,7 @@ class ImagingSessionData:
         #sd_times - events should be above this many times the baseline sd
         #refract_seconds - refractoryness of event detection in seconds
         
+        
         # creating the gaussian filter
         sdfilt = 3
         N = 10
@@ -535,7 +540,18 @@ class ImagingSessionData:
         
         # calculating events
         dt = np.median(np.diff(self.frame_times))
-        active_threshold = (self.frame_times[-1]-self.frame_times[0])/(10*60)*events_per_ten_m        
+        
+        #if not all laps are loaded we need to adjust the threshold accordingly!
+        #if all laps are used:
+        if self.selected_laps is None:
+            len_imaging = self.frame_times[-1]-self.frame_times[0]
+        #if not all laps are used:
+        else:
+            len_imaging = self.ImLaps[-1].raw_time[-1]-self.ImLaps[0].raw_time[0]
+            
+        active_threshold = len_imaging/(10*60)*events_per_ten_m 
+        
+        # print('active threshold: ', active_threshold)
         refractoriness = int(refract_seconds/dt) 
         
         n_events = np.zeros([self.N_cells])
@@ -557,8 +573,24 @@ class ImagingSessionData:
         #return
         self.active_cells = np.nonzero(n_events>active_threshold)[0]
         self.N_events = np.array(n_events)
-
-
+        
+    def detect_events(self,sd_times = 3):
+        #this function is redundant with the calc_active function in some parts. We need this in order to be able to pass events to individual laps
+        sdfilt = 3
+        N = 10
+        sampling_time = 1
+        xfilt = np.arange(-N*sdfilt, N*sdfilt + sampling_time, sampling_time)
+        filt = np.exp(-(xfilt**2) / (2*(sdfilt**2)))
+        filt = filt/sum(filt)
+        self.events=np.zeros(self.F.shape)
+        
+        for i in range(self.N_cells):
+            temp = np.hstack([np.repeat(self.dF_F[i,0], N*sdfilt),self.dF_F[i,:], np.repeat(self.dF_F[i,-1], N*sdfilt)])
+            dF_F_s = np.convolve(temp, filt, mode = 'valid')
+            threshold=self.cell_baselines[i]+self.cell_SDs[i]*sd_times
+            rises = np.nonzero((dF_F_s[0:-1] < threshold) & (dF_F_s[1:]>= threshold))[0]
+            
+            self.events[i,rises]=1 #here we do not take refractoriness into account
 
     ##############################################################
     ## loading the LabView data
@@ -1231,7 +1263,7 @@ class ImagingSessionData:
             shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode, batchsize=batchsize, randseed=self.randseed, selected_laps=self.selected_laps, elfiz=self.elfiz, min_Nlaps=self.minimum_Nlaps)
             # shuffle_stats = ImShuffle(D1.datapath,   D1.date_time,   D1.name,   D1.task,   D1.stage,   raw_spikes, D1.frame_times,   D1.frame_pos,   D1.frame_laps,   N_shuffle=N_shuffle, cellids=cellids, mode='shift', batchsize=25,        randseed=D1.randseed, selected_laps=np.arange(20,80), elfiz=True)
 
-            NN = cellids.size
+            # NN = cellids.size
             N_corrids = len(shuffle_stats.ratemaps)
             sanity_checks_passed = True
             if ((N_corrids) != self.N_corridors):
@@ -1417,167 +1449,191 @@ class ImagingSessionData:
         plt.show(block=False)
 
 
-    def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1]), vmax=0):
+    def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1]), vmax=0, ratemaps_array = [], ratemaps_title = []):
         ## plot the average event rate of all cells in a given corridor
-        ## corridor: integer, the ID of a valid corridor
-        ##      if corridor == -1 then all corridors are used
+        ## corridor: integer or array... (corridor id)
+        ##              INTEGER: if you want to plot default ratemaps
+        ##                           if corridor == -1 then all corridors are used
+        ##              ARRAY :  if you want plot custom-defined ratemaps
+        ##                           corridor must be an array to be able to add reward zones to every ratemap defined in ratemaps_array
         ## normalized: True or False. If True then  each cell ratemap is normalized to have a max = 1
         ## sorted: sorting the ramemaps by their peaks
         ## corridor_sort: which corridor to use for sorting the ratemaps
+        ##              Corridor ID of the ratemap            
+        ##                          if you plot default ratemaps 
+        ##              Index of ratemap 
+        ##                          if you plot custom-defined ratemaps
+        ##                          (in this case there can be multiple ratemaps from same corridor)
         ## cellids: np array with the indexes of the cells to be plotted. when -1: all cells are plotted
         ## vmax: float. If ratemaps are not normalised then the max range of the colors will be at least vmax. 
                 # If one of the ratemaps has a higher peak, then vmax is replaced by that peak 
+        ## ratemaps_array: an array containing the ratemaps to visualize
+        ## ratemaps_title: an array containing string which is used for annotating the corresponding ratemaps. Must have same length as ratemaps_array
         
-        if (cellids[0] == -1):
-            cellids = np.array(range(self.activity_tensor.shape[1]))
-        N_cells_plotted = len(cellids)
+        
+        # checking whether we use default ratemaps or a different set of custom-defined ratemaps - and store this info in ratemap_base variable
+        if type(corridor) == int:
+            ratemap_base = 'all'
+        if type(corridor) == list:
+            ratemap_base = 'spec'
+        if (type(corridor) != int) and (type(corridor) != list):
+            print('corridor variable ill-defined, returning')
+            return
+        
+        # checking equal length of input list
+        if ratemap_base == 'spec':
+            ratemaps = ratemaps_array
+            if len(ratemaps_array)==0:
+                print('Please specify ratemaps')
+                return
+            if len(ratemaps_array) != len(ratemaps_title):
+                print('Ratemaps and Titles must have same size!')
+                return
+            if len(ratemaps_array) != len(corridor):
+                print('ratemaps and corridor must have same size!')
+                return
+        # checking specified corridor is valid, check if it is a singla ratemap to plot sored in single variable
+        else:
+            if (corridor == -1):
+                ratemaps = self.ratemaps
+                single = False
+            else:
+                if not(np.any(self.corridors == corridor)):
+                    print('corridor specified is invalid, or does not have enough laps to calculate ratemaps with it')
+                    return
+                else:
+                    single = True
+                    i_corrid = int(np.nonzero(self.corridors==corridor)[0])
+                    ratemaps = [self.ratemaps[i_corrid]]
+                    
+        #ncells
+        if cellids[0] != -1:
+            if len(cellids) < self.N_cells:
+                title_string_base = 'some cells '
+            else:
+                title_string_base = 'all cells '
+        else:
+            cellids = np.arange(self.N_cells)
+            title_string_base = 'all cells '
+        
+            
+        #sort - selecting ratemap as template for sorting
+        if sorted:
+            #select ratemap to sorted according to, and set title stored in sort_title 
+            sort_title = 'sorted'
+            if ratemap_base == 'spec':
+                if corridor_sort == -1:
+                    ratemap_to_sort = np.copy(ratemaps[0][:,cellids])
+                    print('Sorting unspecified, sorting according to first given ratemap')
+                    sort_title = sort_title + ' by ' + str(ratemaps_title[0])
+                else:
+                    if corridor_sort < len(ratemaps):
+                        ratemap_to_sort = np.copy(ratemaps[corridor_sort][:,cellids])
+                        sort_title = sort_title + ' by ' + str(ratemaps_title[corridor_sort])
+                    else:
+                        print('sort index',corridor_sort, 'too large - aborting!')
+                        return
+            else:
+                if single:
+                    ratemap_to_sort = np.copy(ratemaps[0][:,cellids])
+                    sort_title = sort_title + ' by ' + str(self.corridors[0])
+                else:
+                    if corridor_sort == -1:
+                        print('Sorting unspecified, sorting according to corridor', self.corridors[0])
+                        ratemap_to_sort = np.copy(ratemaps[0][:,cellids])
+                        sort_title = sort_title + ' by ' + str(self.corridors[0])
 
-        nbins = self.activity_tensor.shape[0]
-        ## we calculate the rate matrix for all corridors - we need to use the same colors for the images
-        
+                    else:
+                        if not(np.any(self.corridors == corridor_sort)):
+                            print('Corridor specified for sorting is not among corridors with enough laps - sorting according to first')
+                            ratemap_to_sort = np.copy(ratemaps[0][:,cellids])
+                            sort_title = sort_title + ' by ' + str(self.corridors[0])
+                        else:
+                            sort_ratemap_index = int(np.nonzero(self.corridors==corridor_sort)[0])
+                            ratemap_to_sort = np.copy(ratemaps[sort_ratemap_index][:,cellids])
+                            sort_title = sort_title + ' by ' + str(self.corridors[sort_ratemap_index])
+                      
+            #storing sort order in sort_index 
+            ratemap_to_sort = np.transpose(ratemap_to_sort)
+            sort_index, rmaps = self.sort_ratemaps(ratemap_to_sort)
+        else:
+            sort_title = 'unsorted'
+            sort_index = np.arange(len(cellids))               
+
+        #max value for plotting
         if (normalized):
             vmax = 1
         else: 
-            for i_corrid in np.arange(self.N_corridors):
-                if (np.nanmax(self.ratemaps[i_corrid]) > vmax):
-                    vmax = np.nanmax(self.ratemaps[i_corrid])
-
-        if (corridor == -1):
-
-            fig, axs = plt.subplots(1, self.N_corridors, figsize=(6+self.N_corridors*2,8), sharex=True, sharey=True)
-            ims = []
-
-            if not(np.any(self.corridors == corridor_sort)): # if the corridor used for sorting does not exist...
-                print('Corridor ', corridor_sort, ' does not have enough laps recorded in this session. We will use ', self.corridors[0], ' instead.')
-                corridor_sort = -1
-
-            if (corridor_sort == -1): # if no corridor is geven for sorting...
-                corridor_sort = self.corridors[0]
-
-            if (sorted):
-                suptitle_string = 'sorted by corridor ' + str(corridor_sort)
-                i_corrid = int(np.flatnonzero(corridor_sort == self.corridors))
-                rmp = np.array(self.ratemaps[i_corrid][:,cellids], copy=True)
-                ratemaps_to_sort = np.transpose(rmp)
-                sort_index, rmaps = self.sort_ratemaps(ratemaps_to_sort)
-            else :
-                sort_index = np.arange(len(cellids))
-                suptitle_string = 'unsorted'
-
-            for i_corrid in np.arange(self.N_corridors):
-                if (N_cells_plotted == self.N_cells) :
-                    title_string = 'ratemap of all cells in corridor ' + str(self.corridors[i_corrid])
-                else :
-                    title_string = 'ratemap of some cells in corridor ' + str(self.corridors[i_corrid])
-                rmp = np.array(self.ratemaps[i_corrid][:,cellids], copy=True)
-                ratemaps_to_sort = np.transpose(rmp)
-                ratemaps_to_plot = ratemaps_to_sort[sort_index,:]
-                if (normalized):
-                    for i in range(ratemaps_to_plot.shape[0]):
-                        rate_range = max(ratemaps_to_plot[i,:]) - min(ratemaps_to_plot[i,:])
-                        ratemaps_to_plot[i,:] = (ratemaps_to_plot[i,:] - min(ratemaps_to_plot[i,:])) / rate_range
-
-                axs[i_corrid].set_title(title_string)
-                ims.append(axs[i_corrid].matshow(ratemaps_to_plot, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary'))
-                axs[i_corrid].set_facecolor(matcols.CSS4_COLORS['palegreen'])
-                axs[i_corrid].set_yticks(np.arange(len(cellids)))
-                if (sorted):
-                    axs[i_corrid].set_yticklabels(cellids[sort_index])
+            for i in range(len(ratemaps)):
+                if (np.nanmax(ratemaps[i]) > vmax):
+                    vmax = np.nanmax(ratemaps[i])
+                    
+        #reward zones
+        zone_starts = []
+        zone_ends = []
+        for i in range(len(ratemaps)):
+            if ratemap_base == 'spec':
+                if not(np.any(self.corridors == corridor[i])):
+                    print('Corridor', i , 'seems to be invalid - aborting')
+                    return
                 else:
-                    axs[i_corrid].set_yticklabels(cellids)
-                plt.colorbar(ims[i_corrid], orientation='horizontal',ax=axs[i_corrid])
-
-                ## add reward zones
-                zone_starts = self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_starts 
-                if (len(zone_starts) > 0):
-                    zone_ends = self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends
-                    bottom, top = axs[i_corrid].get_ylim()
-                    for i_zone in range(len(zone_starts)):
-                        left = zone_starts[i_zone] * nbins             
-                        right = zone_ends[i_zone] * nbins              
-                        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-                        axs[i_corrid].add_patch(polygon)
-                        # print('adding reward zone to the ', i_corrid, 'th corridor, ', self.corridors[i_corrid+1])
-
-            fig.suptitle(suptitle_string)
-            fig.tight_layout()
-            plt.show(block=False)       
-
-        else:
-            if (N_cells_plotted == self.N_cells) :
-                title_string = 'ratemap of all cells in corridor ' + str(corridor)
-            else :
-                title_string = 'ratemap of some cells in corridor ' + str(corridor)
-
-            if not(np.any(self.corridors == corridor)): # if the corridor used for sorting does not exist...
-                print('Corridor ', corridor, ' does not have enough laps recorded in this session. We will use ', self.corridors[0], ' instead.')
-                corridor = self.corridors[0]
-
-            i_corrid = int(np.nonzero(np.unique(self.i_corridors)==corridor)[0])
-
-            rmp = np.array(self.ratemaps[i_corrid][:,cellids], copy=True)
-            ratemaps_to_sort = np.transpose(rmp)
-            if (sorted):
-                sort_index, ratemaps_to_plot = self.sort_ratemaps(ratemaps_to_sort)
-                title_string = title_string + ' sorted'
+                    i_corrid = int(np.nonzero(self.corridors==corridor[i])[0])
+                    zone_starts.append(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_starts)
+                    zone_ends.append(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends)
             else:
-                ratemaps_to_plot = ratemaps_to_sort
-                title_string = title_string + ' unsorted'
-
+                if single:
+                    zone_starts.append(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_starts)
+                    zone_ends.append(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends)
+                else:
+                    i_corrid = i
+                    zone_starts.append(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_starts)
+                    zone_ends.append(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends)
+        
+        #plotting
+        fig, axs = plt.subplots(1, len(ratemaps), figsize=(6+len(ratemaps)*2,8), sharex=True, sharey=True, squeeze=False)
+        ims = []
+        for i in range(len(ratemaps)):
+            ratemap_to_sort = np.transpose(np.copy(ratemaps[i][:,cellids]))
+            ratemap_to_plot = ratemap_to_sort[sort_index,:]
+            #normalising if needed
             if (normalized):
-                for i in range(ratemaps_to_plot.shape[0]):
-                    rate_range = max(ratemaps_to_plot[i,:]) - min(ratemaps_to_plot[i,:])
-                    ratemaps_to_plot[i,:] = (ratemaps_to_plot[i,:] - min(ratemaps_to_plot[i,:])) / rate_range
-
-            fig, ax_bottom = plt.subplots(figsize=(6,8))
-            ax_bottom.set_title(title_string)
-            im1 = ax_bottom.matshow(ratemaps_to_plot, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary')
-            ax_bottom.set_yticks(np.arange(len(cellids)))
-            if (sorted):
-                ax_bottom.set_yticklabels(cellids[sort_index])
+                for j in range(ratemap_to_plot.shape[0]):
+                    rate_range = max(ratemap_to_plot[j,:]) - min(ratemap_to_plot[j,:])
+                    ratemap_to_plot[j,:] = (ratemap_to_plot[j,:] - min(ratemap_to_plot[j,:])) / rate_range
+            # subplot title
+            if ratemap_base == 'spec':
+                title_string = title_string_base + ratemaps_title[i] + ' ' + str(corridor[i])
             else:
-                ax_bottom.set_yticklabels(cellids)
+                if single:
+                    title_string = title_string_base + ' in corridor ' + str(corridor)
+                else:
+                    title_string = title_string_base + ' in corridor ' + str(self.corridors[i])
+            # plot
+            axs[0,i].set_title(title_string)
+            ims.append(axs[0,i].matshow(ratemap_to_plot, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary'))
+            axs[0,i].set_facecolor(matcols.CSS4_COLORS['palegreen'])
+            axs[0,i].set_yticks(np.arange(len(cellids)))
+            axs[0,i].set_yticklabels(cellids[sort_index])
+            plt.colorbar(ims[i], orientation='horizontal',ax=axs[0,i])
+            # add reward-zone
+            bottom, top = axs[0,i].get_ylim()
+            for zone in range(len(zone_starts[i])):
+                left = zone_starts[i][zone] * self.N_pos_bins             
+                right = zone_ends[i][zone] * self.N_pos_bins
+                polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                axs[0,i].add_patch(polygon)
+                
+        fig.suptitle(sort_title)
+        fig.tight_layout()
+        plt.show(block=False) 
 
-            zone_starts = self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_starts 
-            if (len(zone_starts) > 0):
-                zone_ends = self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends
-                bottom, top = ax_bottom.get_ylim()
-                for i_zone in range(len(zone_starts)):
-                    left = zone_starts[i_zone] * nbins             
-                    right = zone_ends[i_zone] * nbins              
-                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
-                    ax_bottom.add_patch(polygon)
-                    # print('adding reward zone to the ', i_corrid, 'th corridor, ', self.corridors[i_corrid+1])
-
-            plt.colorbar(im1, orientation='horizontal')
-            plt.show(block=False)       
-
-
-# fig, ax_bottom = plt.subplots(figsize=(6,8))
-# ax_bottom.set_title(title_string)
-# im1 = ax_bottom.matshow(ratemaps_to_plot, aspect='auto', origin='lower', vmin=0, cmap='binary')
-# ax_bottom.set_yticks(np.arange(len(cellids)))
-# ax_bottom.set_yticklabels(cellids)
-
-# plt.colorbar(im1)
-# plt.show(block=False)       
-
-
-# fig, ax = plt.subplots(figsize=(6,8))
-# im1 = ax.scatter(np.arange(5), (2,5,4,0,3))
-# ax.set_title('title')
-# ax.set_yticks(np.arange(5))
-# ax.set_yticklabels(('Tom', 'Dick', 'Harry', 'Sally', 'Sue'))
-# plt.show(block=False)       
-
-
-
+    
     def sort_ratemaps(self, rmap):
         max_loc = np.argmax(rmap, 1)
         sorted_index = np.argsort(-1*max_loc)
         sorted_rmap = rmap[sorted_index,:]
         return sorted_index, sorted_rmap
-
+    
 
     #create title string for the given corridor, cell with added info 
     def CreateTitle(self, corridor, cellid):
@@ -1858,7 +1914,7 @@ class ImagingSessionData:
                 #plotting
                 ax[0,cor_index].fill_between(xmids,mean_rate+se_rate, mean_rate-se_rate, alpha=0.3)
                 ax[0,cor_index].plot(mean_rate,zorder=0)
-                n_laps = popact_laps.shape[1]
+                # n_laps = popact_laps.shape[1]
 
                 ax[0,cor_index].set_xlim(0, 51)
                 ax[0,cor_index].set_title(title_string)
@@ -2202,6 +2258,229 @@ class ImagingSessionData:
                     for i_row in np.arange(lapdata.shape[0]):
                         file_writer.writerow(np.round(lapdata[i_row,:], 4))
             print('lapdata saved into file: ' + filename)
+    
+    def calc_rate(self, i_laps):
+        #calculate ratemaps for the given laps
+        ratemap = np.zeros((self.N_cells,self.N_pos_bins))
+        
+        for i in range(self.N_cells):
+            total_spikes = self.activity_tensor[:,i,i_laps]
+            total_time = self.activity_tensor_time[:,i_laps]
+            rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
+            av_rate = np.nanmean(rate_matrix, axis=1)
+            ratemap[i,:] = av_rate
+            
+        return np.transpose(ratemap)
+    
+    def calc_even_odd_rates(self):
+        #calculate ratemaps for even and ott laps for every corridor with enough laps
+        if self.even_odd_rate_calculated == False:
+            self.even_odd_rate_calculated = True
+            self.ratemaps_even = []
+            self.ratemaps_odd = []
+            for i in range(self.corridors.size):
+                i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[i])[0]
+                i_laps_even = i_laps[0::2]
+                i_laps_odd = i_laps[1::2]
+                
+                ratemap_even = self.calc_rate(i_laps_even)
+                ratemap_odd = self.calc_rate(i_laps_odd)
+                
+                self.ratemaps_even.append(ratemap_even)
+                self.ratemaps_odd.append(ratemap_odd)
+                
+            print('even/odd ratemaps calculated')
+    
+    def calc_start_end_rates(self, n_used = -1):
+        #calculate ratemaps for laps t the begining and at the end for every corridor with enough laps
+        # with the n_used parameter the last n_used and first n_used laps are used 
+        if type(n_used) != int:
+            print('Invaid n_used parameter - give an integer')
+            return
+        if self.start_end_rate_calculated == False:
+            self.start_end_rate_calculated = True
+            self.ratemaps_start = []
+            self.ratemaps_end = []
+            
+            for i in range(self.corridors.size):
+                i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[i])[0]
+                # print(i_laps.size)
+                if n_used == -1:
+                    i_laps_start = i_laps[0:int(i_laps.size/2)]
+                    i_laps_end = i_laps[int(i_laps.size/2):]
+                else:
+                    if (n_used > i_laps.size):
+                        i_laps_start = i_laps[0:int(i_laps.size/2)]
+                        i_laps_end = i_laps[int(i_laps.size/2):]
+                        print('Specified n_used is too large, using half-half the laps')
+                    else:
+                        i_laps_start = i_laps[0:n_used]
+                        i_laps_end = i_laps[i_laps.size-n_used:]
+                ratemap_start = self.calc_rate(i_laps_start)
+                ratemap_end = self.calc_rate(i_laps_end)
+                
+                self.ratemaps_start.append(ratemap_start)
+                self.ratemaps_end.append(ratemap_end)
+                
+            print('start/end ratemaps calculated')
+            
+    def calc_previous_based_rates(self, corr_a, corr_b):
+        #calculate ratemaps based on the id of current and previous maze
+        #warning: this code is developed for two-corridor task - for more corridors it may give unexpected results
+        if (corr_a in self.corridors) and (corr_b in self.corridors):
+            i_stay_a = []
+            i_stay_b = []
+            i_changeto_a = []
+            i_changeto_b = []
+            
+            imaged_laps = self.i_corridors[self.i_Laps_ImData]
+            for i in np.arange(1,imaged_laps.size):
+                if imaged_laps[i] == corr_a:
+                    if imaged_laps[i-1] == corr_a:
+                        i_stay_a.append(i)
+                    else:
+                        #TODO
+                        i_changeto_a.append(i)
+                if imaged_laps[i] == corr_b:
+                    if imaged_laps[i-1] == corr_b:
+                        i_stay_b.append(i)
+                    else:
+                        i_changeto_b.append(i)
+            self.ratemap_a_a = self.calc_rate(i_stay_a)
+            self.ratemap_b_b = self.calc_rate(i_stay_b)
+            self.ratemap_a_b = self.calc_rate(i_changeto_b)
+            self.ratemap_b_a = self.calc_rate(i_changeto_a)
+            
+            print('previous-based ratemaps calculated - !Previous overwritten!')
+
+    def show_crosscorr(self, ratemap1, ratemap2, cellids, ratemap1_annot, ratemap2_annot, main_title):
+        #plot cross-correlation matrix between two ratemaps, only for specified cellids
+        popp_full = np.corrcoef(ratemap1[:,cellids], ratemap2[:,cellids])
+        popp = popp_full[:self.N_pos_bins, self.N_pos_bins:]
+        
+        fig, ax = plt.subplots()
+        im = ax.imshow(popp, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
+        ax.plot(ax.get_xlim(), ax.get_ylim(), ls="--", linewidth = '0.5', c='k')
+        
+        plt.colorbar(im)
+        plt.ylabel(ratemap1_annot)
+        plt.xlabel(ratemap2_annot)
+        plt.title(main_title)
+        plt.show()
+        
+    def show_autocorr(self, ratemap, cellids,title):
+        #show autucorrelation matrix for a given ratemap, cellids
+        print(ratemap.shape)
+        popp = np.corrcoef(ratemap[:,cellids])
+        
+        fig, ax = plt.subplots()
+        im = plt.imshow(popp, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
+        ax.plot(ax.get_xlim(), ax.get_ylim(), ls="--", linewidth = '0.5', c='k')
+
+        plt.colorbar(im)
+        plt.title(title)
+        plt.show()
+        
+    def lap_decode(self, cellids, ratemaps, labels, title):
+        results = np.zeros((len(ratemaps), self.i_Laps_ImData.size))
+        ratemap = np.zeros((self.N_pos_bins, self.N_cells))
+        
+        speed = []
+        
+        for i in range(len(self.ImLaps)):
+            if self.ImLaps[i].imaging_data == True:
+                speed.append(np.nanmean(self.ImLaps[i].ave_speed))
+                
+        for i in range(self.i_Laps_ImData.size):
+            
+            for j in range(self.N_cells):
+                total_spikes = self.activity_tensor[:,j,i]
+                total_time = self.activity_tensor_time[:,i]
+                rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
+#                av_rate = np.nanmean(rate_matrix, axis=1)
+                ratemap[:,j] = rate_matrix
+
+            for k in range(len(ratemaps)):
+                results[k, i] = np.mean(np.diagonal(np.corrcoef(ratemap[:,cellids], ratemaps[k][:,cellids])[0:self.N_pos_bins,self.N_pos_bins:]))
+                # print(ratemap.shape, ratemaps[k].shape)
+                # print(results[k ,i])
+                
+        fig, ax = plt.subplots()
+        x=np.arange(0, self.i_Laps_ImData.size)
+        for  k in range(len(ratemaps)):
+            ax.scatter(x, results[k,:], label=labels[k])
+        # plt.plot(np.abs(results[0,:]-results[1,:]))
+        ax2=ax.twinx()
+        ax2.plot(speed, label='average speed', linewidth= 0.5)
+        ax.legend()
+        ax2.legend()
+        plt.title(title)
+        plt.show()
+        
+    def lap_correlate(self, cellids):
+        results = np.zeros((self.i_Laps_ImData.size, self.i_Laps_ImData.size))
+        ratemaps = np.zeros((self.i_Laps_ImData.size, self.N_pos_bins, self.N_cells))
+        
+        for i in range(self.i_Laps_ImData.size):
+            for j in range(self.N_cells):
+                total_spikes = self.activity_tensor[:,j,i]
+                total_time = self.activity_tensor_time[:,i]
+                rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
+                ratemaps[i,:,j] = rate_matrix
+    
+        
+        for i in np.arange(1,self.i_Laps_ImData.size-1,1):
+            print('corr',i)
+            for j in np.arange(1,self.i_Laps_ImData.size-1,1):
+    
+                results[i,j] = np.nanmean(np.diagonal(np.corrcoef(np.transpose(ratemaps[i,:,cellids]), np.transpose(ratemaps[j,:,cellids]))[0:self.N_pos_bins,self.N_pos_bins:]))
+                if np.isnan(results[i,j]) == True:
+                    print(i,j)
+    
+        plt.figure()
+        plt.imshow(results, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
+        plt.colorbar()
+        plt.show()
+        
+        i_laps_a = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[0])[0]
+        i_laps_b = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[1])[0]
+        order = np.concatenate((i_laps_a,i_laps_b))
+        print(order, order.size, results.shape)
+        
+        results2 = results[order, :]
+        results2 = results2[:,order]
+        print(results2.shape)
+        
+        plt.figure()
+        plt.imshow(results2, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
+        plt.colorbar()
+        plt.show()
+        
+        # cov = np.copy(results)
+        # eigenvalues, eigenvectors = np.linalg.eig(cov)
+        # plt.figure()
+        # plt.plot(eigenvalues)
+        
+        # sortindex = np.argsort(eigenvalues*-1)
+        # eigenvalues_sorted = eigenvalues[sortindex]
+        # print(np.sum(eigenvalues_sorted[0:3])/np.sum(eigenvalues_sorted))
+        
+        # plt.plot(eigenvalues_sorted)
+        # plt.show()
+        
+        # plt.figure()
+        # plt.plot(eigenvectors[:,0:4])
+        # plt.show()
+        
+        # print(ratemaps.shape, eigenvectors.shape)
+        # self.eig1_ratemaps = np.copy(ratemaps)
+        # self.eig2_ratemaps = np.copy(ratemaps)
+        # for i in range(self.i_Laps_ImData.size):
+        #     self.eig1_ratemaps[i,:,:] = ratemaps[i,:,:]*eigenvectors[i,0]
+        #     self.eig2_ratemaps[i,:,:] = ratemaps[i,:,:]*eigenvectors[i,1]
+        # self.eig1_ratemaps=np.nanmean(self.eig1_ratemaps, axis=0)
+        # self.eig2_ratemaps=np.nanmean(self.eig2_ratemaps, axis=0)        
+        # print(self.eig1_ratemaps.shape)
 
 
 class Lap_ImData:
@@ -2210,7 +2489,7 @@ class Lap_ImData:
     def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, lap_frames_events, printout=False, speed_threshold=5, elfiz=False, verbous=0):
         if (verbous > 0):
             print('ImData initialised')
-        begin_time = datetime.now()
+        # begin_time = datetime.now()
 
         self.name = name
         self.lap = lap
@@ -2593,7 +2872,7 @@ def HolmBonfMat(P_mat, p_val):
     ## P-values of different tests in each row and
     ## Cells in each column
 
-    m = P_mat.shape[0]
+    # m = P_mat.shape[0]
     n_cells = P_mat.shape[1]
     i_significant = np.zeros_like(P_mat)
     for i_cell in np.arange(n_cells):
