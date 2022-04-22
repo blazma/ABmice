@@ -524,7 +524,7 @@ class ImagingSessionData:
     def calc_active_elfiz(self):
         self.active_cells=np.array([0])
 	
-    def calc_active(self, events_per_ten_m = 5, sd_times = 3, refract_seconds = 5):
+    def calc_active(self, events_per_ten_m = 10, sd_times = 3, refract_seconds = 5):
         #events_per_ten_m - we want at least this many events per 10 minutes to consider a cell active
         #sd_times - events should be above this many times the baseline sd
         #refract_seconds - refractoryness of event detection in seconds
@@ -549,7 +549,9 @@ class ImagingSessionData:
         else:
             len_imaging = self.ImLaps[-1].raw_time[-1]-self.ImLaps[0].raw_time[0]
             
-        active_threshold = len_imaging/(10*60)*events_per_ten_m 
+        active_threshold = len_imaging/(10*60)*events_per_ten_m
+        if active_threshold < 1:
+            print('active_cells may be unreliable due to the shortness of the analysed period')
         
         # print('active threshold: ', active_threshold)
         refractoriness = int(refract_seconds/dt) 
@@ -2290,6 +2292,9 @@ class ImagingSessionData:
                 self.ratemaps_odd.append(ratemap_odd)
                 
             print('even/odd ratemaps calculated')
+        else:
+            print('even/odd ratemaps already calculated')
+        
     
     def calc_start_end_rates(self, n_used = -1):
         #calculate ratemaps for laps t the begining and at the end for every corridor with enough laps
@@ -2297,7 +2302,7 @@ class ImagingSessionData:
         if type(n_used) != int:
             print('Invaid n_used parameter - give an integer')
             return
-        if self.start_end_rate_calculated == False:
+        else:
             self.start_end_rate_calculated = True
             self.ratemaps_start = []
             self.ratemaps_end = []
@@ -2370,7 +2375,6 @@ class ImagingSessionData:
         
     def show_autocorr(self, ratemap, cellids,title):
         #show autucorrelation matrix for a given ratemap, cellids
-        print(ratemap.shape)
         popp = np.corrcoef(ratemap[:,cellids])
         
         fig, ax = plt.subplots()
