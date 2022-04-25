@@ -22,12 +22,12 @@ from Stages import *
 from Corridors import *
 
 ## a function to break a time series into Nbreak sections each at least Lmin long.
-def breakpoints(Nframes, Lmin=500, Nbreak=5):
+def breakpoints(Nframes, Lmin=500, Nbreak=5, rngD=None):
     if (Nframes < (Lmin * Nbreak)):
         print('Nframes < (Lmin * Nbreak), we use smaller segments')
         Lmin = floor(Nframes / Nbreak)
     alpha = np.ones(Nbreak+1)
-    seclengths = np.round(scipy.stats.dirichlet.rvs(alpha)[0] * (Nframes - Lmin * (Nbreak+1)) + Lmin) ## see Dirichlet distribution...
+    seclengths = np.round(scipy.stats.dirichlet.rvs(alpha, random_state=rngD)[0] * (Nframes - Lmin * (Nbreak+1)) + Lmin) ## see Dirichlet distribution...
     seclengths[Nbreak] = Nframes - np.sum(seclengths[0:Nbreak]) # the original list may be a bit longer or shorter...
     sections = np.zeros((2, Nbreak+1))
     for i in range(Nbreak+1):
@@ -167,10 +167,6 @@ class ImShuffle:
             i_end = i_end + 1
         i_minibatch = 0
 
-        rngP = np.random.default_rng(self.randseed)
-        rngI = np.random.default_rng(self.randseed+1)
-        rngS = np.random.default_rng(self.randseed+2)
-
         while (i_start < self.N_cells):
             batchsize = i_end - i_start # the last cycle in the loop will have a different size...
             batch_ids = np.arange(i_start, i_end)
@@ -179,12 +175,17 @@ class ImShuffle:
             self.shuffle_spikes = np.zeros((batchsize, self.N_frames, self.N_shuffle+1))
             self.shuffle_spikes[:,:,self.N_shuffle] = self.raw_spikes[batch_ids,:] # the last element is the real data ...
 
+            rngP = np.random.default_rng(self.randseed)
+            rngI = np.random.default_rng(self.randseed+1)
+            rngS = np.random.default_rng(self.randseed+2)
+            rngD = np.random.default_rng(self.randseed+3)
+
             if (self.mode == 'shift'):
                 for i_shuffle in range(self.N_shuffle):
                     spks = np.zeros_like(self.raw_spikes[batch_ids,:])
                     ## we break up the array into 6 pieces of at least 500 frames, permuting them and circularly shifting by at least 500 frames
                     Nbreak = 5
-                    sections = breakpoints(Nframes=self.N_frames, Lmin=500, Nbreak=Nbreak)
+                    sections = breakpoints(Nframes=self.N_frames, Lmin=500, Nbreak=Nbreak, rngD=rngD)
                     order = rngP.permutation(Nbreak + 1)
                     k = 0
                     for j in range(Nbreak+1):
