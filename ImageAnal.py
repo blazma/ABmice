@@ -520,10 +520,10 @@ class ImagingSessionData:
         for i_cell in range(self.N_cells):
             self.cell_SDs[i_cell] = np.random.rand()
             self.cell_SNR[i_cell] = np.random.rand()
-	
+
     def calc_active_elfiz(self):
         self.active_cells=np.array([0])
-	
+
     def calc_active(self, events_per_ten_m = 10, sd_times = 3, refract_seconds = 5):
         #events_per_ten_m - we want at least this many events per 10 minutes to consider a cell active
         #sd_times - events should be above this many times the baseline sd
