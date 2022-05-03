@@ -2179,13 +2179,15 @@ class ImagingSessionData:
             plt.show(block=False)
 
 
-    def save_data(self, save_properties=True, save_ratemaps=True, save_laptime=True):
+    def save_data(self, save_properties=True, save_ratemaps=True, save_laptime=True, save_lick_speed_stats=True, save_place_code_stats = True, plot=False):
         # Saves the primary data into a folder in csv format.
         # separate file is created for each corridor and lap.
         # 
         # save_properties: True or False. If True, the cell properties are saved. 
         # save_ratemaps: True or False. If True, the ratemaps are saved.
         # save_laptime: True or False. If True, the raw data is saved for each lap.
+        # save_lick_speed_stats: True or False, average lick rate and speed are calculated before the reward zone and in a control position 
+
 
         data_folder = self.suite2p_folder + 'analysed_data'
         if (self.elfiz == True):
@@ -2260,7 +2262,120 @@ class ImagingSessionData:
                     for i_row in np.arange(lapdata.shape[0]):
                         file_writer.writerow(np.round(lapdata[i_row,:], 4))
             print('lapdata saved into file: ' + filename)
-    
+            
+            
+        if (save_lick_speed_stats):
+            # outputs
+            self.reference_lickrate = []
+            self.reference_speed =  []
+            self.prezone_lickrate = []
+            self.prezone_speed = []
+            
+            
+            for i_corrid in np.arange(self.corridors.size):
+                i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[i_corrid])[0]
+
+                last_prezone_bin = int(np.floor(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends * self.N_pos_bins ))-1
+                n = i_laps.size
+                
+                lickrate_matrix = np.zeros((n,self.N_pos_bins))
+                speed_matrix = np.zeros((n,self.N_pos_bins))
+                for i in range(i_laps.size):
+                    lickrate_matrix[i,:] = self.ImLaps[i_laps[i]].lick_rate
+                    speed_matrix[i,:]  = self.ImLaps[i_laps[i]].ave_speed
+                ave_speed = np.nanmean(speed_matrix, axis=0)
+                ave_lick = np.nanmean(lickrate_matrix, axis=0)
+
+                self.reference_lickrate.append(np.mean(ave_lick[8:10]))
+                self.reference_speed.append(np.mean(ave_speed[8:10]))
+                self.prezone_lickrate.append(np.mean(ave_lick[(last_prezone_bin-3):last_prezone_bin]))
+                self.prezone_speed.append(np.mean(ave_speed[(last_prezone_bin-3):last_prezone_bin]))
+
+            if plot:
+                self.plot_session(selected_laps=self.i_Laps_ImData)
+
+            print('lickrate- and speed difference calculated')
+            #TODO save to file
+            
+        if (save_place_code_stats):
+            # outputs:
+            self.PC_per_bin = []
+            for i_corrid in np.arange(self.corridors.size):
+                cellids = self.tuned_cells[i_corrid]
+                # cellids = self.accepted_PCs[i]
+                
+                #calculate
+                N_pos_bins = self.ratemaps[i_corrid].shape[0]
+                PC_in_bin = np.zeros(N_pos_bins)
+                PC_in_smooth = np.zeros(N_pos_bins)
+                for i_tuned_cell in range(cellids.size):
+                    i_cell = cellids[i_tuned_cell]
+                    index = np.argmax(self.ratemaps[i_corrid][:,i_cell])
+                    PC_in_bin[index] += 1                    
+
+                #convert to percentage, smooth
+                PC_in_bin = PC_in_bin/cellids.size*100
+                PC_in_bin_smooth_p2=np.convolve(PC_in_bin, np.ones(3)/3)
+                PC_in_bin_smooth = PC_in_bin_smooth_p2[1:(N_pos_bins+1)]
+                PC_in_bin_smooth[0] = PC_in_bin_smooth[0] + PC_in_bin_smooth_p2[0]
+                PC_in_bin_smooth[-1] = PC_in_bin_smooth[-1] + PC_in_bin_smooth_p2[-1]
+                bins=np.arange(N_pos_bins)
+                self.PC_per_bin.append(PC_in_bin_smooth)
+                
+                #plotting...
+            print('Place Cells per spatial bin calculated')
+
+            # here we calculate cross corr between first two corridor to make it easy to automate
+            try:
+                cellids = np.unique(np.concatenate((self.tuned_cells[0],self.tuned_cells[1])))
+            except AttributeError:
+                cellids = np.arange(0, self.N_cells)
+                print('tuned_cells attribute does not exist - all cells used for pop vector corr! You probably want to run shuffling first!')
+            a=self.ratemaps[0][:,cellids]
+            b=self.ratemaps[1][:,cellids]
+            
+            popp_full = np.corrcoef(a,b)
+            self.ratemap_corr = popp_full[:self.N_pos_bins, self.N_pos_bins:]
+            
+            # diag = np.diagonal(popp)
+            #for plotting
+            if plot:
+
+                corr1label = 'corridor ' + str(self.corridors[0])
+                corr2label = 'corridor ' + str(self.corridors[1])
+
+                fig, ax1 = plt.subplots()
+
+                ax1.set_xlabel('spatial bin')
+                ax1.set_ylabel('percent of tuned cells', color='teal')
+                ax1.plot(bins,self.PC_per_bin[0],color='teal', label=corr1label)
+                ax1.plot(bins,self.PC_per_bin[1],color='darkviolet', label=corr2label)
+                ax1.tick_params(axis='y', labelcolor='teal')
+
+                ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+                ax2.set_ylabel('correlation', color='firebrick')  # we already handled the x-label with ax1
+                ax2.plot(bins,np.diagonal(self.ratemap_corr),color='firebrick', label='ratemap correlation')
+                ax2.tick_params(axis='y', labelcolor='firebrick')
+
+                fig.tight_layout()  # otherwise the right y-label is slightly clipped
+                plt.show()
+
+                print('pop vector correlation calculated')
+
+            ## saving these vectors into file
+            place_code_stat_file = 'place_code_stat' + '_N' + str(len(cellids)) + '.csv'
+            self.write_params(place_code_stat_file)
+            filename = data_folder + '/' + place_code_stat_file
+            with open(filename, mode='a', newline='') as stat_file:
+                file_writer = csv.writer(stat_file, **csv_kwargs)
+                file_writer.writerow(('first row:', 'percent of tuned cells per position bins in corridor ' + str(self.corridors[0])))
+                file_writer.writerow(('second row', 'percent of tuned cells per position bins in corridor ' + str(self.corridors[1])))
+                file_writer.writerow(('third row', 'correlation between the ratemaps of all tuned cells across the two corridors', str(self.corridors[0]) + ' and ' + str(self.corridors[1])))
+                file_writer.writerow(np.round(self.PC_per_bin[0], 4))
+                file_writer.writerow(np.round(self.PC_per_bin[1], 4))
+                file_writer.writerow(np.round(np.diagonal(self.ratemap_corr), 4))
+            print('place code statistics saved into file: ', filename)
+   
     def calc_rate(self, i_laps):
         #calculate ratemaps for the given laps
         ratemap = np.zeros((self.N_cells,self.N_pos_bins))
