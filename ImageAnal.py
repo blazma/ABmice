@@ -2273,7 +2273,9 @@ class ImagingSessionData:
             
             
             for i_corrid in np.arange(self.corridors.size):
-                i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[i_corrid])[0]
+
+                ids_all = np.nonzero(self.i_corridors == self.corridors[i_corrid])[0]
+                i_laps = np.intersect1d(ids_all, self.i_Laps_ImData)
 
                 last_prezone_bin = int(np.floor(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends * self.N_pos_bins ))-1
                 n = i_laps.size
