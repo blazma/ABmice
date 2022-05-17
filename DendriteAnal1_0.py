@@ -15,7 +15,8 @@ sys.path.append(r'C:\Users\luko.balazs\AppData\Local\Continuum\anaconda3\Lib\sit
 import pandas as pd
 from numba import njit, prange
 from scipy.ndimage import filters
-from scipy.signal import argrelextrema, find_peaks
+from scipy.signal import find_peaks
+#from scipy.signal import argrelextrema
 import math
 import openpyxl
 from xml.dom import minidom
@@ -24,34 +25,34 @@ import time
 
 from ImageAnal import LocateImaging
 
-start_time = time.time()
+#start_time = time.time()
 
 plt.close('all')
 
 class ProcessManualRoiData:
     def __init__ (self, datapath, suite2p_folder, imaging_logfile_name, excel_file_path, name, task, date_time, data_source='manual', ids=-1):
         #OOP parameters from inputs
-        self.data_source=data_source
-        self.excel_file_path=excel_file_path
-        self.suite2p_folder=suite2p_folder
-        self.save_path=suite2p_folder[0:-1]+'manual_ROI\\'
-        self.man_image=self.LoadImage()#Todo: létezik-e a file
-        self.ids=ids
-        self.manual_data_excel_file = self.suite2p_folder+'manual_roi_data.xlsx'
+        self.data_source = data_source
+        self.excel_file_path = excel_file_path
+        self.suite2p_folder = suite2p_folder
+        self.save_path = suite2p_folder[0: -1] + 'manual_ROI\\'
+        self.man_image = self.LoadImage()#Todo: létezik-e a file
+        self.ids = ids
+        self.manual_data_excel_file = self.suite2p_folder + 'manual_roi_data.xlsx'
         self.imaging_logfile_name = imaging_logfile_name
         
         #parameters of analysis
-        self.show_tau_indexes = [1,2]
+        self.show_tau_indexes = []
         self.tau_init = 'self'
         self.tau_length = 100
         
         #matching behavior with imaging
         print('Matching behavior with imaging...')
-        prew_time=time.time()
+        prew_time = time.time()
         trigger_log_file_string = datapath + 'data/' + name + '_' + task + '/' + date_time + '/' + date_time + '_'+name+'_'+task+'_TriggerLog.txt'
         exp_log_file_string = datapath + 'data/' + name + '_' + task + '/' + date_time + '/' + date_time + '_'+name+'_'+task+'_ExpStateMashineLog.txt'
-        self.time_shift=LocateImaging(trigger_log_file_string, excel_file_path)
-        print('   behavior matching done in',round(time.time()-prew_time,2), 'seconds')
+        self.time_shift = LocateImaging(trigger_log_file_string, excel_file_path)
+        print('   behavior matching done in',round(time.time() - prew_time,2), 'seconds')
         
         if np.isnan(self.time_shift):
             print('Behavior data could not be matched, terminating analysis!')
@@ -66,7 +67,7 @@ class ProcessManualRoiData:
             self.Load_Beh(exp_log_file_string, plot=False)
             
             #check motion correction, threshold suspicious parts
-            self.SetMotionCorrectionThreshold(threshold=25)
+            self.SetMotionCorrectionThreshold(threshold = 25)
     
             #Preprocess, calculate properties
             self.Preprocess_and_CalculateProperties()
@@ -75,42 +76,41 @@ class ProcessManualRoiData:
             self.Zmotion()
             
             #save spks for place-cell analysis
-            self.save_F_spks(plot=False)
+            self.save_F_spks(plot = False)
             
             # process trace
-            self.F_s_c_z=self.ProcessTrace()#change it to: apply Z?
-            self.F_s_c_z=preprocess(self.F_s_c_z,self.ops)#but then not use?
+            self.F_s_c_z = self.ProcessTrace()#change it to: apply Z?
+            self.F_s_c_z = preprocess(self.F_s_c_z, self.ops)#but then not use?
             
 #            self.spks_test()
             #should recalculate properties here??
             
             #initialize peak comparison array here
-            self.Paired_Data=[]#we will append all the peak data of a given trace-pair here
+            self.Paired_Data = []#we will append all the peak data of a given trace-pair here
             
             #spike detection
-            self.DetectSpikes(traces=self.F_s_c,baselines=self.baselines_corr,threshold_value=10, plot=False)
+            self.DetectSpikes(traces = self.F_s_c, baselines = self.baselines_corr, threshold_value = 10, plot = True)
             
             #peak correlation
-            self.CorrelatePeaks_test(toplot1=1, toplot2=2, plot=True)#check indexing type!
-            #TODO
+            self.CorrelatePeaks_test(toplot1 = -1, toplot2 = -1, plot = True)#check indexing type!
             
-            self.PlotCorrelations(what='p')
-            self.PlotCorrelations(what='a')
+#            self.PlotCorrelations(what = 'p')
+#            self.PlotCorrelations(what = 'a')
             
             #save results
-            self.Save_to_Excel()
+#            self.Save_to_Excel()
             
             #plot a given pair of suspicios tarces
-            self.PlotPair(id_in1=1, id_in2=2)#indexing starts with 1 - ToDo: wrong pair given - catch error
+#            self.PlotPair(id_in1 = 1, id_in2 = 2)#indexing starts with 1 - ToDo: wrong pair given - catch error
                       
         
 
     def spks_test(self):
-        fig, ax=plt.subplots(self.N, 2, sharex=True)
+        fig, ax = plt.subplots(self.N, 2, sharex = True)
         for i in range(self.N):
-            self.ops['tau']=self.Taus2[i]
-            spks_temp=oasis(self.F_c, self.ops)[i,:]
-            spks_smooth=oasis(self.F_s_c, self.ops)[i,:]
+            self.ops['tau'] = self.Taus2[i]
+            spks_temp = oasis(self.F_c, self.ops)[i,:]
+            spks_smooth = oasis(self.F_s_c, self.ops)[i,:]
             ax[i,0].plot(self.x, self.F_c[i])
             ax[i,0].plot(self.x, spks_temp)
             ax[i,1].plot(self.x, self.F_s_c[i])
@@ -118,35 +118,35 @@ class ProcessManualRoiData:
         plt.show()
     
     def Load_Data(self):
-        prew_time=time.time()
+        prew_time = time.time()
         print('Loading', self.data_source, 'data...')
         #we load the ops here as it contains information useful later
-        F_string=self.suite2p_folder+'/F.npy'
-        iscell_string=self.suite2p_folder+'/iscell.npy'
-        ops_string=self.suite2p_folder+'/ops.npy'
-        if os.path.isfile(ops_string)==True:
-            ops =  np.load(ops_string, allow_pickle=True)
+        F_string = self.suite2p_folder + '/F.npy'
+        iscell_string = self.suite2p_folder + '/iscell.npy'
+        ops_string = self.suite2p_folder + '/ops.npy'
+        if os.path.isfile(ops_string) == True:
+            ops = np.load(ops_string, allow_pickle = True)
             ops = ops.item()
-            self.ops=ops
+            self.ops = ops
         else:
             #this SetOps function makes an ops dictionary with the neccessary items with default values...
             print('ops file not found, using default parameters')
-            self.ops=SetDefaultOpsParameters
+            self.ops = SetDefaultOpsParameters
         #MANUAL ROI
-        if self.data_source=='manual':
+        if self.data_source == 'manual':
             training_data_x = pd.read_excel(self.manual_data_excel_file)
             array = training_data_x.values
             Fim = np.transpose(array)
             
             HD = list(training_data_x.columns)
-            hd_np=np.array(HD)
+            hd_np = np.array(HD)
             
             #now we subselect the ROI here
-            F_indexes=[]
-            if self.ids!=-1:
+            F_indexes = []
+            if self.ids != -1:
                 for i in range(hd_np.size):
                     try:
-                        item=int(hd_np[i])
+                        item = int(hd_np[i])
                         if item in self.ids:
                             F_indexes.append(i)
                             print('      ROI',item,'added')
@@ -155,35 +155,35 @@ class ProcessManualRoiData:
                     except ValueError:
                         pass
             else:
-                F_indexes=np.arange(1,Fim.shape[0]-1,2)
+                F_indexes = np.arange(1, Fim.shape[0] - 1, 2)
                 
-            self.header=[int(hd_np[i]) for i in F_indexes]
-            self.F=Fim[F_indexes,:]
-#            self.Fneu=Fim[Fneu_indexes,:]
-            self.N=self.F.shape[0]
-            self.M=self.F.shape[1]
-            print('   Manual ROI data loaded, found ',self.N,'traces in the shape:',self.F.shape)
+            self.header = [int(hd_np[i]) for i in F_indexes]
+            self.F = Fim[F_indexes,:]
+#            self.Fneu = Fim[Fneu_indexes,:]
+            self.N = self.F.shape[0]
+            self.M = self.F.shape[1]
+            print('   Manual ROI data loaded, found ', self.N, 'traces in the shape:', self.F.shape)
             
         # S2P ROI    
-        if self.data_source=='s2p':
+        if self.data_source == 's2p':
             #load
             F = np.load(F_string)
             iscell = np.load(iscell_string)
-            iscell=iscell[:,0]
+            iscell = iscell[:,0]
             #select the "cell" ROI-s only
-            F_s2p =F[np.nonzero(iscell)[0]]
+            F_s2p = F[np.nonzero(iscell)[0]]
             #finalise
-            self.F=F_s2p
-            self.N=F_s2p.shape[0]
-            self.N=F_s2p.shape[1]
-            self.header=np.nonzero(iscell)[0]
-            print('   suite2p data loaded',self.N, 'traces loaded found')
+            self.F = F_s2p
+            self.N = F_s2p.shape[0]
+            self.N = F_s2p.shape[1]
+            self.header = np.nonzero(iscell)[0]
+            print('   suite2p data loaded', self.N, 'traces loaded found')
         
-        print('   Traces loaded in',round(time.time()-prew_time,2), 'seconds')
+        print('   Traces loaded in', round(time.time() - prew_time, 2), 'seconds')
         
     def LoadImaging_times(self):
         print('Loading imaging frames time...')
-        prew_time=time.time() 
+        prew_time = time.time() 
         offset = self.time_shift
         # function that reads the action_log_file and finds the current stage
         # minidom is an xml file interpreter for python
@@ -205,12 +205,12 @@ class ProcessManualRoiData:
         #checking from here on
         if self.frame_times.size != self.M:
             print('number of frames not same in .xml file')
-        self.x=self.frame_times-self.frame_times[0]
+        self.x = self.frame_times - self.frame_times[0]
                  
         print('   LoadImaging_times time:',round(time.time()-prew_time,2), 'seconds')
     
     def LoadImage(self):
-        image_path=self.suite2p_folder+'manual_roi_big.png'
+        image_path = self.suite2p_folder + 'manual_roi_big.png'
         
         img2 = mpimg.imread(image_path)
         plt.figure('manual ROI')
@@ -219,32 +219,32 @@ class ProcessManualRoiData:
         return img2
     
     def Load_Beh(self, exp_log_file_string, plot=False):
-        prew_time=time.time()
+        prew_time = time.time()
         print('Loading and resampling relevant behavior...')
-        position=[]
-        exp_loop_timestamps=[]
-        mazeID=[]
-        lap=[]
-        lick=[]
-        reward=[]
-        exp_log_file=open(exp_log_file_string)
-        log_file_reader=csv.reader(exp_log_file, delimiter=',')
+        position = []
+        exp_loop_timestamps = []
+        mazeID = []
+        lap = []
+        lick = []
+        reward = []
+        exp_log_file = open(exp_log_file_string)
+        log_file_reader = csv.reader(exp_log_file, delimiter=',')
         next(log_file_reader, None)#skip the headers
         for line in log_file_reader:
             position.append(int(line[3]))
             exp_loop_timestamps.append(float(line[0]))
             lap.append(int(line[1]))
             mazeID.append(int(line[2]))
-            if line[9]=='TRUE':
+            if line[9] == 'TRUE':
                 lick.append(float(line[0]))
-            if line[14]=='TrialReward':
+            if line[14] == 'TrialReward':
                 reward.append(float(line[0]))
-        exp_look_timestamps=np.array(exp_loop_timestamps)
-        position=np.array(position)
-        mazeID=np.array(mazeID)
-        lap=np.array(lap)
-        lick=np.array(lick)
-        reward=np.array(reward)
+        exp_look_timestamps = np.array(exp_loop_timestamps)
+        position = np.array(position)
+        mazeID = np.array(mazeID)
+        lap = np.array(lap)
+        lick = np.array(lick)
+        reward = np.array(reward)
         
         resampled_time = self.frame_times
         
@@ -304,7 +304,7 @@ class ProcessManualRoiData:
         ax[1].scatter(self.motion_spikes*self.dt_imaging, np.ones(self.motion_spikes.shape)*threshold, c='r')
         ax[2].set_title('behavior')
         ax[2].set_ylabel('speed (cm/sec)', color='r')
-        ax[2].set_xlabel('imaging frame')
+        ax[2].set_xlabel('time (s)')
         ax[2].plot(self.x, self.speed, c='r')            
         ax[2].tick_params(axis='y', labelcolor='r')
         axy=ax[2].twinx()
@@ -354,28 +354,27 @@ class ProcessManualRoiData:
         #1)under the baseline
         ###################
         print('Calculating Z-motion...')
-        z=np.array([-1,-1])
+        zz=np.zeros_like(self.F)
+        
         std_threshold=10#user interaction??
         
         fig, ax=plt.subplots(self.N, sharex=True, sharey=False)
+        ax[0].set_title('Trace going under the baseline')
+        ax[-1].set_xlabel('time (s)')
         for i in range(self.N):
             
             threshold=self.baselines_corr[i]-std_threshold*self.SDmin[i]
             below=np.nonzero(self.F_c[i,:]<threshold)[0]
             
             if self.saturation[i]==0:    
-                z=np.concatenate((z, below))
-            ax[i].set_title('trace going under the baseline')
-            ax[i].plot(self.F_c[i,:])
-            ax[i].scatter(below, np.ones_like(below)*threshold, c='r')
-            ax[i].hlines(threshold, 0, self.M, color='k')
-            ax[i].hlines(self.baselines_corr[i], 0, self.M, color='y')
+                zz[i,below]+=1      
+            ax[i].plot(self.x, self.F_c[i,:], linewidth = 0.5, zorder = 0)
+            ax[i].scatter(below*self.dt_imaging, np.ones_like(below)*threshold, c='r',s=10,  zorder = 15)
+            ax[i].hlines(threshold, 0, self.x[-1], color='k',zorder = 10)
+            ax[i].hlines(self.baselines_corr[i], 0, self.x[-1], color='y', zorder = 5)
             
         plt.show()
-        z=z[np.nonzero(z>-1)[0]]
-        #hanyszor van?
-        z=np.unique(z)
-        self.UnderBaseline=z
+        self.UnderBaseline=zz
         print('   under the baseline Z done')
         
         ################
@@ -391,6 +390,7 @@ class ProcessManualRoiData:
         self.decay_ampl_after=[]
         #this needs to be made optimal
         self.SaveDecays(traces=self.F_s_c, baselines=self.baselines_corr,threshold_value=10)
+
         
         #fit Tau for organised, normalised data
         self.organise_decays()
@@ -405,9 +405,7 @@ class ProcessManualRoiData:
                 Tau=minimize_scalar(self.fit_tau2, bounds=(0.1, 10), method='bounded')
                 self.hidden_index+=1
                 self.Taus[i]=Tau.x
-
-
-        
+     
         ###
         #fit Tau to all traces at once
         ###
@@ -425,10 +423,8 @@ class ProcessManualRoiData:
                 self.Taus2[i]=Tau.x
         self.show_tau()
         self.FitS2p(sd_times=16)
-    
-    
-    
-    
+        self.collect_Z(plot=False)
+      
    
 #        ############################################################
 #        #fit Tau for individual traces
@@ -486,6 +482,8 @@ class ProcessManualRoiData:
         ###
         if show_decays_fitted==True:
             fig, ax=plt.subplots(self.N, sharex=True)
+            ax[0].set_title('Decays used for fitting Tau')
+            ax[-1].set_xlabel('time (s)')
             unique, ms = np.unique(self.decay_id, return_counts=True)
             index=0
             decay_ampl_after = np.copy(self.decay_ampl_after)
@@ -496,10 +494,10 @@ class ProcessManualRoiData:
                 threshold=np.median(ampl_after)
                 used_for_fit=np.nonzero(ampl_after>=threshold)[0]            
                 
-                ax[i].plot(self.x, self.F_s_sharp[i,:], c='g')
-                ax[i].plot(self.x, self.F_s[i,:], c='k')
-                ax[i].plot(self.x, self.F[i,:], linewidth=0.5)
-                ax[i].hlines(self.baselines[i]+10*self.SDmin[i], 0, self.M*self.dt_imaging)
+                ax[i].plot(self.x, self.F_s_sharp[i,:], c='g', linewidth = 0.6, zorder = 4)
+                ax[i].plot(self.x, self.F_s[i,:], c='k', zorder = 2)
+                ax[i].plot(self.x, self.F[i,:], linewidth=0.3, zorder = 0)
+                ax[i].hlines(self.baselines[i]+10*self.SDmin[i], 0, self.M*self.dt_imaging, linewidth=0.3, zorder = 12)
                 index2=0
                 for j in range(m):
                     if type(self.decays_to_fit[index])==int:
@@ -509,12 +507,12 @@ class ProcessManualRoiData:
                         start=self.decay_start[index]
         
                         if index2 in used_for_fit:        
-                            ax[i].plot(np.linspace(start,start+length-1, length)*self.dt_imaging, self.decays_to_fit[index], c='r')
+                            ax[i].plot(np.linspace(start,start+length-1, length)*self.dt_imaging, self.decays_to_fit[index], c='r', zorder = 6)
                         else:
-                            ax[i].plot(np.linspace(start,start+length-1, length)*self.dt_imaging, self.decays_to_fit[index], c='brown', linestyle='-.')
-                        ax[i].scatter(self.decay_start[index]*self.dt_imaging, self.decay_smooth_peak[index], c='k')
-                        ax[i].vlines(start*self.dt_imaging, self.decay_smooth_peak[index]-self.decay_ampl_before[index],self.decay_smooth_peak[index], colors='pink' )
-                        ax[i].vlines((start+1)*self.dt_imaging, self.decay_smooth_peak[index]-self.decay_ampl_after[index],self.decay_smooth_peak[index], colors='brown' )
+                            ax[i].plot(np.linspace(start,start+length-1, length)*self.dt_imaging, self.decays_to_fit[index], c='brown', linestyle='-.', zorder = 6)
+                        ax[i].scatter(self.decay_start[index]*self.dt_imaging, self.decay_smooth_peak[index], c='k', s=10, zorder = 10)
+                        ax[i].vlines(start*self.dt_imaging, self.decay_smooth_peak[index]-self.decay_ampl_before[index],self.decay_smooth_peak[index], colors='pink',zorder = 15 )
+                        ax[i].vlines((start+1)*self.dt_imaging, self.decay_smooth_peak[index]-self.decay_ampl_after[index],self.decay_smooth_peak[index], colors='brown',zorder = 15 )
                         index+=1
                         index2+=1
                         
@@ -554,10 +552,13 @@ class ProcessManualRoiData:
                     trace_raw=F[rise_index[j]:fall_index[j]]
                     trace=F_s_c[rise_index[j]:fall_index[j]]
                     if trace.size>2:
+
                         #find local max and min
-                        loc_max_p=argrelextrema(trace, np.greater)[0]
+#                        loc_max_p=argrelextrema(trace, np.greater)[0]
+                        loc_max_p=find_peaks(trace)[0]
                         loc_max_p+=np.ones_like(loc_max_p)*rise_index[j]
-                        loc_min_p=argrelextrema(trace, np.less)[0]
+#                        loc_min_p=argrelextrema(trace, np.less)[0]
+                        loc_min_p=find_peaks(trace*-1)[0]
                         loc_min_p+=np.ones_like(loc_min_p)*rise_index[j]
                         loc_max_v=F_s_c[loc_max_p]
                         loc_min_v=F_s_c[loc_min_p]
@@ -587,12 +588,6 @@ class ProcessManualRoiData:
                             loc_min_p=np.delete(loc_min_p, 0)
                             loc_min_v=np.delete(loc_min_v, 0)
                             
-                        
-                        if loc_max_p.size!=ampl_after.size:
-                            print('kecske')
-                        ampl_after2=ampl_after[np.nonzero(ampl_after>=0)[0]]
-                        if ampl_after2.size!=ampl_after.size:
-                            print('!!!!!minuszegy')
                         #remove  aftervalley fluctuation
                         for k in range(loc_min_v.size):
                             if loc_max_v.size>loc_min_v.size:#! van hogy 1-1
@@ -654,8 +649,6 @@ class ProcessManualRoiData:
                         loc_max_v=F_s[loc_max_p]
                         
                         #save decays to fit Tau 
-                        if loc_max_p.size!=ampl_after.size:
-                            print(i, 'KECSKE')
                         for k in range(loc_max_p.size):
                             if k==loc_max_p.size-1:
                                 raw=trace_raw[int(loc_max_p[k]-rise_index[j]):]
@@ -669,15 +662,15 @@ class ProcessManualRoiData:
                                 self.decay_ampl_after.append(ampl_after[k])
                                 self.decay_ampl_before.append(ampl_before[k])
                                 decays_saved+=1
-            else:
-                if decays_saved==0:
-                    print('   for ',i,'th trace no decay found')
-                    self.decays_to_fit.append(-1)
-                    self.decay_id.append(i)
-                    self.decay_smooth_peak.append(-1)
-                    self.decay_start.append(-1)
-                    self.decay_ampl_after.append(-1)
-                    self.decay_ampl_before.append(-1)
+            
+            if decays_saved==0:
+                print('   for the',i,'th trace no decay found')
+                self.decays_to_fit.append(-1)
+                self.decay_id.append(i)
+                self.decay_smooth_peak.append(-1)
+                self.decay_start.append(-1)
+                self.decay_ampl_after.append(-1)
+                self.decay_ampl_before.append(-1)
             
     def organise_decays(self):
         print('      organising decays...')
@@ -694,10 +687,10 @@ class ProcessManualRoiData:
             decays_used = decays_to_fit[np.nonzero(self.decay_id==i)[0]]
             smooth_maxes = decay_smooth_peak[np.nonzero(self.decay_id==i)[0]]
             ampl_after = decay_ampl_after[np.nonzero(self.decay_id==i)[0]]
-            if len(decays_used) == 1:
-                if decays_used == -1:
-                    self.decay_traces.append(np.array([-1]))
-                    self.decay_traces_ind.append(np.array([-1]))
+            if (len(decays_used) == 1) & (decays_used == -1):
+#                print('Zero decays used')
+                self.decay_traces.append(np.array([-1]))
+                self.decay_traces_ind.append(np.array([-1]))
             else:
                 #we want to fit the 'big' traces
                 threshold=np.median(ampl_after)
@@ -812,84 +805,83 @@ class ProcessManualRoiData:
         
         return diference
     
-    def FitS2p(self, sd_times=15, plot=True):
+    def FitS2p(self, sd_times = 15, plot = True):
         print('      Fitting s2p output with calculated Tau, detecting Z artefacts...') 
 #        n=4
-        self.z_s2p_up=np.array(-1)
-        self.z_s2p_down=np.array(-1)
-        self.spks=np.zeros((self.N, self.M))
-        if plot==True:
-            fig, ax=plt.subplots(self.N, sharex=True)
+        self.z_s2p_up = np.zeros_like(self.F)
+        self.z_s2p_down = np.zeros_like(self.F)
+        
+        self.spks = np.zeros((self.N, self.M))
+        if plot == True:
+            fig, ax = plt.subplots(self.N, sharex=True)
+            ax[-1].set_xlabel('time (s)')
         for i in range(self.N):
-            min_std=self.SDmin[i]
-            min_std_r=self.SDmin_raw[i]
-            self.ops['tau']=self.Taus2[i]
-            spks_temp=oasis(self.F_c, self.ops)
-            self.spks[i,:]=spks_temp[i,:]
-            decay=exp_decay(self.spks[i,:],self.ops['tau'])
-            z=np.nonzero(self.F_c[i,:]<(decay-sd_times*min_std))[0]
-            z_plus=np.nonzero(self.F_c[i,:]>(decay+(sd_times)*min_std))[0]
+            min_std = self.SDmin[i]
+#            min_std_r = self.SDmin_raw[i]
+            self.ops['tau'] = self.Taus2[i]
+            spks_temp = oasis(self.F_c, self.ops)
+            self.spks[i,:] = spks_temp[i,:]
+            decay = exp_decay(self.spks[i,:],self.ops['tau'])
+            z = np.nonzero(self.F_c[i,:] < (decay-sd_times*min_std))[0]
+            z_plus = np.nonzero(self.F_c[i,:] > (decay+(sd_times)*min_std))[0]
             
-            if plot==True:    
-                ax[i].plot(self.x,self.F_c[i,:], c='b')
-                ax[i].plot(self.x,decay, c='g', linewidth=0.5)
-                ax[i].plot(self.x,decay, c='magenta', linewidth=0.5)
-                ax[i].plot(self.x,decay-sd_times*min_std, c='r', linewidth=0.5)
-                ax[i].plot(self.x,decay+(sd_times)*min_std, c='r', linewidth=0.5)  
-                ax[i].plot(self.x,decay-3*min_std_r, c='k', linewidth=0.5)
-                ax[i].plot(self.x,decay+3*min_std_r, c='k', linewidth=0.5)  
+            if plot == True:    
+                ax[i].plot(self.x, self.F_c[i,:], linewidth=0.8)
+                ax[i].plot(self.x, decay, c='magenta', linewidth=0.5)
+                ax[i].plot(self.x, decay-sd_times*min_std, c='r', linewidth=0.5)
+                ax[i].plot(self.x, decay+(sd_times)*min_std, c='r', linewidth=0.5)  
+#                ax[i].plot(self.x, decay-3*min_std_r, c='k', linewidth=0.5)
+#                ax[i].plot(self.x, decay+3*min_std_r, c='k', linewidth=0.5)  
                 
                 
-                ax[i].scatter(z*self.dt_imaging,self.F_c[i,z], c='k')
-                ax[i].scatter(z_plus*self.dt_imaging,self.F_c[i,z_plus], c='b')
+                ax[i].scatter(z*self.dt_imaging,self.F_c[i,z],s=10, c='k')
+                ax[i].scatter(z_plus*self.dt_imaging,self.F_c[i,z_plus],s=10, c='b')
                 ax[i].plot(self.x,self.spks[i,:],c='orange')
                 title='Tau ='+str(round(self.Taus2[i], 2))
                 ax[i].set_title(title)
-                if i==0:
+                if i == 0:
                     ax[i].set_title('Z artefacts based on suite2p fit with \n'+title)
                     
-            self.z_s2p_down=np.append(self.z_s2p_down, z)
-            self.z_s2p_up=np.append(self.z_s2p_up, z_plus)
-        plt.show()      
-        self.z_s2p_down=np.unique(self.z_s2p_down)
-        self.z_s2p_up=np.unique(self.z_s2p_up) 
+            self.z_s2p_down[i,z] += 1
+            self.z_s2p_up[i,z_plus] +=1 
+        plt.show()       
     
     def show_tau(self):
         #this function is for visually checking the 
         #    fitted exponential with optimal Tau
-        lengthening_factor=2
-        ids=np.unique(self.decay_id)
+        lengthening_factor = 2
+        ids = np.unique(self.decay_id)
         for i in ids:
             if (i in self.show_tau_indexes):
                 plt.figure('showtau'+str(i))
-                if (self.decay_traces[i].size!=1) & (self.decay_traces_ind[i].size!=1):
+                if (self.decay_traces[i].size != 1) & (self.decay_traces_ind[i].size != 1):
                     #average fit
-                    Tau=self.Taus2[i]
-                    alpha=1/Tau
+                    Tau = self.Taus2[i]
+                    alpha = 1/Tau
                     if self.tau_init == 'one':
-                        y0=1
+                        y0 = 1
                     else:
-                        y0=self.decay_traces[i][0]
-                    expo=[]
-                    time=np.linspace(0,(self.decay_traces[i].size*self.dt_imaging)*lengthening_factor, self.decay_traces[i].size*lengthening_factor)
+                        y0 = self.decay_traces[i][0]
+                    expo = []
+                    time = np.linspace(0,(self.decay_traces[i].size*self.dt_imaging)*lengthening_factor, self.decay_traces[i].size*lengthening_factor)
                     for t in time:
-                        value=y0*math.exp(-t*alpha)
+                        value = y0*math.exp(-t*alpha)
                         expo.append(value)
-                    np_expo=np.array(expo)
+                    np_expo = np.array(expo)
                     
                     #fit all
-                    Tau=self.Taus2[i]
-                    alpha=1/Tau
+                    Tau = self.Taus2[i]
+                    alpha = 1/Tau
                     if self.tau_init == 'one':
-                        y0=1
+                        y0 = 1
                     else:
-                        y0=np.average(self.decay_traces_ind[i][:,0])
-                    expo2=[]
-                    time=np.linspace(0,(self.decay_traces_ind[i].shape[1]*self.dt_imaging)*lengthening_factor, self.decay_traces_ind[i].shape[1]*lengthening_factor)
+                        y0 = np.average(self.decay_traces_ind[i][:,0])
+                    expo2 = []
+                    time = np.linspace(0,(self.decay_traces_ind[i].shape[1]*self.dt_imaging)*lengthening_factor, self.decay_traces_ind[i].shape[1]*lengthening_factor)
                     for t in time:
-                        value=y0*math.exp(-t*alpha)
+                        value = y0*math.exp(-t*alpha)
                         expo2.append(value)
-                    np_expo2=np.array(expo2)
+                    np_expo2 = np.array(expo2)
                 
                 
                 
@@ -897,204 +889,224 @@ class ProcessManualRoiData:
                     plt.plot(np_expo2, linewidth=2, c='b')
                 else:
                     plt.text(0,0.5, 'No good decays - default Tau is used ', size=20)
-                title=str(round(self.Taus2[i],2))+','+ str(round(self.Taus2[i],2))
+                title = str(round(self.Taus2[i],2))+','+ str(round(self.Taus2[i],2))
                 plt.title(title)
         plt.show()
-    
+    def collect_Z(self, plot=False):
+        print('underbaseline',self.UnderBaseline.shape)
+        print('s2p_up', self.z_s2p_up.shape)
+        print('s2p_down', self.z_s2p_down.shape)
+        print('motion', self.motion_spikes.shape)
+        z = np.zeros_like(self.F)
+        z = self.UnderBaseline + self.z_s2p_down
+        if plot == True:
+            fig, ax=plt.subplots(self.N+1, sharex=True)
+        for i in range(self.N):
+            z[i,np.nonzero(z[i,:] > 1)[0]] = 1
+            if plot == True:
+                ax[i].plot(z[i,:])
+                ax[i].plot(self.z_s2p_down[i,:], c='r')
+                ax[i].plot(self.UnderBaseline[i,:], c='g')
+        zz = np.sum(z, axis=0)
+        z_up = np.sum(self.z_s2p_up, axis=0)
+        
+        if plot == True:
+            ax[-1].plot(zz, c='k')
+            ax[-1].plot(z_up, c='y')
+            plt.show()
+        #serious Z
+        if self.N >= 8:
+            self.Z = np.nonzero(zz >= int(self.N/3))[0]
+            self.Z_sus = np.nonzero(z_up >= int(self.N/3))[0]
+        else:
+            self.Z = np.nonzero(zz >= 2)[0]
+            self.Z_sus = np.nonzero(z_up >= 2)[0]
+        
+        #motion + s2p up
+        self.Z_sus = np.unique(np.concatenate((self.Z_sus, self.motion_spikes)))
+        
+        print('   Z artefacts: ',self.Z.shape, self.Z)
+        print('   suspicious Z: ', self.Z_sus.shape, self.Z_sus)
+        #ToDo - check Z coordinates
+        
+        
     def save_F_spks(self,plot=False):
         print('Saving "s2p-like" output here: ',self.save_path)
-        prew_time=time.time()
+        prew_time = time.time()
         #saving
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         np.save(self.save_path+'spks.npy',self.spks)
         np.save(self.save_path+'F.npy',self.F)
         np.save(self.save_path + 'iscell.npy', np.ones((self.N,2)))
-        if plot==True:
-            fig, ax=plt.subplots(self.N)
+        if plot == True:
+            fig, ax = plt.subplots(self.N)
             for i in range(self.N):
                 ax[i].plot(self.F[i,:])
                 ax[i].plot(self.spks[i,:], c='orange')
             plt.show()        
         print('   Saving finished in',round(time.time()-prew_time,2), 'seconds')
-            
-##################################################################################
-        #old code
-################################################################################## 
            
     def ProcessTrace(self):
-        prew_time=time.time()
+        prew_time = time.time()
         print('Processing traces...')
 #       #return traces (interpolated, cut)
 
-        processed_data=np.zeros_like(self.F)
-        #kill corrupted frames here
-        print('   Z_under_baseine',self.UnderBaseline.size)
-        print('   motion_spikes',self.motion_spikes.size)
-        print('   Z_s2p_down',self.z_s2p_down.size)
-        print('   Z_s2p_up',self.z_s2p_up.size)
-        #we delete these, and not show in the figures
-        self.frames_to_thrash=np.unique(np.concatenate((self.UnderBaseline, self.z_s2p_down)))
-        #we just mark these
-        self.suspicious_frames=np.unique(np.concatenate((self.motion_spikes, self.z_s2p_up)))
-        self.frames_to_kill=np.unique(np.concatenate((self.frames_to_thrash,self.frames_to_thrash+1,self.frames_to_thrash-1,self.frames_to_thrash+2)))
-        self.frames_sus=np.unique(np.concatenate((self.suspicious_frames,self.suspicious_frames+1,self.frames_to_thrash-1,self.frames_to_thrash+2)))
-        self.frames_to_kill=self.frames_to_kill[np.nonzero(self.frames_to_kill<self.F.shape[1])[0]]
-        self.frames_sus=self.frames_sus[np.nonzero(self.frames_sus<self.F.shape[1])[0]]
+        processed_data = np.zeros_like(self.F)
+        
+        
+        self.frames_to_kill = np.unique(np.concatenate((self.Z,self.Z+1,self.Z-1,self.Z+2)))#not elegant
+        self.frames_sus = np.unique(np.concatenate((self.Z_sus,self.Z_sus+1,self.Z_sus-1,self.Z_sus+2)))
+        
+        self.frames_to_kill = self.frames_to_kill[np.nonzero(self.frames_to_kill<self.F.shape[1])[0]]
+        self.frames_sus = self.frames_sus[np.nonzero(self.frames_sus<self.F.shape[1])[0]]
+        self.frames_to_kill = self.frames_to_kill[np.nonzero(self.frames_to_kill >= 0)[0]]
+        self.frames_sus = self.frames_sus[np.nonzero(self.frames_sus >= 0)[0]]
 
-        fig, ax=plt.subplots(self.N, sharex=True)
+        fig, ax = plt.subplots(self.N, sharex=True)
         ax[0].set_title('Z artefacts cut out interpolation shown with red')
+        ax[-1].set_xlabel('time (s)')
         for i in range(self.N):
-            ROI=np.copy(self.F[i,:])
+            ROI = np.copy(self.F[i,:]).astype('float')
             #raw smoothed trace
             
-            ROI[self.frames_to_kill]=np.NaN
-            gaus_trace=NaN_Gaussian_filter(ROI,3)#gaus filtered trace                      
+            ROI[self.frames_to_kill] = np.NaN
+            gaus_trace = NaN_Gaussian_filter(ROI,3)#gaus filtered trace                      
             
-            temp=np.copy(gaus_trace)
-            temp[self.frames_to_kill]=np.NaN
-            #delete small islands of not corrupted frames here
-            temp3=delete_small_islands(temp)
-            int_gaus_trace=LinearInterpolate(temp3)# linearly interpolate NaNs in gaus filtered trace
-            processed_data[i,:]=int_gaus_trace
+            temp = np.copy(gaus_trace).astype('float')
+            temp[self.frames_to_kill] = np.NaN
+            #delete small islands of not corrupted frames here - not used now
+            #temp3 = delete_small_islands(temp)
+            int_gaus_trace = LinearInterpolate(temp)# linearly interpolate NaNs in gaus filtered trace
+            processed_data[i,:] = int_gaus_trace
             
             ax[i].plot(self.x, self.F[i,:], linewidth=0.3)
             ax[i].plot(self.x, gaus_trace, c='k')
             ax[i].plot(self.x, int_gaus_trace, c='r')
             ax[i].plot(self.x, temp, c='g')
             
+            
         plt.show()
-        #TODO
-        #we do not want to kill the island nans probably
-        frames_to_kill2=np.argwhere(np.isnan(gaus_trace)).flatten()
-        self.frames_to_kill=np.unique(np.concatenate((self.frames_to_kill,frames_to_kill2)))
                   
-        print('   Processing traces finished in',round(time.time()-prew_time,2), 'seconds')
+        print('   Processing Z-artefacts finished in',round(time.time()-prew_time,2), 'seconds')
         return processed_data
     
-    def DetectSpikes(self, traces, baselines,threshold_value=10, plot=True):
+    def DetectSpikes(self, traces, baselines, threshold_value = 10, plot = True):
         # return the max value, place
-        prew_time=time.time()  
+        prew_time = time.time()  
 
         print('Detecting spikes...')
         
-        fig, ax=plt.subplots(self.N+1, sharex=True)
+        fig, ax = plt.subplots(self.N + 1, sharex = True)
         ax[0].set_title('detected spikes')
         ax[self.N].set_title('behavior')
-        ax[self.N].set_ylabel('speed (cm/sec)', color='r')
-        ax[self.N].set_xlabel('imaging frame')
-        ax[self.N].plot(self.x, self.speed, c='r')            
-        ax[self.N].tick_params(axis='y', labelcolor='r')
-        axy=ax[self.N].twinx()
+        ax[self.N].set_ylabel('speed (cm/sec)', color = 'r')
+        ax[self.N].set_xlabel('time (s)')
+        ax[self.N].plot(self.x, self.speed, c = 'r')            
+        ax[self.N].tick_params(axis = 'y', labelcolor = 'r')
+        axy = ax[self.N].twinx()
         axy.yaxis.set_label_position("right")
         axy.set_ylabel('position')
-        axy.plot(self.x, self.pos_res, c='k')
-        axy.vlines(self.licks,0,3000, colors='k', linewidth=0.5)
-        axy.scatter(self.rewards,np.ones_like(self.rewards)*3600, c='b' )
+        axy.plot(self.x, self.pos_res, c = 'k')
+        axy.vlines(self.licks,0,3000, colors = 'k', linewidth = 0.5)
+        axy.scatter(self.rewards,np.ones_like(self.rewards)*3600, c = 'b' )
         
-        self.loc_max_p=[]
-        self.loc_max_v=[]
-        self.loc_max_ampl=[]           
+        self.loc_max_p = []
+        self.loc_max_v = []
+        self.loc_max_ampl = []           
        
         for i in range(self.N):
           
-            decays_saved=0
-            max_places=np.zeros((0))
-            max_values=np.zeros((0))
-            amplitudes=np.zeros((0))
+            max_places = np.zeros((0))
+            max_values = np.zeros((0))
+            amplitudes = np.zeros((0))
 
-            F=np.copy(self.F[i,:])#just for plotting
-            F_s=np.copy(traces[i,:])
-            F_s=np.concatenate(([baselines[i]],F_s,[baselines[i]]))
-            x=np.hstack(([-self.dt_imaging],self.x, [self.x[-1]+self.dt_imaging]))
-            threshold=baselines[i]+threshold_value*self.SDmin[i]
-            secondary_peak_threshold=self.SDmin[i]*3
-            
-            ax[i].plot(self.x, F-np.ones_like(F)*np.min(F), linewidth=0.3)
-            ax[i].plot(x, F_s, c='g')
-            ax[i].hlines(baselines[i], self.x[0], self.x[-1],colors='k', linewidth=0.7)
-            ax[i].hlines(threshold, self.x[0], self.x[-1],colors='r', linewidth=0.7)
+            F_s = np.copy(traces[i,:])
+            F_s = np.concatenate(([baselines[i]],F_s,[baselines[i]]))
+            x = np.hstack(([-self.dt_imaging],self.x, [self.x[-1]+self.dt_imaging]))
+            threshold = baselines[i] + threshold_value*self.SDmin[i]
+            secondary_peak_threshold = self.SDmin[i]*3
+#            ax[i].plot(self.x, self.F[i,:] - np.ones_like(self.F[i,:])*np.min(self.F[i,:]), c = 'orange', linewidth = 0.3, zorder = 0)
+
+            ax[i].plot(self.x, self.F[i,:] - np.ones_like(self.F[i,:])*self.baselines[i], c = 'orange', linewidth = 0.3, zorder = 0)
+            ax[i].plot(x, F_s, c = 'g', linewidth = 0.6, zorder = 5)
+            ax[i].hlines(baselines[i], self.x[0], self.x[-1],colors = 'k', linewidth = 0.7, zorder = 10)
+            ax[i].hlines(threshold, self.x[0], self.x[-1],colors = 'r', linewidth = 0.7, zorder = 15)
             
             #find peaks
-            rise_index=np.nonzero((F_s[0:-1] < threshold)&(F_s[1:]>= threshold))[0]+1
-            fall_index=np.nonzero((F_s[0:-1] > threshold)&(F_s[1:]<= threshold))[0]+1
+            rise_index = np.nonzero((F_s[0:-1] < threshold) & (F_s[1:] >= threshold))[0] + 1
+            fall_index = np.nonzero((F_s[0:-1] > threshold) & (F_s[1:] <= threshold))[0] + 1
             
-            if rise_index.size>0 and fall_index.size>0:
-                if rise_index.size> fall_index.size:
-                    rise_index=rise_index[:-1].copy()
-                if rise_index.size< fall_index.size:
-                    fall_index=fall_index[1:].copy()
-                if rise_index[0]>fall_index[0]:
-                    rise_index=rise_index[:-1].copy()
-                    fall_index=fall_index[1:].copy()
+            if rise_index.size > 0 and fall_index.size > 0:
+                if rise_index.size > fall_index.size:
+                    rise_index = rise_index[:-1].copy()
+                if rise_index.size < fall_index.size:
+                    fall_index = fall_index[1:].copy()
+                if rise_index[0] > fall_index[0]:
+                    rise_index = rise_index[:-1].copy()
+                    fall_index = fall_index[1:].copy()
                 for j in range(rise_index.size):
-                    trace=F_s[rise_index[j]:fall_index[j]]
-                    trace_raw=F[rise_index[j]:fall_index[j]]
+                    trace = F_s[rise_index[j]:fall_index[j]]
+#                    trace_raw=F[rise_index[j]:fall_index[j]]
                     #some baseline before the peak (to get real amplitudes for the first)
-                    if rise_index[j]-10<0:
-                        baseline_start=0
+                    if rise_index[j]-10 < 0:
+                        baseline_start = 0
                     else:
-                        baseline_start=rise_index[j]-10
-                    baseline=np.min(F_s[baseline_start:rise_index[j]])
-                    if baseline< baselines[i]:
-                        baseline=baselines[i]
-                    if trace.size>2:    
+                        baseline_start = rise_index[j] - 10
+                    baseline = np.min(F_s[baseline_start:rise_index[j]])
+                    if baseline < baselines[i]:
+                        baseline = baselines[i]
+                    if trace.size > 2:    
                         #find local max and min
-                        loc_max_p=argrelextrema(trace, np.greater)[0]
-                        loc_max_p+=np.ones_like(loc_max_p)*rise_index[j]
-                        loc_min_p=argrelextrema(trace, np.less)[0]
-                        loc_min_p+=np.ones_like(loc_min_p)*rise_index[j]
-                        loc_max_v=F_s[loc_max_p]
-                        loc_min_v=F_s[loc_min_p]
+#                        loc_max_p = argrelextrema(trace, np.greater)[0]
+                        loc_max_p = find_peaks(trace)[0]
+                        loc_max_p += np.ones_like(loc_max_p)*rise_index[j]
+#                        loc_min_p = argrelextrema(trace, np.less)[0]
+                        loc_min_p = find_peaks(trace * -1)[0]
+                        loc_min_p += np.ones_like(loc_min_p)*rise_index[j]
+                        loc_max_v = F_s[loc_max_p]
+                        loc_min_v = F_s[loc_min_p]
                         #delete potential local min at begining
-                        if loc_min_p.size>0 and loc_min_p[0]<loc_max_p[0]:
-                            loc_min_p=np.delete(loc_min_p, 0)
-                            loc_min_v=np.delete(loc_min_v, 0)
+                        if loc_min_p.size > 0 and loc_min_p[0] < loc_max_p[0]:
+                            loc_min_p = np.delete(loc_min_p, 0)
+                            loc_min_v = np.delete(loc_min_v, 0)
                         #remove  aftervalley fluctuation
                         for k in range(loc_min_v.size):
-                            if loc_max_v.size>loc_min_v.size:#! van hogy 1-1
-                                if loc_max_v[k+1]-loc_min_v[k]<secondary_peak_threshold:
-                                    loc_max_p[k+1]=-1
-                                    loc_min_p[k]=-1
-                        loc_max_p=loc_max_p[np.nonzero(loc_max_p>=0)[0]]
-                        loc_max_v=F_s[loc_max_p]
-                        loc_min_p=loc_min_p[np.nonzero(loc_min_p>=0)[0]]
-                        loc_min_v=F_s[loc_min_p]
+                            if loc_max_v.size > loc_min_v.size:#! van hogy 1-1
+                                if loc_max_v[k+1] - loc_min_v[k] < secondary_peak_threshold:
+                                    loc_max_p[k+1] = -1
+                                    loc_min_p[k] = -1
+                        loc_max_p = loc_max_p[np.nonzero(loc_max_p >= 0)[0]]
+                        loc_max_v = F_s[loc_max_p]
+                        loc_min_p = loc_min_p[np.nonzero(loc_min_p >= 0)[0]]
+                        loc_min_v = F_s[loc_min_p]
 
                         #calculate amplitudes                       
-                        ampl=np.zeros_like(loc_max_p, dtype=float)
+                        ampl = np.zeros_like(loc_max_p, dtype = float)
                         for k in range(loc_max_p.size):
-                            if k==0:
-                                ampl[k]=loc_max_v[k]-baseline
+                            if k == 0:
+                                ampl[k] = loc_max_v[k] - baseline
 
-                                ax[i].vlines(loc_max_p[k]*self.dt_imaging, loc_max_v[k]-ampl[k],loc_max_v[k], colors='b')
+                                ax[i].vlines(loc_max_p[k]*self.dt_imaging, loc_max_v[k] - ampl[k],loc_max_v[k], colors='b')
                             else:
-                                ampl[k]=loc_max_v[k]-loc_min_v[k-1]
+                                ampl[k] = loc_max_v[k] - loc_min_v[k-1]
 
-                                ax[i].vlines(loc_max_p[k]*self.dt_imaging, loc_max_v[k]-ampl[k],loc_max_v[k], colors='b')
-                                if ampl[k]<0:
-                                    ax[i,0].scatter(loc_max_p[k]*self.dt_imaging,baseline, c='r', s=100)
-                                if ampl[k]==0:
-                                    ax[i,0].scatter(loc_max_p[k]*self.dt_imaging,baseline, c='r', s=100)
+                                ax[i].vlines(loc_max_p[k]*self.dt_imaging, loc_max_v[k] - ampl[k],loc_max_v[k], colors='b')
+                                if ampl[k] < 0:
+                                    ax[i,0].scatter(loc_max_p[k]*self.dt_imaging,baseline, c = 'r', s = 100)
+                                if ampl[k] == 0:
+                                    ax[i,0].scatter(loc_max_p[k]*self.dt_imaging,baseline, c = 'r', s = 100)
                         
-                        ax[i].scatter(loc_max_p*self.dt_imaging, loc_max_v, c='k')
-                        ax[i].scatter(loc_min_p*self.dt_imaging, loc_min_v, c='b', s=5)
+                        ax[i].scatter(loc_max_p*self.dt_imaging, loc_max_v, c = 'k', s=15, zorder = 25)
+                        ax[i].scatter(loc_min_p*self.dt_imaging, loc_min_v, c = 'b', s = 5, zorder = 20)
                         
-                        max_places=np.concatenate((max_places,loc_max_p))
-                        max_values=np.concatenate((max_values,loc_max_v))
-                        amplitudes=np.concatenate((amplitudes,ampl))
+                        max_places = np.concatenate((max_places,loc_max_p))
+                        max_values = np.concatenate((max_values,loc_max_v))
+                        amplitudes = np.concatenate((amplitudes,ampl))
                         
-                self.loc_max_p.append(max_places-1)
+                self.loc_max_p.append(max_places - 1)
                 self.loc_max_v.append(max_values)
                 self.loc_max_ampl.append(amplitudes)
-                if decays_saved==0:
-                    for k in range(loc_max_p.size):
-                        if k==loc_max_p.size-1:
-                            raw=trace_raw[int(loc_max_p[k]-rise_index[j]):]
-                        else:
-                            raw=trace_raw[int(loc_max_p[k]-rise_index[j]):int(loc_min_p[k]-rise_index[j])]
-                        self.decays_to_fit.append(raw)
-                        self.decay_id.append(i)
                     
             else:
                 print('      No peaks detected for',i, '. trace')
@@ -1103,71 +1115,71 @@ class ProcessManualRoiData:
                 self.loc_max_ampl.append(np.array([1, 2]))
         plt.show()        
                 
-        print('   Spikedetection finished in',round(time.time()-prew_time,2), 'seconds')
+        print('   Spikedetection finished in',round(time.time() - prew_time,2), 'seconds')
         
-    def CorrelatePeaks_test(self, toplot1=-1, toplot2=-2, plot=True, same_peak_thr=15):
+    def CorrelatePeaks_test(self, toplot1 = -1, toplot2 = -1, plot = True, same_peak_thr = 15):
         prew_time=time.time()        
         print('Correlating peaks...')
         
         wind_size = 12
         volley_kern = 4
-        if toplot1==-1 or toplot2==-1:
-            specified_pair_plots=False
+        if toplot1 == -1 or toplot2 == -1:
+            specified_pair_plots = False
         else:
-            specified_pair_plots=True
-            fig, ax_sampl=plt.subplots(2, sharex=True)
+            specified_pair_plots = True
+            fig, ax_sampl = plt.subplots(2, sharex = True)
         
         for m in range(self.N):
-            for n in range(self.N-(m+1)):
+            for n in range(self.N - (m + 1)):
 #                print(m,n+m+1)
-                index1=m
-                index2=n+m+1
+                index1 = m
+                index2 = n + m + 1
                 
-                trace1=self.F_s_c[index1,:]
-                trace2=self.F_s_c[index2,:]
+                trace1 = self.F_s_c[index1,:]
+                trace2 = self.F_s_c[index2,:]
 #                raw_trace1=self.F[index1,:]
 #                raw_trace2=self.F[index2,:]
-                loc_max_p1=np.copy(self.loc_max_p[index1])
-                loc_max_v1=np.copy(self.loc_max_v[index1])
-                loc_max_p2=np.copy(self.loc_max_p[index2])
-                loc_max_v2=np.copy(self.loc_max_v[index2])
-                amplitudes1=np.copy(self.loc_max_ampl[index1])
-                amplitudes2=np.copy(self.loc_max_ampl[index2])
+                loc_max_p1 = np.copy(self.loc_max_p[index1])
+                loc_max_v1 = np.copy(self.loc_max_v[index1])
+                loc_max_p2 = np.copy(self.loc_max_p[index2])
+                loc_max_v2 = np.copy(self.loc_max_v[index2])
+                amplitudes1 = np.copy(self.loc_max_ampl[index1])
+                amplitudes2 = np.copy(self.loc_max_ampl[index2])
                 
-                pair_quality=[]#0=default, 1= only in first trace, 2= only in second trace, 3 = in both
-                P1=[]
-                P2=[]
-                T1=[]
-                T2=[]
-                A1=[]
-                A2=[]
-                TV1=[]
-                TV2=[]
+                pair_quality = []#0=default, 1= only in first trace, 2= only in second trace, 3 = in both
+                P1 = []
+                P2 = []
+                T1 = []
+                T2 = []
+                A1 = []
+                A2 = []
+                TV1 = []
+                TV2 = []
                 
                 for i in range(loc_max_p1.size):
-                    if loc_max_p2.size!=0:
-                        nearest_peak=find_nearest(loc_max_p2,loc_max_p1[i])
-                        nearest_peak_value=loc_max_v2[np.where(loc_max_p2==nearest_peak)[0]]
-                        nearest_ampl=amplitudes2[np.where(loc_max_p2==nearest_peak)[0]]
+                    if loc_max_p2.size != 0:
+                        nearest_peak = find_nearest(loc_max_p2,loc_max_p1[i])
+                        nearest_peak_value = loc_max_v2[np.where(loc_max_p2 == nearest_peak)[0]][0]
+                        nearest_ampl = amplitudes2[np.where(loc_max_p2 == nearest_peak)[0]][0]
                         #adatokkal való feltöltés ha nincs talált pár
-                        if np.abs(nearest_peak- loc_max_p1[i])>same_peak_thr:
+                        if np.abs(nearest_peak - loc_max_p1[i]) > same_peak_thr:
                             #define subtrace:
-                            if (loc_max_p1[i]-wind_size)<0:
-                                sub_start=0
-                                print('subtrace at start')
+                            if (loc_max_p1[i] - wind_size) < 0:
+                                sub_start = 0
+#                                print('subtrace at start')
                             else:
-                                sub_start=int(loc_max_p1[i]-wind_size)
-                            if (loc_max_p1[i]+wind_size)>trace2.size:
-                                sub_fin=trace2.size-1
-                                print('subtrace at end')
+                                sub_start = int(loc_max_p1[i] - wind_size)
+                            if (loc_max_p1[i] + wind_size) > trace2.size:
+                                sub_fin = trace2.size - 1
+#                                print('subtrace at end')
                             else:
-                                sub_fin=int(loc_max_p1[i]+wind_size+1)
-                            subtrace=trace2[sub_start:sub_fin]
-                            sub_peaks=find_peaks(subtrace)[0]
+                                sub_fin = int(loc_max_p1[i] + wind_size + 1)
+                            subtrace = trace2[sub_start:sub_fin]
+                            sub_peaks = find_peaks(subtrace)[0]
                             #ha 0, akkor?? -> pontos érték adott pontban, ampl=0
                             #ha 1, egyértelmű
                             #ha több, mint 1 -> max magasságú, (vagy közelebbi)
-                            if sub_peaks.size==0:
+                            if sub_peaks.size == 0:
                                 P1.append(loc_max_v1[i])
                                 P2.append(trace2[int(loc_max_p1[i])])
                                 T1.append(loc_max_p1[i])
@@ -1179,19 +1191,24 @@ class ProcessManualRoiData:
                                 pair_quality.append(1)
                             else:
 #                            define neg subtrace start
-                                if (loc_max_p1[i]-volley_kern*wind_size)<0:
-                                    sub_neg_start=0
+                                if (loc_max_p1[i] - volley_kern*wind_size) < 0:
+                                    sub_neg_start = 0
                                 else:
-                                    sub_neg_start=int(loc_max_p1[i]-volley_kern*wind_size)
+                                    sub_neg_start = int(loc_max_p1[i] - volley_kern * wind_size)
                                     
-                                if sub_peaks.size==1:
-                                    neg_subtrace=trace2[sub_neg_start:sub_fin]*-1# invert to be able to use find_peaks
-                                    sub_volleys=find_peaks(neg_subtrace)[0]
-                                    sub_volleys=sub_volleys[np.nonzero(sub_volleys<sub_peaks[0]+(volley_kern-1)*wind_size)[0]]#only volleys before are looked
-                                    volley=max(sub_volleys)
+                                if sub_peaks.size == 1:
+                                    neg_subtrace = trace2[sub_neg_start:sub_fin] * -1# invert to be able to use find_peaks
+                                    sub_volleys = find_peaks(neg_subtrace)[0]
+                                    sub_volleys = sub_volleys[np.nonzero(sub_volleys < sub_peaks[0] + (volley_kern - 1) * wind_size)[0]]#only volleys before are looked
+                                    if len(sub_volleys)==0:#ilyenkor a kernel kezdete lesz a local min
+                                        volley = 0
+                                        #TODO
+                                        #ez nem a tényleges local minimum, max közelíti - de általában nem fontos
+                                    else:
+                                        volley = max(sub_volleys)
                                     
-                                    t2=int(sub_start+sub_peaks[0])
-                                    tv2=int(sub_neg_start+volley)
+                                    t2 = int(sub_start + sub_peaks[0])
+                                    tv2 = int(sub_neg_start + volley)
                                     
                                     P1.append(loc_max_v1[i])
                                     P2.append(subtrace[sub_peaks[0]])
@@ -1211,24 +1228,29 @@ class ProcessManualRoiData:
 #                                    plt.scatter(volley-3*wind_size,-1*(neg_subtrace[volley]), s=200)
 #                                    plt.show()
                                     
-                                if sub_peaks.size>1: #in this case the biggest peak is used
-                                    sub_peak_index=np.argmax(subtrace[sub_peaks])
+                                if sub_peaks.size > 1: #in this case the biggest peak is used
+                                    sub_peak_index = np.argmax(subtrace[sub_peaks])
 #                                    print(subtrace[sub_peaks], sub_peak_index)
                                     
-                                    neg_subtrace=trace2[sub_neg_start:sub_fin]*-1# invert to be able to use find_peaks
-                                    sub_volleys=find_peaks(neg_subtrace)[0]
-                                    sub_volleys=sub_volleys[np.nonzero(sub_volleys<sub_peaks[sub_peak_index]+(volley_kern-1)*wind_size)[0]]#only volleys before the biggest peak are looked
-                                    volley=max(sub_volleys)
+                                    neg_subtrace = trace2[sub_neg_start:sub_fin] * -1# invert to be able to use find_peaks
+                                    sub_volleys = find_peaks(neg_subtrace)[0]
+                                    sub_volleys = sub_volleys[np.nonzero(sub_volleys<sub_peaks[sub_peak_index]+(volley_kern-1)*wind_size)[0]]#only volleys before the biggest peak are looked
                                     
-                                    t2=int(sub_start+sub_peaks[sub_peak_index])
-                                    tv2=int(sub_neg_start+volley)
+                                    if len(sub_volleys)==0:#ilyenkor a kernel kezdete lesz a local min
+                                        volley = 0
+                                        #TODO
+                                    else:
+                                        volley = max(sub_volleys)
+                                    
+                                    t2 = int(sub_start + sub_peaks[sub_peak_index])
+                                    tv2 = int(sub_neg_start + volley)
                                     
                                     P1.append(loc_max_v1[i])
                                     P2.append(subtrace[sub_peaks[sub_peak_index]])
                                     T1.append(loc_max_p1[i])
                                     T2.append(t2)
                                     A1.append(amplitudes1[i])
-                                    A2.append(trace2[t2]-trace2[tv2])
+                                    A2.append(trace2[t2] - trace2[tv2])
                                     TV1.append(-1)
                                     TV2.append(tv2)
                                     pair_quality.append(1)                                
@@ -1256,25 +1278,25 @@ class ProcessManualRoiData:
                     if loc_max_p2[i] in T2:
                         pass
                     else:
-                        if loc_max_p1.size!=0:
-                            nearest_peak=find_nearest(loc_max_p1,loc_max_p2[i])
-                            nearest_peak_value=loc_max_v1[np.where(loc_max_p1==nearest_peak)[0]]
-                            nearest_ampl=amplitudes1[np.where(loc_max_p1==nearest_peak)[0]]
-                            if np.abs(nearest_peak- loc_max_p2[i])>same_peak_thr:
+                        if loc_max_p1.size != 0:
+                            nearest_peak = find_nearest(loc_max_p1,loc_max_p2[i])
+                            nearest_peak_value = loc_max_v1[np.where(loc_max_p1 == nearest_peak)[0]][0]
+                            nearest_ampl = amplitudes1[np.where(loc_max_p1 == nearest_peak)[0]][0]
+                            if np.abs(nearest_peak - loc_max_p2[i]) > same_peak_thr:
                                 #define subtrace:
-                                if (loc_max_p2[i]-wind_size)<0:
-                                    sub_start=0
-                                    print('subtrace at start')
+                                if (loc_max_p2[i] - wind_size) < 0:
+                                    sub_start = 0
+#                                    print('subtrace at start')
                                 else:
-                                    sub_start=int(loc_max_p2[i]-wind_size)
-                                if (loc_max_p2[i]+wind_size)>trace1.size:
-                                    sub_fin=trace1.size-1
-                                    print('subtrace at end')
+                                    sub_start = int(loc_max_p2[i] - wind_size)
+                                if (loc_max_p2[i] + wind_size) > trace1.size:
+                                    sub_fin = trace1.size - 1
+#                                    print('subtrace at end')
                                 else:
-                                    sub_fin=int(loc_max_p2[i]+wind_size+1)
-                                subtrace=trace1[sub_start:sub_fin]
-                                sub_peaks=find_peaks(subtrace)[0]
-                                if sub_peaks.size==0:
+                                    sub_fin = int(loc_max_p2[i] + wind_size + 1)
+                                subtrace = trace1[sub_start:sub_fin]
+                                sub_peaks = find_peaks(subtrace)[0]
+                                if sub_peaks.size == 0:
                                     P1.append(trace1[int(loc_max_p2[i])])
                                     P2.append(loc_max_v2[i])
                                     T1.append(loc_max_p2[i])
@@ -1286,50 +1308,53 @@ class ProcessManualRoiData:
                                     pair_quality.append(2)
                                 else:
     #                            define neg subtrace start
-                                    if (loc_max_p2[i]-volley_kern*wind_size)<0:
-                                        sub_neg_start=0
-                                        print('volley_at start')
+                                    if (loc_max_p2[i] - volley_kern*wind_size) < 0:
+                                        sub_neg_start = 0
+#                                        print('volley_at start')
                                     else:
-                                        sub_neg_start=int(loc_max_p2[i]-volley_kern*wind_size)
+                                        sub_neg_start = int(loc_max_p2[i] - volley_kern * wind_size)
                                         
-                                    if sub_peaks.size==1:
-                                        neg_subtrace=trace1[sub_neg_start:sub_fin]*-1# invert to be able to use find_peaks
-                                        sub_volleys=find_peaks(neg_subtrace)[0]
-                                        if sub_volleys.size==0:
-                                            print('kecske', sub_neg_start, sub_fin)
-                                            plt.figure()
-                                            plt.plot(neg_subtrace*-1)
-                                            plt.show()
-                                        sub_volleys=sub_volleys[np.nonzero(sub_volleys<sub_peaks[0]+(volley_kern-1)*wind_size)[0]]#only volleys before are looked
-                                        volley=max(sub_volleys)
+                                    if sub_peaks.size == 1:
+                                        neg_subtrace = trace1[sub_neg_start:sub_fin]* - 1# invert to be able to use find_peaks
+                                        sub_volleys = find_peaks(neg_subtrace)[0]
+                                        sub_volleys = sub_volleys[np.nonzero(sub_volleys < sub_peaks[0] + (volley_kern - 1) * wind_size)[0]]#only volleys before are looked
+                                        if len(sub_volleys)==0:#ilyenkor a kernel kezdete lesz a local min
+                                            volley = 0
+                                            #TODO
+                                        else:
+                                            volley = max(sub_volleys)
                                         
-                                        t1=int(sub_start+sub_peaks[0])
-                                        tv1=int(sub_neg_start+volley)
+                                        t1 = int(sub_start + sub_peaks[0])
+                                        tv1 = int(sub_neg_start + volley)
                                         
                                         P1.append(subtrace[sub_peaks[0]])
                                         P2.append(loc_max_v2[i])
                                         T1.append(t1)
                                         T2.append(loc_max_p2[i])
-                                        A1.append(trace1[t1]-trace1[tv1])
+                                        A1.append(trace1[t1] - trace1[tv1])
                                         A2.append(amplitudes2[i])
                                         TV1.append(tv1)
                                         TV2.append(-1)
                                         pair_quality.append(2)
-                                    if sub_peaks.size>1: #in this case the biggest peak is used
-                                        sub_peak_index=np.argmax(subtrace[sub_peaks])                                        
-                                        neg_subtrace=trace1[sub_neg_start:sub_fin]*-1# invert to be able to use find_peaks
-                                        sub_volleys=find_peaks(neg_subtrace)[0]
-                                        sub_volleys=sub_volleys[np.nonzero(sub_volleys<sub_peaks[sub_peak_index]+(volley_kern-1)*wind_size)[0]]#only volleys before the biggest peak are looked
-                                        volley=max(sub_volleys)
+                                    if sub_peaks.size > 1: #in this case the biggest peak is used
+                                        sub_peak_index = np.argmax(subtrace[sub_peaks])                                        
+                                        neg_subtrace = trace1[sub_neg_start:sub_fin] * - 1# invert to be able to use find_peaks
+                                        sub_volleys = find_peaks(neg_subtrace)[0]
+                                        sub_volleys = sub_volleys[np.nonzero(sub_volleys < sub_peaks[sub_peak_index] + (volley_kern - 1) * wind_size)[0]]#only volleys before the biggest peak are looked
+                                        if len(sub_volleys)==0:#ilyenkor a kernel kezdete lesz a local min
+                                            volley = 0
+                                            #TODO
+                                        else:
+                                            volley = max(sub_volleys)
                                         
-                                        t1=int(sub_start+sub_peaks[sub_peak_index])
-                                        tv1=int(sub_neg_start+volley)
+                                        t1 = int(sub_start + sub_peaks[sub_peak_index])
+                                        tv1 = int(sub_neg_start + volley)
                                         
                                         P1.append(subtrace[sub_peaks[sub_peak_index]])
                                         P2.append(loc_max_v2[i])
                                         T1.append(t1)
                                         T2.append(loc_max_p2[i])
-                                        A1.append(trace1[t1]-trace1[tv1])
+                                        A1.append(trace1[t1] - trace1[tv1])
                                         A2.append(amplitudes2[i])
                                         TV1.append(tv1)
                                         TV2.append(-1)
@@ -1347,223 +1372,217 @@ class ProcessManualRoiData:
                                 TV1.append(-1)
                                 TV2.append(-1)
                                 pair_quality.append(0)
-                            if (toplot1==index1 and toplot2== index2) or (toplot1==index2 and toplot2== index1):
+                            if (toplot1 == index1 and toplot2 == index2) or (toplot1 == index2 and toplot2 == index1):
                                 pass
 
                 #convert to numpy
-                P1=np.array(P1)
-                P2=np.array(P2)
-                T1=np.array(T1)
-                T2=np.array(T2)
-                A1=np.array(A1)
-                A2=np.array(A2)
-                TV1=np.array(TV1)
-                TV2=np.array(TV2)
-                pair_quality=np.array(pair_quality)
-                if specified_pair_plots==True:
-                    if (toplot1==index1 and toplot2== index2) or (toplot1==index2 and toplot2== index1):
-                        difis=np.nonzero(np.abs(T1-T2)>100)[0]
-                        ax_sampl[0].plot(trace1, c='g')
-                        ax_sampl[0].scatter(T1, P1, c=pair_quality)
-                        ax_sampl[0].vlines(T1, P1-A1, P1, colors='b')
-                        ax_sampl[0].scatter(T1[difis], P1[difis]+1, c='r')
-                        ax_sampl[1].plot(trace2, c='g')
-                        ax_sampl[1].scatter(T2,P2, c=pair_quality)
-                        ax_sampl[1].vlines(T2, P2-A2, P2, colors='b')
-                        ax_sampl[1].scatter(T2[difis], P2[difis]+1, c='r')
+                P1 = np.array(P1)
+                P2 = np.array(P2)
+                T1 = np.array(T1)
+                T2 = np.array(T2)
+                A1 = np.array(A1)
+                A2 = np.array(A2)
+                TV1 = np.array(TV1)
+                TV2 = np.array(TV2)
+                pair_quality = np.array(pair_quality)
+                if specified_pair_plots == True:
+                    if (toplot1 == index1 and toplot2 == index2) or (toplot1 == index2 and toplot2 == index1):
+                        difis = np.nonzero(np.abs(T1 - T2) > 100)[0]
+                        ax_sampl[0].plot(trace1, c = 'g')
+                        ax_sampl[0].scatter(T1, P1, c = pair_quality)
+                        ax_sampl[0].vlines(T1, P1-A1, P1, colors = 'b')
+                        ax_sampl[0].scatter(T1[difis], P1[difis] + 1, c = 'r')
+                        ax_sampl[1].plot(trace2, c = 'g')
+                        ax_sampl[1].scatter(T2,P2, c = pair_quality)
+                        ax_sampl[1].vlines(T2, P2 - A2, P2, colors = 'b')
+                        ax_sampl[1].scatter(T2[difis], P2[difis] + 1, c = 'r')
                 #pump into pairwise dataframe
                 self.Paired_Data.append([index1, index2, P1, P2, A1, A2, T1, T2, pair_quality])
 
 
-        print('   correlation calcuated in',round(time.time()-prew_time,2), 'seconds')
+        print('   correlation calcuated in',round(time.time() - prew_time,2), 'seconds')
                     
     
-    def PlotCorrelations(self, what='b'):
-        prew_time=time.time()
-        fig, ax=plt.subplots(self.N+1,self.N+1)
-        plt.setp(plt.gcf().get_axes(), xticks=[], yticks=[])
+    def PlotCorrelations(self, what = 'b'):
+        self.flag = True
+        prew_time = time.time()
+        fig, ax = plt.subplots(self.N + 1,self.N + 1)
+        plt.setp(plt.gcf().get_axes(), xticks = [], yticks = [])
         ax[0,0].imshow(self.man_image)
                         
         for i in range(self.N):
-            title=self.header[i]
+            title = self.header[i]
                 
-            ax[0,i+1].plot(self.F_s_c[i,:], c='gray')
-            ax[0,i+1].scatter(self.loc_max_p[i], self.loc_max_v[i], c='k', s=5)
-            ax[0,i+1].set_title(title)
-            ax[i+1,0].plot(self.F_s_c[i,:], c='gray')
-            ax[i+1,0].scatter(self.loc_max_p[i], self.loc_max_v[i], c='k', s=5)
-            ax[i+1,0].set_title(title)
+            ax[0,i + 1].plot(self.F_s_c[i,:], c = 'gray')
+            ax[0,i + 1].scatter(self.loc_max_p[i], self.loc_max_v[i], c = 'k', s = 5)
+            ax[0,i + 1].set_title(title)
+            ax[i + 1,0].plot(self.F_s_c[i,:], c = 'gray')
+            ax[i + 1,0].scatter(self.loc_max_p[i], self.loc_max_v[i], c = 'k', s = 5)
+            ax[i + 1,0].set_title(title)
 
         for i in range(len(self.Paired_Data)):
-            index1=self.Paired_Data[i][0]
-            index2=self.Paired_Data[i][1]
-            P1=self.Paired_Data[i][2]
-            P2=self.Paired_Data[i][3]
-            A1=self.Paired_Data[i][4]
-            A2=self.Paired_Data[i][5]
-            T1=self.Paired_Data[i][6]
-            T2=self.Paired_Data[i][7]
-            pair_quality=self.Paired_Data[i][8]
-            P1=normalise(P1, np.amin(self.F_s_c[index1,:]))
-            P2=normalise(P2, np.amin(self.F_s_c[index2,:]))
-            A1=normalise(A1, np.amin(self.F_s_c[index1,:]))
-            A2=normalise(A2, np.amin(self.F_s_c[index2,:]))
+            index1 = self.Paired_Data[i][0]
+            index2 = self.Paired_Data[i][1]
+            P1 = self.Paired_Data[i][2]
+            P2 = self.Paired_Data[i][3]
+            A1 = self.Paired_Data[i][4]
+            A2 = self.Paired_Data[i][5]
+            T1 = self.Paired_Data[i][6]
+            T2 = self.Paired_Data[i][7]
+            pair_quality = self.Paired_Data[i][8]
+            P1 = normalise(P1, np.amin(self.F_s_c[index1,:]))
+            P2 = normalise(P2, np.amin(self.F_s_c[index2,:]))
+            A1 = normalise(A1, np.amin(self.F_s_c[index1,:]))
+            A2 = normalise(A2, np.amin(self.F_s_c[index2,:]))
             
-            corrupt_peaks1=np.intersect1d(T1, self.frames_to_kill, return_indices=True)[1]
-            corrupt_peaks2=np.intersect1d(T2, self.frames_to_kill, return_indices=True)[1]
-            shaky_peaks1 =np.intersect1d(T1, self.frames_sus, return_indices=True)[1]
-            shaky_peaks2 =np.intersect1d(T2, self.frames_sus, return_indices=True)[1]
-            corrupt_peaks=np.unique(np.concatenate((corrupt_peaks1, corrupt_peaks2)))
-            shaky_peaks=np.unique(np.concatenate((shaky_peaks1, shaky_peaks2)))
+            corrupt_peaks1 = np.intersect1d(T1, self.frames_to_kill, return_indices = True)[1]
+            corrupt_peaks2 = np.intersect1d(T2, self.frames_to_kill, return_indices = True)[1]
+            shaky_peaks1 = np.intersect1d(T1, self.frames_sus, return_indices = True)[1]
+            shaky_peaks2 = np.intersect1d(T2, self.frames_sus, return_indices = True)[1]
+            corrupt_peaks = np.unique(np.concatenate((corrupt_peaks1, corrupt_peaks2)))
+            shaky_peaks = np.unique(np.concatenate((shaky_peaks1, shaky_peaks2)))
+            shaky_peaks = np.setdiff1d(shaky_peaks, corrupt_peaks)
+#            print(np.intersect1d(shaky_peaks, corrupt_peaks))
             
-            zero=np.nonzero(pair_quality==0)[0]
-            one=np.nonzero(pair_quality==1)[0]
-            two=np.nonzero(pair_quality==2)[0]
+            zero = np.nonzero(pair_quality == 0)[0]
+            one = np.nonzero(pair_quality == 1)[0]
+            two = np.nonzero(pair_quality == 2)[0]
             
-            e_zero=np.intersect1d(shaky_peaks, zero)
-            e_one=np.intersect1d(shaky_peaks, one)
-            e_two=np.intersect1d(shaky_peaks, two)
+            e_zero = np.intersect1d(shaky_peaks, zero)
+            e_one = np.intersect1d(shaky_peaks, one)
+            e_two = np.intersect1d(shaky_peaks, two)
             
             
-            x_zero=np.intersect1d(corrupt_peaks, zero)
-            x_one=np.intersect1d(corrupt_peaks, one)
-            x_two=np.intersect1d(corrupt_peaks, two)
+            x_zero = np.intersect1d(corrupt_peaks, zero)
+            x_one = np.intersect1d(corrupt_peaks, one)
+            x_two = np.intersect1d(corrupt_peaks, two)
             
-            g_zero=np.setdiff1d(one, np.concatenate((e_zero, x_zero)))
-            g_one=np.setdiff1d(one, np.concatenate((e_one, x_one)))
-            g_two=np.setdiff1d(two, np.concatenate((e_two, x_two)))
+            g_zero = np.setdiff1d(zero, np.concatenate((e_zero, x_zero)))
+            g_one = np.setdiff1d(one, np.concatenate((e_one, x_one)))
+            g_two = np.setdiff1d(two, np.concatenate((e_two, x_two)))
             
-#            print('zero')
-#            print(np.intersect1d(g_zero, x_zero))
-#            print('one')
-#            print(np.intersect1d(g_one, x_one))
-#            print('two')
-#            print(np.intersect1d(g_two, x_two))
-#            print(zero.size, x_zero.size, g_zero.size, e_zero.size)
-#            print(zero)
-            
-            if what=='a':
-                W1=A1
-                W2=A2
+            if what == 'a':
+                W1 = A1
+                W2 = A2
                 fig = plt.gcf()
                 fig.suptitle("Relative 'local' Ampl.", fontsize=14)
-            if what=='p':
-                W1=P1
-                W2=P2
+            if what == 'p':
+                W1 = P1
+                W2 = P2
                 fig = plt.gcf()
                 fig.suptitle("Absolute Ampl. value", fontsize=14)
                 
-            ax[index1+1,index2+1].scatter(W1[g_zero],W2[g_zero], c='gray', s=5)#
-            ax[index1+1,index2+1].scatter(W1[e_zero],W2[e_zero], edgecolors='gray', s=5, facecolors='none')#
-            ax[index1+1,index2+1].plot(W1[x_zero],W2[x_zero], "x", c='gray')
+            ax[index1 + 1, index2 + 1].scatter(W1[g_zero], W2[g_zero], c = 'gray', s = 5)#
+            ax[index1 + 1, index2 + 1].scatter(W1[e_zero], W2[e_zero], edgecolors = 'gray', s = 5, facecolors = 'none')#
+            ax[index1 + 1, index2 + 1].plot(W1[x_zero], W2[x_zero], "x", c = 'gray')
             
-            ax[index1+1,index2+1].scatter(W1[g_one],W2[g_one], c='blue', s=5)#
-            ax[index1+1,index2+1].scatter(W1[e_one],W2[e_one], edgecolors='blue', s=5, facecolors='none')#
-            ax[index1+1,index2+1].plot(W1[x_one],W2[x_one], "x",c='blue')
+            ax[index1 + 1, index2 + 1].scatter(W1[g_one], W2[g_one], c = 'blue', s = 5)#
+            ax[index1 + 1, index2 + 1].scatter(W1[e_one], W2[e_one], edgecolors = 'blue', s = 5, facecolors = 'none')#
+            ax[index1 + 1, index2 + 1].plot(W1[x_one], W2[x_one], "x",c = 'blue')
             
-            ax[index1+1,index2+1].scatter(W1[g_two],W2[g_two], c='red', s=5)#
-            ax[index1+1,index2+1].scatter(W1[e_two],W2[e_two], edgecolors='red', s=5, facecolors='none')
-            ax[index1+1,index2+1].plot(W1[x_two],W2[x_two], "x", c='red')
+            ax[index1 + 1, index2 + 1].scatter(W1[g_two], W2[g_two], c = 'red', s = 5)#
+            ax[index1 + 1, index2 + 1].scatter(W1[e_two], W2[e_two], edgecolors = 'red', s = 5, facecolors = 'none')
+            ax[index1 + 1, index2 + 1].plot(W1[x_two], W2[x_two], "x", c = 'red')
             
-        print('   correlation plotted in ',round(time.time()-prew_time,2), 'seconds')
+        print('   correlation plotted in ',round(time.time() - prew_time,2), 'seconds')
         
     def PlotPair(self,id_in1, id_in2):
-        id1=self.header.index(id_in1)
-        id2=self.header.index(id_in2)
+        id1 = self.header.index(id_in1)
+        id2 = self.header.index(id_in2)
         for i in range(len(self.Paired_Data)):
-            trace1_id=self.Paired_Data[i][0]
-            trace2_id=self.Paired_Data[i][1]
+            trace1_id = self.Paired_Data[i][0]
+            trace2_id = self.Paired_Data[i][1]
             #look for desired pair        
-            if trace1_id==id1 and trace2_id==id2 or trace1_id==id2 and trace2_id==id1:
-                trace1=self.F_s_c[trace1_id,:]
-                trace2=self.F_s_c[trace2_id,:]
-                raw_trace1=self.F[trace1_id,:]
-                raw_trace2=self.F[trace2_id,:]
-                raw_trace1=raw_trace1-np.average(raw_trace1)
-                raw_trace2=raw_trace2-np.average(raw_trace2)
-                P1=self.Paired_Data[i][2]
-                P2=self.Paired_Data[i][3]
-                A1=self.Paired_Data[i][4]
-                A2=self.Paired_Data[i][5]
-                T1=self.Paired_Data[i][6]
-                T2=self.Paired_Data[i][7]
+            if trace1_id == id1 and trace2_id == id2 or trace1_id == id2 and trace2_id == id1:
+                trace1 = self.F_s_c[trace1_id,:]
+                trace2 = self.F_s_c[trace2_id,:]
+                raw_trace1 = self.F[trace1_id,:]
+                raw_trace2 = self.F[trace2_id,:]
+                raw_trace1 = raw_trace1 - np.average(raw_trace1)
+                raw_trace2 = raw_trace2 - np.average(raw_trace2)
+                P1 = self.Paired_Data[i][2]
+                P2 = self.Paired_Data[i][3]
+                A1 = self.Paired_Data[i][4]
+                A2 = self.Paired_Data[i][5]
+                T1 = self.Paired_Data[i][6]
+                T2 = self.Paired_Data[i][7]
                 
-                fig, ax=plt.subplots(3, sharex=True)
+                fig, ax = plt.subplots(3, sharex = True)
                 fig = plt.gcf()
-                fig.suptitle("red: absolute, green: relative Ampl.", fontsize=14)
+                fig.suptitle("red: absolute, green: relative Ampl.", fontsize = 14)
                 
-                ax[0].plot(self.x, trace1, c='g')
-                ax[0].plot(self.x, raw_trace1, linewidth=0.5, c='b')
+                ax[0].plot(self.x, trace1, c = 'g')
+                ax[0].plot(self.x, raw_trace1, linewidth = 0.5, c = 'b')
                 ax[0].set_title(str(id1))#na ez nem biztos, hogy jó így!
-                ax[0].scatter(T1*self.dt_imaging, P1, c='k')
-                ax[0].vlines(T1*self.dt_imaging, P1-A1, P1, color='k' )
-                ax[1].plot(self.x, trace2, c='g')
-                ax[1].plot(self.x, raw_trace2, linewidth=0.5, c='b')
+                ax[0].scatter(T1*self.dt_imaging, P1, c = 'k')
+                ax[0].vlines(T1*self.dt_imaging, P1 - A1, P1, color = 'k' )
+                ax[1].plot(self.x, trace2, c = 'g')
+                ax[1].plot(self.x, raw_trace2, linewidth = 0.5, c = 'b')
                 ax[1].set_title(str(id2))
-                ax[1].scatter(T2*self.dt_imaging, P2, c='k')
-                ax[1].vlines(T2*self.dt_imaging, P2-A2, P2, color='k' )
+                ax[1].scatter(T2*self.dt_imaging, P2, c = 'k')
+                ax[1].vlines(T2*self.dt_imaging, P2 - A2, P2, color = 'k' )
                 
-                p1=normalise(P1, np.amin(self.F_s_c[trace1_id,:]))
-                p2=normalise(P2, np.amin(self.F_s_c[trace2_id,:]))
-                a1=normalise(A1, np.amin(self.F_s_c[trace1_id,:]))
-                a2=normalise(A2, np.amin(self.F_s_c[trace2_id,:]))
+                p1 = normalise(P1, np.amin(self.F_s_c[trace1_id,:]))
+                p2 = normalise(P2, np.amin(self.F_s_c[trace2_id,:]))
+                a1 = normalise(A1, np.amin(self.F_s_c[trace1_id,:]))
+                a2 = normalise(A2, np.amin(self.F_s_c[trace2_id,:]))
                 
-                ax[2].vlines(T1*self.dt_imaging, 0, np.abs(p1-p2), color='r')
-                ax[2].vlines((T1+3)*self.dt_imaging, 0, np.abs(a1-a2), color='g')
+                ax[2].vlines(T1*self.dt_imaging, 0, np.abs(p1 - p2), color = 'r')
+                ax[2].vlines((T1 + 3)*self.dt_imaging, 0, np.abs(a1 - a2), color = 'g')
                 plt.show()
 
     def Save_to_Excel(self):
         print('saving results to excel...')
-        name=self.suite2p_folder.split('/')[-2]
-        print('   filename: ',name,'.xlsx')
-        filepath=self.save_path+'/'+name+'traces.xlsx'
-        frame_info=np.zeros_like(self.F[0,:])
-        frame_info[self.frames_sus]=1
-        frame_info[self.frames_to_kill]=2
+        name = self.suite2p_folder.split('/')[-2]
+        print('   filename: ', name, '.xlsx')
+        filepath = self.save_path + '/' + name + 'traces.xlsx'
+        frame_info = np.zeros_like(self.F[0,:])
+        frame_info[self.frames_sus] = 1
+        frame_info[self.frames_to_kill] = 2
         
         dfa = pd.DataFrame (np.transpose(self.F))
-        dfb=pd.DataFrame (np.transpose(self.F_s_c))
-        dfc=pd.DataFrame(frame_info)
-        head=self.header
+        dfb = pd.DataFrame (np.transpose(self.F_s_c))
+        dfc = pd.DataFrame(frame_info)
+        head = self.header
         wb = openpyxl.Workbook()
         wb.save(filepath)
         
-        with pd.ExcelWriter(filepath, engine="openpyxl") as writer:          
+        with pd.ExcelWriter(filepath, engine = "openpyxl") as writer:          
             #traces
             d = {'raw traces': [self.N, self.N]}
-            name1=pd.DataFrame(data=d)
-            name1.to_excel(writer,sheet_name="traces",index=False, startrow=0, startcol=0)
-            dfa.to_excel(writer,sheet_name="traces",index=False, startrow=0, startcol=1, header=head)
+            name1 = pd.DataFrame(data = d)
+            name1.to_excel(writer,sheet_name = "traces",index = False, startrow = 0, startcol = 0)
+            dfa.to_excel(writer,sheet_name = "traces",index = False, startrow = 0, startcol = 1, header = head)
             d = {'processed traces': [self.N, self.N]}
-            name1=pd.DataFrame(data=d)
-            name1.to_excel(writer,sheet_name="traces",index=False, startrow=0, startcol=self.N+1)
-            dfb.to_excel(writer,sheet_name="traces",index=False, startrow=0, startcol=self.N+2, header=head)
+            name1 = pd.DataFrame(data = d)
+            name1.to_excel(writer,sheet_name = "traces",index = False, startrow = 0, startcol = self.N + 1)
+            dfb.to_excel(writer,sheet_name = "traces",index = False, startrow = 0, startcol = self.N + 2, header = head)
             d = {'frames': ['0=good','1=suspicious', '2=corrupted']}
-            name1=pd.DataFrame(data=d)
-            name1.to_excel(writer,sheet_name="traces",index=False, startrow=0, startcol=self.N*2+2)
-            dfc.to_excel(writer,sheet_name="traces",index=False, startrow=0, startcol=self.N*2+3, header=' ')
+            name1 = pd.DataFrame(data = d)
+            name1.to_excel(writer,sheet_name = "traces",index = False, startrow = 0, startcol = self.N*2 + 2)
+            dfc.to_excel(writer,sheet_name = "traces",index = False, startrow = 0, startcol = self.N*2 + 3, header = ' ')
             #spikes
-            startcol=0
+            startcol = 0
             for i in range(len(self.Paired_Data)):
-                ROI1_id=self.header[self.Paired_Data[i][0]]
-                ROI2_id=self.header[self.Paired_Data[i][1]]                                
-                d = {'ROI '+str(ROI1_id)+' vs '+str(ROI2_id): [ROI1_id,ROI2_id]}
-                name=pd.DataFrame(data=d)
-                name.to_excel(writer,sheet_name="spikes",index=False, startrow=0, startcol=startcol)
-                startcol+=1
+                ROI1_id = self.header[self.Paired_Data[i][0]]
+                ROI2_id = self.header[self.Paired_Data[i][1]]                                
+                d = {'ROI ' + str(ROI1_id) + ' vs ' + str(ROI2_id): [ROI1_id,ROI2_id]}
+                name = pd.DataFrame(data = d)
+                name.to_excel(writer,sheet_name = "spikes",index = False, startrow = 0, startcol = startcol)
+                startcol += 1
                 
-                head=[str(ROI1_id)+' abs',str(ROI2_id)+' abs',str(ROI1_id)+' rel',str(ROI2_id)+' rel', str(ROI1_id)+' time',str(ROI2_id)+' time', 'Pair quality']
-                temp=np.zeros((self.Paired_Data[i][2].size,7))
-                temp[:,0]=self.Paired_Data[i][2]
-                temp[:,1]=self.Paired_Data[i][3]
-                temp[:,2]=self.Paired_Data[i][4]
-                temp[:,3]=self.Paired_Data[i][5]
-                temp[:,4]=self.Paired_Data[i][6]
-                temp[:,5]=self.Paired_Data[i][7]
-                temp[:,6]=self.Paired_Data[i][8]
-                dfp=pd.DataFrame(temp)
-                dfp.to_excel(writer,sheet_name="spikes",index=False, startrow=0, startcol=startcol, header=head)    
-                startcol+=7
+                head = [str(ROI1_id) + ' abs', str(ROI2_id) + ' abs', str(ROI1_id) + ' rel', str(ROI2_id) + ' rel', str(ROI1_id) + ' time', str(ROI2_id) + ' time', 'Pair quality']
+                temp = np.zeros((self.Paired_Data[i][2].size,7))
+                temp[:,0] = self.Paired_Data[i][2]
+                temp[:,1] = self.Paired_Data[i][3]
+                temp[:,2] = self.Paired_Data[i][4]
+                temp[:,3] = self.Paired_Data[i][5]
+                temp[:,4] = self.Paired_Data[i][6]
+                temp[:,5] = self.Paired_Data[i][7]
+                temp[:,6] = self.Paired_Data[i][8]
+                dfp = pd.DataFrame(temp)
+                dfp.to_excel(writer,sheet_name = "spikes",index = False, startrow = 0, startcol = startcol, header = head)    
+                startcol += 7
         print('   saving done')
                               
             
@@ -1572,66 +1591,69 @@ class ProcessManualRoiData:
 ##########################################
 
 def exp_decay(spks, tau):
-    a=1/tau
-    delta_T=1/30
-    output=np.zeros_like(spks,dtype='float')
-    sp_ind=np.nonzero(spks>0)[0]
+    a = 1/tau
+    delta_T = 1/30
+    output = np.zeros_like(spks,dtype='float')
+    sp_ind = np.nonzero(spks>0)[0]
     for i in sp_ind:
-        decay=[]
-        t=0
-        y0=spks[i]
-        value=1
-        while int(value)!=0:
-            value=y0*math.exp(-t*a)
+        decay = []
+        t = 0
+        y0 = spks[i]
+        value = 1
+        while int(value) != 0:
+            value = y0*math.exp(-t*a)
             decay.append(value)
-            t+=delta_T
-        decay=np.array(decay)
-        if i+decay.size>output.size:
-            decay=decay[0:output.size-i]
-        output[i:i+decay.size]+=decay
+            t += delta_T
+        decay = np.array(decay)
+        if i + decay.size > output.size:
+            decay = decay[0:output.size - i]
+        output[i:i + decay.size] += decay
     return output
 
 def delete_small_islands(trace):
-    output=np.copy(trace)
-    bool_trace=np.isnan(trace)
-    nan_isl_length=0
-    nan_isl_start=-1
-    prev=False
-    i=0
+    output = np.copy(trace)
+    bool_trace = np.isnan(trace)
+    nan_isl_length = 0
+    nan_isl_start = -1
+    prev = False
+    i = 0
     for i in range(bool_trace.size) :
-        if bool_trace[i]==True and prev==False and nan_isl_start!=-1:
-            if nan_isl_length<30: 
-                output[nan_isl_start:i]=np.nan
-            nan_isl_length=0
-        if bool_trace[i]==False and prev==True:
-            nan_isl_start=i
-            nan_isl_length+=1
-        if bool_trace[i]==False and prev==False: 
-            nan_isl_length+=1
-        prev=bool_trace[i]
-        i+=1
+        if bool_trace[i] == True and prev == False and nan_isl_start != -1:
+            if nan_isl_length < 30: 
+                output[nan_isl_start:i] = np.nan
+            nan_isl_length = 0
+        if bool_trace[i] == False and prev == True:
+            nan_isl_start = i
+            nan_isl_length += 1
+        if bool_trace[i] == False and prev == False: 
+            nan_isl_length += 1
+        prev = bool_trace[i]
+        i += 1
     return output
 
 def DistanceToLine(m, b, x0, y0):#unused, but may come in handy!
     #calculate a points distance to astraight line defined by parameters m and b
-    x=(x0+m*y0-m*b)/(1+m*m)
-    y=m*x+b
-    d=np.sqrt((x0-x)**2+(y0-y)**2)
-    output=[x,y,d]
+    x = (x0 + m*y0 - m*b)/(1 + m*m)
+    y = m*x + b
+    d = np.sqrt((x0 - x)**2 + (y0 - y)**2)
+    output = [x, y, d]
     return output
 
-def normalise(array, min_value=np.NaN):#numpy array needed
+def normalise(array, min_value = np.NaN):#numpy array needed
     #normalise all elements of a given array between 0 and 1
     #you can give a manual min
-    if np.isnan(min_value):
-        ext_array=array
+    if array.size > 0:
+        if np.isnan(min_value):
+            ext_array = array
+        else:
+            ext_array = np.append(array, min_value) 
+        maxi = np.max(array)
+        mini = np.min(ext_array)
+        the_range = maxi-mini
+        output = (array-mini)/the_range
+        return output
     else:
-        ext_array=np.append(array, min_value) 
-    maxi=np.max(array)
-    mini=np.min(ext_array)
-    the_range=maxi-mini
-    output=(array-mini)/the_range
-    return output
+        return array
     
 def find_nearest(array, value):
     #gives back the closest element of an array to a given value
@@ -1641,39 +1663,39 @@ def find_nearest(array, value):
 
 def gaussian_filter(trace, sdfilt):
     #gaussian filter method, copied from UBI's previous scripts
-    N=10
-    sampling_time=1
-    xfilt=np.arange(-N*sdfilt, N*sdfilt+sampling_time, sampling_time)
-    filt=np.exp(-(xfilt**2)/(2*(sdfilt**2)))
-    filt=filt/sum(filt)
+    N = 10
+    sampling_time = 1
+    xfilt = np.arange(-N*sdfilt, N*sdfilt + sampling_time, sampling_time)
+    filt = np.exp(-(xfilt**2) / (2*(sdfilt**2)))
+    filt = filt/sum(filt)
 
-    temp=np.hstack([np.repeat(trace[0],N*sdfilt),trace, np.repeat(trace[-1], N*sdfilt)])
-    result=np.convolve(temp,filt,mode='valid')
+    temp = np.hstack([np.repeat(trace[0], N*sdfilt),trace, np.repeat(trace[-1], N*sdfilt)])
+    result = np.convolve(temp, filt, mode = 'valid')
     
     return result
-#TODO
+#TODO speed up?
 def NaN_Gaussian_filter(trace, sdfilt):
     #same as gaussian_filter but can handle NaNs to an extent
-    N=10
-    sampling_time=1
-    xfilt=np.arange(-N*sdfilt, N*sdfilt+sampling_time, sampling_time)
-    filt=np.exp(-(xfilt**2)/(2*(sdfilt**2)))
-    filt=filt/sum(filt)
+    N = 10
+    sampling_time = 1
+    xfilt = np.arange(-N*sdfilt, N*sdfilt + sampling_time, sampling_time)
+    filt = np.exp(-(xfilt**2) / (2*(sdfilt**2)))
+    filt = filt/sum(filt)
     
-    temp=np.hstack([np.repeat(trace[0],N*sdfilt),trace, np.repeat(trace[-1], N*sdfilt)])
-    out=np.zeros_like(trace)
+    temp = np.hstack([np.repeat(trace[0], N*sdfilt), trace, np.repeat(trace[-1], N*sdfilt)])
+    out = np.zeros_like(trace)
     for i in range(trace.size):
-        snip=temp[i:i+2*(N*sdfilt)+1]
+        snip = temp[i:i + 2*(N*sdfilt) + 1]
         
-        nans=np.argwhere(np.isnan(snip))
-        nonnan_snip=np.delete(snip,nans)
+        nans = np.argwhere(np.isnan(snip))
+        nonnan_snip = np.delete(snip, nans)
 
-        filt_nan=np.delete(filt,nans)
-        filt_nan=filt_nan/sum(filt_nan)
-        if nans.size<N*sdfilt:
-            out[i]=np.sum(nonnan_snip*filt_nan)
+        filt_nan = np.delete(filt, nans)
+        filt_nan = filt_nan/sum(filt_nan)
+        if nans.size < N*sdfilt:
+            out[i] = np.sum(nonnan_snip*filt_nan)
         else:
-            out[i]=np.nan
+            out[i] = np.nan
 #            print('too many NaNs!')
     return out
 
@@ -1689,44 +1711,44 @@ def LinearInterpolate(A):
     
     return A
 
-def CalculateBaselineSTDs(traces, baseline_percentile, plot=False):
-    kernel_size=101
+def CalculateBaselineSTDs(traces, baseline_percentile, plot = False):
+    kernel_size = 101
     
-    if plot==True:
-        fig, ax=plt.subplots(traces.shape[0])
+    if plot == True:
+        fig, ax = plt.subplots(traces.shape[0])
         
     SSDmin = np.zeros((traces.shape[0]))  
     for i in range(traces.shape[0]):
-        SSD=np.zeros(traces[i,:].size-kernel_size)
-        for j in range(traces[i,:].size-kernel_size):
-            SSD[j]=np.std(traces[i,j:j+kernel_size])
-        SSDmin[i]=np.percentile(SSD,baseline_percentile)
+        SSD = np.zeros(traces[i,:].size - kernel_size)
+        for j in range(traces[i,:].size - kernel_size):
+            SSD[j] = np.std(traces[i,j:j + kernel_size])
+        SSDmin[i] = np.percentile(SSD, baseline_percentile)
         
-        if plot==True:
-            x=np.linspace(kernel_size, traces.shape[1], traces.shape[1]-kernel_size) -50
-            ax[i].plot(traces[i,:], zorder=0)
-            ax[i].plot(x,SSD, c='k', zorder=5)
+        if plot == True:
+            x = np.linspace(kernel_size, traces.shape[1], traces.shape[1]-kernel_size) - 50
+            ax[i].plot(traces[i,:], zorder = 0)
+            ax[i].plot(x, SSD, c = 'k', zorder = 5)
             ax[i].hlines(SSDmin[i], 0,traces.shape[1], zorder=10)
             plt.show()
     return SSDmin
             
-def CalculateBaselines(traces, plot=False):
+def CalculateBaselines(traces, plot = False):
     baselines = np.zeros((traces.shape[0])) 
     for i in range(traces.shape[0]):
-        hist=np.histogram(traces[i,:], bins=100)            
-        max_value=max(hist[0])
-        max_index=list(hist[0]).index(max_value)
-        baselines[i]=hist[1][max_index]
-    if plot==True:
-        fig, ax=plt.subplots(traces.shape[0])
+        hist = np.histogram(traces[i,:], bins = 100)            
+        max_value = max(hist[0])
+        max_index = list(hist[0]).index(max_value)
+        baselines[i] = hist[1][max_index]
+    if plot == True:
+        fig, ax = plt.subplots(traces.shape[0])
         for i in range(traces.shape[0]):
-            ax[i].plot(traces[i,:], zorder=0)
-            ax[i].hlines(baselines[i], 0, traces.shape[1], zorder=5)
+            ax[i].plot(traces[i,:], zorder = 0)
+            ax[i].hlines(baselines[i], 0, traces.shape[1], zorder = 5)
         plt.show()
     return baselines
 
-def SmoothTraces(traces, sd=3):  
-    out=np.zeros_like(traces)
+def SmoothTraces(traces, sd = 3):  
+    out = np.zeros_like(traces)
     for i in range(traces.shape[0]):
         ROI = np.copy(traces[i,:])
         out[i,:] = gaussian_filter(ROI, sd)
@@ -1734,23 +1756,23 @@ def SmoothTraces(traces, sd=3):
 
 def TestSaturation(traces):
     print('   Testing saturation')
-    saturation=np.zeros(traces.shape[0])
+    saturation = np.zeros(traces.shape[0])
     for i in range(traces.shape[0]):
         trace = traces[i]
-        hist=np.histogram(trace, bins=10)
-        last_bins_ratio=(hist[0][-1]+hist[0][-2])/np.sum(hist[0])
-        first_bin_ratio=hist[0][0]/np.sum(hist[0])
-        if last_bins_ratio>0.05 and last_bins_ratio<0.1:
-            print(i+1, '. trace likely saturated (or no meaningful spikes)')
-            saturation[i]=1
+        hist = np.histogram(trace, bins = 10)
+        last_bins_ratio = (hist[0][-1] + hist[0][-2])/np.sum(hist[0])
+        first_bin_ratio = hist[0][0]/np.sum(hist[0])
+        if last_bins_ratio > 0.05 and last_bins_ratio < 0.1:
+            print(i + 1, '. trace likely saturated (or no meaningful spikes)')
+            saturation[i] = 1
             
-        if last_bins_ratio>0.1:
-            print(i+1, '. trace saturated (or no meaningful spikes)')
-            saturation[i]=2
+        if last_bins_ratio > 0.1:
+            print(i + 1, '. trace saturated (or no meaningful spikes)')
+            saturation[i] = 2
         
-        if first_bin_ratio<0.1 and saturation[i]==0:
-            print(i+1,'. trace too active or has heavy artefacts or inactive')
-            saturation[i]=3
+        if first_bin_ratio < 0.1 and saturation[i] == 0:
+            print(i + 1,'. trace too active or has heavy artefacts or inactive')
+            saturation[i] = 3
     
     print('      saturation checked')        
     return saturation
@@ -1774,15 +1796,15 @@ def SetDefaultOpsParameters():
     return ops
 
 def nan_average(data):
-    ii, jj=data.shape
-    x_av=np.zeros(jj)
-    x_counter=np.zeros(jj)
+    ii, jj = data.shape
+    x_av = np.zeros(jj)
+    x_counter = np.zeros(jj)
     for i in range(ii):
         for j in range(jj):
-            if np.isnan(data[i,j])==False:
-                x_av[j]+=data[i,j]
-                x_counter[j]+=1
-    ave=x_av/x_counter
+            if np.isnan(data[i,j]) == False:
+                x_av[j] += data[i,j]
+                x_counter[j] += 1
+    ave = x_av/x_counter
     
     return ave
 
@@ -1898,151 +1920,41 @@ def preprocess(F,ops):
 
     return F, Flow
 
-######################
-#call main class
-######################
-#issues with this but incomplete files
-datapath = os.getcwd() + '/'
-
-####
-#no files currently
-####
-#date_time = '2021-07-27_08-18-40'# date and time of the beh session
-#name = 'srb121' # mouse name
-#task = 'NearFarLong' # task name
-#suite2p_folder = datapath + 'data/' + name + '_imaging/' # suite2p folder
-#imaging_logfile_name = suite2p_folder + 'srb121_TSeries-07272021-0758-001.xml'
-#TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'srb121_TSeries-07272021-0758-001_Cycle00001_VoltageRecording_001.csv'
-
-####
-#2 roi
-####
-#date_time = '2021-03-24_09-15-23' # date and time of the beh session
-#name = 'srb081' # mouse name
-#task = 'NearFarLong' # task name
-#suite2p_folder = datapath + 'data/' + name + '_imaging/srb081_210324_006/' # suite2p folder
-#imaging_logfile_name = suite2p_folder + 'srb081_TSeries-03242021-0752-006.xml'
-#TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'srb081_TSeries-03242021-0752-006_Cycle00001_VoltageRecording_001.csv'
-
-####
-# nagyon sok ROI, egyik inaktív
-####
-#error
-#date_time = '2021-03-12_13-25-52' # date and time of the beh session
-#name = 'rs077' # mouse name
-#task = 'NearFarLong' # task name
-#suite2p_folder = datapath + 'data/' + name + '_imaging/rs077_210312/' # suite2p folder
-#imaging_logfile_name = suite2p_folder + 'rs077_TSeries-03122021-0822-001.xml'
-#TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'rs077_TSeries-03122021-0822-001_Cycle00001_VoltageRecording_001.csv'
-
-####
-# nagyon lassúnak tűnő jelek, 2 fölötti Tau
-####
-#date_time = '2021-02-05_11-32-15' # date and time of the beh session
-#name = 'srb067' # mouse name
-#task = 'NearFarLong' # task name
-#suite2p_folder = datapath + 'data/' + name + '_imaging/srb210205/' # suite2p folder
-#imaging_logfile_name = suite2p_folder + 'srb057_TSeries-02052021-0813-002.xml'
-#TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'srb057_TSeries-02052021-0813-002_Cycle00001_VoltageRecording_001.csv'
-
-####
-# hatalmas base-zaj
-#####
-#date_time = '2021-02-11_08-58-02' # date and time of the beh session
-#name = 'srb067' # mouse name
-#task = 'NearFarLong' # task name
-#suite2p_folder = datapath + 'data/' + name + '_imaging/srb210211/' # suite2p folder
-#imaging_logfile_name = suite2p_folder + 'srb067_210211-002.xml'
-#TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'srb067_210211-002_Cycle00001_VoltageRecording_001.csv'
-
-####
-# sok ROI van kinullázott is közte - correlations ezen nézve
-####
-#date_time = '2021-02-12_08-48-36' # date and time of the beh session
-#name = 'srb067' # mouse name
-#task = 'NearFarLong' # task name
-#suite2p_folder = datapath + 'data/' + name + '_imaging/srb210212/' # suite2p folder
-#imaging_logfile_name = suite2p_folder + 'srb067_210212-003.xml'
-#TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'srb067_210212-003_Cycle00001_VoltageRecording_001.csv'
-
-####
-# sok ROI, a fele inaktív
-####
-#date_time = '2021-02-15_09-13-31' # date and time of the beh session
-#name = 'srb067' # mouse name
-#task = 'NearFarLong' # task name
-#suite2p_folder = datapath + 'data/' + name + '_imaging/srb210215/' # suite2p folder
-#imaging_logfile_name = suite2p_folder + 'srb068_TSeries-02152021-0821-003.xml'
-#TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'srb068_TSeries-02152021-0821-003_Cycle00001_VoltageRecording_001.csv'
-
-####
-# elég rossz jel/zaj arány
-####
-#date_time = '2021-03-25_08-55-48' # date and time of the beh session
-#name = 'srb081' # mouse name
-#task = 'NearFarLong' # task name
-#suite2p_folder = datapath + 'data/' + name + '_imaging/srb081_210325/' # suite2p folder
-#imaging_logfile_name = suite2p_folder + 'srb081_TSeries-03252021-0835-003.xml'
-#TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'srb081_TSeries-03252021-0835-003_Cycle00001_VoltageRecording_001.csv'
-
-####
-# érdekes jelek, de amúgy nem rossz!
-####
-date_time = '2021-06-23_08-14-01' # date and time of the beh session
-name = 'srb106' # mouse name
-task = 'NearFarLong' # task name
-suite2p_folder = datapath + 'data/' + name + '_imaging/srb106_210623_t2/' # suite2p folder
-imaging_logfile_name = suite2p_folder + 'srb106__210623-002.xml'
-TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'srb106__210623-002_Cycle00001_VoltageRecording_001.csv'
-
-####
-# lassú Tau-k itt is eléggé
-####
-#date_time = '2021-06-23_08-33-52' # date and time of the beh session
-#name = 'srb106' # mouse name
-#task = 'NearFarLong' # task name
-#suite2p_folder = datapath + 'data/' + name + '_imaging/srb106_210623_t3/' # suite2p folder
-#imaging_logfile_name = suite2p_folder + 'srb106__210623-003.xml'
-#TRIGGER_VOLTAGE_FILENAME = suite2p_folder + 'srb106__210623-003_Cycle00001_VoltageRecording_001.csv'
-
-
-#ManD = ProcessManualRoiData(datapath, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, name, task, date_time, ids=[1,2,3,7])
-#ManD.PlotPair(2,3)
 def vcorrcoef(X,y): # numpy's corrcoeff is just stupid
-        Xm = np.reshape(np.mean(X,axis=1),(X.shape[0],1))
+        Xm = np.reshape(np.mean(X, axis = 1),(X.shape[0], 1))
         ym = np.mean(y)
-        r_num = np.sum((X-Xm)*(y-ym),axis=1)
-        r_den = np.sqrt(np.sum((X-Xm)**2,axis=1)*np.sum((y-ym)**2))
+        r_num = np.sum((X - Xm) * (y - ym), axis = 1)
+        r_den = np.sqrt(np.sum((X - Xm)**2,axis = 1)*np.sum((y - ym)**2))
         #sometimes there are completely flat ROI-s found by suite2p, wich would result in division by zero, we counter that here
         #   for these 'invalid' ROI-s r = 0 is returned
-        val_ind=np.nonzero(r_den)[0]
+        val_ind = np.nonzero(r_den)[0]
         r = np.zeros(np.shape(r_num))
         
         r[val_ind] = r_num[val_ind]/r_den[val_ind]
         
         return r
 
-def SelectRois(suite2p_folder, ids=-1):
-    prew_time=time.time()
+def SelectRois(suite2p_folder, ids = -1):
+    prew_time = time.time()
     manual_data_excel_file = suite2p_folder+'manual_roi_data.xlsx'
 
     #MANUAL ROI
     training_data_x = pd.read_excel(manual_data_excel_file)
-    print('inside', round(time.time()-prew_time,2))
+    print('inside', round(time.time() - prew_time,2))
     
     array = training_data_x.values
     
     Fim = np.transpose(array)
     
     HD = list(training_data_x.columns)
-    hd_np=np.array(HD)
+    hd_np = np.array(HD)
     
     #now we subselect the ROI here
-    F_indexes=[]
-    if ids!=-1:
+    F_indexes = []
+    if ids != -1:
         for i in range(hd_np.size):
             try:
-                item=int(hd_np[i])
+                item = int(hd_np[i])
                 if item in ids:
                     F_indexes.append(i)
                     print('      ROI',item,'added')
@@ -2051,49 +1963,35 @@ def SelectRois(suite2p_folder, ids=-1):
             except ValueError:
                 pass
     else:
-        F_indexes=np.arange(1,Fim.shape[0]-1,2)
+        F_indexes = np.arange(1, Fim.shape[0] - 1, 2)
         
-    header=[int(hd_np[i]) for i in F_indexes]
-    F=Fim[F_indexes,:]
-    F_s=SmoothTraces(F)
-#    F_s=np.copy(F)
+    header = [int(hd_np[i]) for i in F_indexes]
+    F = Fim[F_indexes,:]
+    F_s = SmoothTraces(F)
     
-    N=F.shape[0]
-    plt.figure(figsize=(10, 10))
-    plt.scatter(-1,0, s=0.01)
-    plt.scatter(N,N+1, s=0.01)
-    plt.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
-    plt.tick_params(axis='y', which='both', right=False, left=False, labelleft=False)
-    exp_factor=4
+    N = F.shape[0]
+    plt.figure(figsize = (10, 10))
+    plt.title('Correlation of the traces marked with the size of the dots')
+    plt.scatter(-1, 0, s = 0.01)
+    plt.scatter(N, N + 1, s = 0.01)
+    plt.tick_params(axis = 'x', which = 'both', bottom = False, top = False, labelbottom = False)
+    plt.tick_params(axis = 'y', which = 'both', right = False, left = False, labelleft = False)
+    exp_factor = 4
     for i in range(N):
-        F_= np.delete(F_s, (i), axis=0)
+        F_ = np.delete(F_s, (i), axis = 0)
         line = vcorrcoef(F_, F_s[i,:])
         line = np.insert(line,i,0.001)
-        plt.annotate(str(header[i]),(-1-0.15, N-i-0.1))
-        plt.annotate(str(header[i]),(i-0.15,N+1))
+        plt.annotate(str(header[i]),(- 1 - 0.15, N - i - 0.1))
+        plt.annotate(str(header[i]),(i - 0.15, N + 1))
         for j in range(N):
-            plt.scatter(j,N-i, s=(line[j]**exp_factor)*1000, c='b')
-            if line[j]>0.4:
-                plt.annotate(str(round(line[j],2)),(j-0.25, N-i))
+            plt.scatter(j,N - i, s = (line[j] ** exp_factor) * 1000, c = 'b')
+            if line[j] > 0.4:
+                plt.annotate(str(round(line[j], 2)),(j - 0.25, N - i))
                 
-    fig, ax=plt.subplots(N, sharex=True)
+    fig, ax = plt.subplots(N, sharex = True)
     for i in range(N):
         ax[i].plot(F[i,:])
-        ax[i].text(.5,.5,header[i],horizontalalignment='center',transform=ax[i].transAxes)
-#            title=str(header[i])
+        ax[i].text(.5,.5,header[i],horizontalalignment = 'center',transform = ax[i].transAxes)
+#            title = str(header[i])
 #            ax[i].set_title(title)
     plt.show()
-
-prew_time=time.time()            
-print('Standup time:',round(prew_time-start_time,2), 'seconds')
- 
-#SelectRois(suite2p_folder)
-
-#SelectRois(suite2p_folder, ids=[1,2,3,7])
-
-#print('SelectRois time:',round(time.time()-prew_time,2), 'seconds')
-
-ManD = ProcessManualRoiData(datapath, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, name, task, date_time, ids=[1,2,3,7])
-
-#ManD = ProcessManualRoiData(datapath, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, name, task, date_time)
-print('Total runtime:',round(time.time()-start_time,2), 'seconds')
