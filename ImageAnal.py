@@ -302,14 +302,14 @@ class ImagingSessionData:
             return False
 
         datapath = next(param_file_reader)
-        if (datapath[1] != self.datapath):
-            print('Error: datapath read from file not equals the datapath in the loaded session!')
-            return False
+        # if (datapath[1] != self.datapath):
+        #     print('Error: datapath read from file not equals the datapath in the loaded session!')
+        #     return False
 
         suite2p_folder = next(param_file_reader)
-        if (suite2p_folder[1] != self.suite2p_folder):
-            print('Error: suite2p_folder read from file not equals the suite2p_folder in the loaded session!')
-            return False
+        # if (suite2p_folder[1] != self.suite2p_folder):
+        #     print('Error: suite2p_folder read from file not equals the suite2p_folder in the loaded session!')
+        #     return False
 
         stage = next(param_file_reader)
         if (int(stage[1]) != self.stage):
@@ -972,7 +972,6 @@ class ImagingSessionData:
             self.calc_selectivity_similarity()
 
 
-
     def calc_selectivity_similarity(self, zone=None):
         ## corridor selectivity calculated for M corridors for all neurons
         ## selectivity is defined as (max(r) - min(r)) / sum(r) 
@@ -985,7 +984,6 @@ class ImagingSessionData:
         ##
         ## corridor similarity is calculated for M corridors for all neurons
         ## similarity is defined as the average correlation between the ratemaps
-        ##           is always positive
         ##           is near 0 for cells with uncorrelated ratemaps
         ##           is 1 if cells have identical ratemaps for all the corridors
         ## the similarity is stored in a vector of 1 element for each cell
@@ -1494,7 +1492,7 @@ class ImagingSessionData:
             if len(ratemaps_array) != len(corridor):
                 print('ratemaps and corridor must have same size!')
                 return
-        # checking specified corridor is valid, check if it is a singla ratemap to plot sored in single variable
+        # checking specified corridor is valid, check if it is a singla ratemap to plot sorted in single variable
         else:
             if (corridor == -1):
                 ratemaps = self.ratemaps
@@ -1937,7 +1935,7 @@ class ImagingSessionData:
         plt.show(block=False)
 
 
-    def plot_session(self, selected_laps=None, average=True):
+    def plot_session(self, selected_laps=None, average=True, filename=None):
         ## plot the behavioral data during one session. 
             # - speed
             # - lick rate
@@ -2116,8 +2114,12 @@ class ImagingSessionData:
                         else:
                             axs[row,0].set_ylabel('laps')
 
+            if (filename is None):
+                plt.show(block=False)
+            else:
+                plt.savefig(filename, format='pdf')
+                plt.close()
 
-            plt.show(block=False)
         else:
             fig = plt.figure(figsize=(8,3))
             # plt.scatter([-4, -3, -2], [2,3,4])
@@ -2378,18 +2380,22 @@ class ImagingSessionData:
                 file_writer.writerow(np.round(np.diagonal(self.ratemap_corr), 4))
             print('place code statistics saved into file: ', filename)
    
-    def calc_rate(self, i_laps):
+    def calc_rate(self, i_laps, cellids=None):
         #calculate ratemaps for the given laps
-        ratemap = np.zeros((self.N_cells,self.N_pos_bins))
+        if (cellids is None):
+            cellids = np.arange(self.N_cells)
+        N_cells = len(cellids)
+        ratemap = np.zeros((N_cells,self.N_pos_bins))
         
-        for i in range(self.N_cells):
+        total_time = self.activity_tensor_time[:,i_laps]
+        for i in range(N_cells):
             total_spikes = self.activity_tensor[:,i,i_laps]
-            total_time = self.activity_tensor_time[:,i_laps]
             rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
             av_rate = np.nanmean(rate_matrix, axis=1)
             ratemap[i,:] = av_rate
             
         return np.transpose(ratemap)
+
     
     def calc_even_odd_rates(self):
         #calculate ratemaps for even and ott laps for every corridor with enough laps
@@ -2475,23 +2481,35 @@ class ImagingSessionData:
             
             print('previous-based ratemaps calculated - !Previous overwritten!')
 
-    def show_crosscorr(self, ratemap1, ratemap2, cellids, ratemap1_annot, ratemap2_annot, main_title):
+    def show_crosscorr(self, ratemap1, ratemap2, cellids=None, ratemap1_annot='map 1', ratemap2_annot='map 2', main_title='Cross correlation', return_matrix=False, plot_ccm=True):
         #plot cross-correlation matrix between two ratemaps, only for specified cellids
+        if (cellids is None):
+            cellids = np.arange(self.N_cells)
+
         popp_full = np.corrcoef(ratemap1[:,cellids], ratemap2[:,cellids])
         popp = popp_full[:self.N_pos_bins, self.N_pos_bins:]
         
-        fig, ax = plt.subplots()
-        im = ax.imshow(popp, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
-        ax.plot(ax.get_xlim(), ax.get_ylim(), ls="--", linewidth = '0.5', c='k')
+        if (plot_ccm == True):
+            fig, ax = plt.subplots()
+            im = ax.imshow(popp, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
+            ax.plot(ax.get_xlim(), ax.get_ylim(), ls="--", linewidth = '0.5', c='k')
+            
+            plt.colorbar(im)
+            plt.ylabel(ratemap1_annot)
+            plt.xlabel(ratemap2_annot)
+            plt.title(main_title)
+            plt.show()
+
+        if (return_matrix == True):
+            return popp_full
+        else :
+            return
         
-        plt.colorbar(im)
-        plt.ylabel(ratemap1_annot)
-        plt.xlabel(ratemap2_annot)
-        plt.title(main_title)
-        plt.show()
-        
-    def show_autocorr(self, ratemap, cellids,title):
+    def show_autocorr(self, ratemap, cellids=None, title='autocorrelation'):
         #show autucorrelation matrix for a given ratemap, cellids
+        if (cellids is None):
+            cellids = np.arange(self.N_cells)
+
         popp = np.corrcoef(ratemap[:,cellids])
         
         fig, ax = plt.subplots()
@@ -2538,7 +2556,7 @@ class ImagingSessionData:
         plt.title(title)
         plt.show()
         
-    def lap_correlate(self, cellids):
+    def lap_correlate(self, cellids, filename=None):
         results = np.zeros((self.i_Laps_ImData.size, self.i_Laps_ImData.size))
         ratemaps = np.zeros((self.i_Laps_ImData.size, self.N_pos_bins, self.N_cells))
         
@@ -2551,31 +2569,34 @@ class ImagingSessionData:
     
         
         for i in np.arange(1,self.i_Laps_ImData.size-1,1):
-            print('corr',i)
+            # print('corr',i)
             for j in np.arange(1,self.i_Laps_ImData.size-1,1):
     
+                # results[i,j] = np.nanmean(Mcorrcoef(np.transpose(ratemaps[i,:,cellids]), np.transpose(ratemaps[j,:,cellids])))
                 results[i,j] = np.nanmean(np.diagonal(np.corrcoef(np.transpose(ratemaps[i,:,cellids]), np.transpose(ratemaps[j,:,cellids]))[0:self.N_pos_bins,self.N_pos_bins:]))
                 if np.isnan(results[i,j]) == True:
                     print(i,j)
     
-        plt.figure()
-        plt.imshow(results, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
-        plt.colorbar()
-        plt.show()
+        fig, axs = plt.subplots(1,2)
+        im0 = axs[0].imshow(results, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
+        plt.colorbar(im0, orientation='horizontal',ax=axs[0])
         
         i_laps_a = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[0])[0]
         i_laps_b = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[1])[0]
         order = np.concatenate((i_laps_a,i_laps_b))
-        print(order, order.size, results.shape)
+        # print(order, order.size, results.shape)
         
         results2 = results[order, :]
         results2 = results2[:,order]
-        print(results2.shape)
+        # print(results2.shape)
         
-        plt.figure()
-        plt.imshow(results2, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
-        plt.colorbar()
-        plt.show()
+        im1 = axs[1].imshow(results2, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
+        plt.colorbar(im1, orientation='horizontal',ax=axs[1])
+        if (filename is None):
+            plt.show(block=False)
+        else:
+            plt.savefig(filename, format='pdf')
+            plt.close()
         
         # cov = np.copy(results)
         # eigenvalues, eigenvectors = np.linalg.eig(cov)
