@@ -1449,7 +1449,7 @@ class ImagingSessionData:
         plt.show(block=False)
 
 
-    def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1]), vmax=0, ratemaps_array = [], ratemaps_title = []):
+    def plot_ratemaps(self, corridor=-1, normalized=False, sorted=False, corridor_sort=-1, cellids=np.array([-1]), vmax=0, ratemaps_array = [], ratemaps_title = [], filename=None):
         ## plot the average event rate of all cells in a given corridor
         ## corridor: integer or array... (corridor id)
         ##              INTEGER: if you want to plot default ratemaps
@@ -1625,7 +1625,11 @@ class ImagingSessionData:
                 
         fig.suptitle(sort_title)
         fig.tight_layout()
-        plt.show(block=False) 
+        if (filename is None):
+            plt.show(block=False)
+        else:
+            plt.savefig(filename, format='pdf')
+            plt.close()
 
     
     def sort_ratemaps(self, rmap):
@@ -2583,11 +2587,12 @@ class ImagingSessionData:
         im0 = axs[0].imshow(results, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
         plt.colorbar(im0, orientation='horizontal',ax=axs[0])
         
-        i_laps_a = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[0])[0]
-        i_laps_b = np.nonzero(self.i_corridors[self.i_Laps_ImData] == self.corridors[1])[0]
-        order = np.concatenate((i_laps_a,i_laps_b))
-        # print(order, order.size, results.shape)
-        
+
+        i_laps = np.array((1)).reshape(1,)
+        for i_corrid in self.corridors:
+            i_laps = np.concatenate((i_laps, np.flatnonzero(self.i_corridors[self.i_Laps_ImData] == i_corrid)))
+        order = i_laps[1:]
+ 
         results2 = results[order, :]
         results2 = results2[:,order]
         # print(results2.shape)
