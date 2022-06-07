@@ -2000,16 +2000,18 @@ class ImagingSessionData:
                             if (max(self.ImLaps[lap].ave_speed) > maxspeed): maxspeed = max(self.ImLaps[lap].ave_speed)
                             n_correct = n_correct + self.ImLaps[lap].correct
                             n_valid = n_valid + 1
+                        else:
+                            speed_matrix[i_lap,:] =  np.nan
                         i_lap = i_lap + 1
                     maxspeed = min(maxspeed, 60)
                     P_correct = np.round(np.float(n_correct) / np.float(n_valid), 3)
 
-                    avespeed = nan_divide(avespeed, n_lap_bins, n_lap_bins > 0)
                     if (average):
+                        avespeed = nan_divide(avespeed, n_lap_bins, n_lap_bins > 0)
                         axs[row,0].step(self.ImLaps[lap].bincenters, avespeed, where='mid', c=speed_color)
                         axs[row,0].set_ylim([-1,1.2*maxspeed])
                     else:
-                        im = axs[row,0].imshow(speed_matrix, cmap='viridis', aspect='auto', vmin=0, vmax=maxspeed, extent=(0, self.corridor_length_roxel, 0, n_valid), origin='lower')
+                        im = axs[row,0].imshow(speed_matrix, cmap='viridis', aspect='auto', vmin=0, vmax=maxspeed, extent=(0, self.corridor_length_roxel, 0, i_lap), origin='lower')
                         plt.colorbar(im, orientation='vertical',ax=axs[row, 0])
 
                     if (row == 0):
