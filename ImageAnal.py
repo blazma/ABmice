@@ -57,7 +57,7 @@ class ImagingSessionData:
         self.selected_laps = selected_laps
         self.speed_threshold = speed_threshold
         self.elfiz = elfiz
-        self.minimum_Nlaps = 5
+        self.minimum_Nlaps = 3
         self.substage_change_laps = [0]
         self.substage_change_time = [0]
 
@@ -366,13 +366,34 @@ class ImagingSessionData:
         ## the signal's 0 has a slight delay compared to the time 0 of the imaging recording 
         ## we substract this delay from the offset to get the LabView time of the time 0 of the imaging recording
         corrected_offset = offset - voltage_delay
-        print('corrected offset:', corrected_offset, 'voltage_delay:', voltage_delay)        
-
+        print('corrected offset:', corrected_offset, 'voltage_delay:', voltage_delay)  
+        
+        #find out whether it's a multiplane recording
+        sequence = imaging_logfile.getElementsByTagName('Sequence')
         frames = imaging_logfile.getElementsByTagName('Frame')
-        self.frame_times = np.zeros(len(frames)) # this is already in labview time
-        self.im_reftime = float(frames[1].attributes['relativeTime'].value) - float(frames[1].attributes['absoluteTime'].value)
-        for i in range(len(frames)):
-            self.frame_times[i] = float(frames[i].attributes['relativeTime'].value) + corrected_offset
+        if sequence[0].attributes['type'].value == 'TSeries ZSeries Element':
+            print('multi-plane')
+            #for multiplane recordings we drop last frame as it is sometimes 'missing' for one of the planes
+            self.F_all = self.F_all[:, 0:-1]
+            self.spks_all = self.spks_all[:, 0:-1]
+            # self.Fneu = self.Fneu[:, 0:-1]
+            if len(frames) %2 == 0:    
+                len_frames_used = int(len(frames)/2-1)
+            if len(frames) %2 == 1:
+                len_frames_used = int((len(frames)-1)/2)
+            # for frame time we use the average of the two planes time
+            self.frame_times = np.zeros(len_frames_used)
+            for i in range(len_frames_used):
+                self.frame_times[i] = (float(frames[i].attributes['relativeTime'].value) + float(frames[i+1].attributes['relativeTime'].value))/2 + corrected_offset
+            
+        else:
+            print('single-plane')
+
+            self.frame_times = np.zeros(len(frames)) # this is already in labview time
+            self.im_reftime = float(frames[1].attributes['relativeTime'].value) - float(frames[1].attributes['absoluteTime'].value)
+            for i in range(len(frames)):
+                self.frame_times[i] = float(frames[i].attributes['relativeTime'].value) + corrected_offset       
+        
         if (len(self.frame_times) != self.F_all.shape[1]):
             print('ERROR: imaging frame number does not match suite2p frame number! Something is wrong!')
             print('shape of the dF array:', self.F_all.shape)
@@ -388,6 +409,7 @@ class ImagingSessionData:
             #     # self.Fneu = self.Fneu[:, 0:N_frames]
             # else:
             #     self.frame_times = self.frame_times[0:N_frames]   
+
 
     def LoadExpLog(self, exp_log_file_string): # BBU: just reads the raw data, no separation into laps
         position=[]
@@ -1193,7 +1215,7 @@ class ImagingSessionData:
             self.candidate_PCs.append(candidate_cells)
 
     # def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, mode='random'):
-    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=25, verbous=True):
+    def calc_shuffle(self, cellids, n=1000, mode='shift', batchsize=25, verbous=1, name_string=''):
         ## cellids: numpy array - the index of the cells to be included in the analysis
         ## n: integer, number of shuffles
         ## mode: 'random' or 'shift'. 
@@ -1211,12 +1233,12 @@ class ImagingSessionData:
         ##########################################################################
 
         data_folder = self.suite2p_folder + 'analysed_data'
-        shuffle_filename = 'shuffle_stats_n' + str(n) + '_mode_' + mode + '.csv'
+        shuffle_filename = 'shuffle_stats_' + name_string + 'n' + str(n) + '_mode_' + mode + '.csv'
         shuffle_path = data_folder + '/' + shuffle_filename
         if os.path.exists(shuffle_path):
             calculate_shuffles = False
             if (self.check_params(shuffle_filename)):
-                if (verbous):
+                if (verbous > 1):
                     print('loading shuffling P-values from file...')
                 ## load from file
                 shuffle_file=open(shuffle_path, newline='')
@@ -1243,14 +1265,18 @@ class ImagingSessionData:
                     ## check the cellids
                     cellids_from_file = shuffle_Pvalues[:,0]
                     if not np.array_equal(np.sort(cellids_from_file), np.sort(cellids)):
-                        if (verbous):
+                        if (verbous > 0):
                             print ('cellids of the saved file does not match the cellids provided. We will perform shuffling.')
                         calculate_shuffles = True
+                    else :
+                        if (verbous > 0):
+                            print ('P-values successfully read from the saved file.')
 
                 else :# fill in the P-value array
-                    if (verbous):
+                    if (verbous > 0):
                         print ('number of P-values read from the saved file for each cell does not match the number expected for a given number of corridor. We will perform shuffling.')
                     calculate_shuffles = True
+            
             else:
                 calculate_shuffles = True
 
@@ -1258,7 +1284,7 @@ class ImagingSessionData:
         ## calculating shuffling - if appropriate file not found
         ##########################################################################
         if (calculate_shuffles):
-            if (verbous):
+            if (verbous > 0):
                 print('calculating shuffles...')
             shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode, batchsize=batchsize, randseed=self.randseed, selected_laps=self.selected_laps, elfiz=self.elfiz, min_Nlaps=self.minimum_Nlaps)
             # shuffle_stats = ImShuffle(D1.datapath,   D1.date_time,   D1.name,   D1.task,   D1.stage,   raw_spikes, D1.frame_times,   D1.frame_pos,   D1.frame_laps,   N_shuffle=N_shuffle, cellids=cellids, mode='shift', batchsize=25,        randseed=D1.randseed, selected_laps=np.arange(20,80), elfiz=True)
@@ -1286,14 +1312,14 @@ class ImagingSessionData:
                         sanity_checks_passed = False
 
             if (sanity_checks_passed):
-                if (verbous):
+                if (verbous > 0):
                     print ('Shuffling stats calculated succesfully')
             else : 
-                if (verbous):
+                if (verbous > 0):
                     print ('Shuffling failed, ask for help...')
                 return 
 
-            if (verbous):
+            if (verbous > 1):
                 print('saving shuffling data into file...')
 
             # shuffle_Pvalues:
@@ -1388,18 +1414,18 @@ class ImagingSessionData:
             self.spec_tuned_cells.append(cellids[np.where(self.ii_tuned_cells[:,self.N_corridors+i_cor])])
             self.reli_tuned_cells.append(cellids[np.where(self.ii_tuned_cells[:,self.N_corridors*2+i_cor])])
             self.tuned_cells.append(np.unique(np.concatenate((self.skaggs_tuned_cells[i_cor], self.spec_tuned_cells[i_cor], self.reli_tuned_cells[i_cor]))))
-        if (verbous):
+        if (verbous > 1):
             print('tuned cells:', self.tuned_cells)
         if (self.N_corridors > 1):
             self.selective_cells = cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3])]
             self.similar_cells = cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3+1])]
-            if (verbous):
+            if (verbous > 1):
                 print('selective cells:', self.selective_cells)
                 print('similar cells:', self.similar_cells)
             if (self.task=='contingency_learning'):
                 for kk in np.arange(4):
                     self.pattern_selective_cells.append(cellids[np.where(self.ii_tuned_cells[:, self.N_corridors*3+2+kk])])
-                if (verbous):
+                if (verbous > 1):
                     print('pattern selective cells:', self.pattern_selective_cells)
 
 
@@ -1612,8 +1638,9 @@ class ImagingSessionData:
             axs[0,i].set_title(title_string)
             ims.append(axs[0,i].matshow(ratemap_to_plot, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary'))
             axs[0,i].set_facecolor(matcols.CSS4_COLORS['palegreen'])
-            axs[0,i].set_yticks(np.arange(len(cellids)))
-            axs[0,i].set_yticklabels(cellids[sort_index])
+            if (len(cellids)<300):
+                axs[0,i].set_yticks(np.arange(len(cellids)))
+                axs[0,i].set_yticklabels(cellids[sort_index])
             plt.colorbar(ims[i], orientation='horizontal',ax=axs[0,i])
             # add reward-zone
             bottom, top = axs[0,i].get_ylim()
@@ -1630,6 +1657,8 @@ class ImagingSessionData:
         else:
             plt.savefig(filename, format='pdf')
             plt.close()
+
+        return sort_index
 
     
     def sort_ratemaps(self, rmap):
@@ -1975,7 +2004,7 @@ class ImagingSessionData:
             lick_color = cmap(200)
             lick_color_trial = (lick_color[0], lick_color[1], lick_color[2], (0.05))
 
-            for row in range(nrow):
+            for row in range(nrow): # for each corridor...
                 # ax = plt.subplot(nrow, 1, row+1)
                 ids_all = np.where(self.i_corridors == corridor_types[row])
                 ids = np.intersect1d(ids_all, selected_laps)
@@ -2527,16 +2556,14 @@ class ImagingSessionData:
         plt.show()
         
     def lap_decode(self, cellids, ratemaps, labels, title):
+        ## D1.lap_decode(cellids, D1.ratemaps, D1.corridors, '')
         results = np.zeros((len(ratemaps), self.i_Laps_ImData.size))
         ratemap = np.zeros((self.N_pos_bins, self.N_cells))
         
         speed = []
-        
-        for i in range(len(self.ImLaps)):
-            if self.ImLaps[i].imaging_data == True:
-                speed.append(np.nanmean(self.ImLaps[i].ave_speed))
-                
+                        
         for i in range(self.i_Laps_ImData.size):
+            speed.append(np.nanmean(self.ImLaps[self.i_Laps_ImData[i]].ave_speed))
             
             for j in range(self.N_cells):
                 total_spikes = self.activity_tensor[:,j,i]
@@ -2554,51 +2581,109 @@ class ImagingSessionData:
         x=np.arange(0, self.i_Laps_ImData.size)
         for  k in range(len(ratemaps)):
             ax.scatter(x, results[k,:], label=labels[k])
-        # plt.plot(np.abs(results[0,:]-results[1,:]))
+        for k in range(self.i_Laps_ImData.size):
+            i_corridor = np.flatnonzero(self.corridors == self.i_corridors[self.i_Laps_ImData[k]])
+            ax.scatter(x[k], results[i_corridor,k], facecolor='w', s=5)
+
+        substage_change_laps = np.array(self.substage_change_laps)
+        i_substage_change_ImData = (substage_change_laps > np.min(self.i_Laps_ImData)) & (substage_change_laps < np.max(self.i_Laps_ImData))
+        if (sum(i_substage_change_ImData) > 0):
+            i_lap_stage_change = substage_change_laps[i_substage_change_ImData]
+            ii_lap_stage_change = np.flatnonzero(self.i_Laps_ImData == i_lap_stage_change) - .5
+
+            ax.vlines(ii_lap_stage_change, 0, 1, linewidth=2)
+
         ax2=ax.twinx()
         ax2.plot(speed, label='average speed', linewidth= 0.5)
+
         ax.legend()
         ax2.legend()
         plt.title(title)
         plt.show()
         
-    def lap_correlate(self, cellids, filename=None):
-        results = np.zeros((self.i_Laps_ImData.size, self.i_Laps_ImData.size))
+    def lap_correlate(self, cellids, filename=None, corridors=None, normalize_rates=False, add_switch_ordered=False):
+        lap2lap_corr = np.zeros((self.i_Laps_ImData.size, self.i_Laps_ImData.size))
         ratemaps = np.zeros((self.i_Laps_ImData.size, self.N_pos_bins, self.N_cells))
         
-        for i in range(self.i_Laps_ImData.size):
-            for j in range(self.N_cells):
+        for j in range(self.N_cells):
+            for i in range(self.i_Laps_ImData.size):
                 total_spikes = self.activity_tensor[:,j,i]
                 total_time = self.activity_tensor_time[:,i]
-                rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
-                ratemaps[i,:,j] = rate_matrix
+                rate_vector = nan_divide(total_spikes, total_time, where=total_time > 0.025)
+                ratemaps[i,:,j] = rate_vector
+            ## as in Low et al., 2021, we clip the max rate to the 99th percentile
+            clap_rate_j = np.nanquantile(ratemaps[:,:,j], 0.99) # I suggest to use 99% instead of 90% as we do Ca imaging and not neurpixels, and these are place cells not grid cells
+            ratemaps[:,:,j][np.where(ratemaps[:,:,j] > clap_rate_j)] = clap_rate_j
+            if (normalize_rates):
+                ratemaps[:,:,j] = (ratemaps[:,:,j] - np.nanmin(ratemaps[:,:,j])) / (np.nanmax(ratemaps[:,:,j]) - np.nanmin(ratemaps[:,:,j]))
     
-        
-        for i in np.arange(1,self.i_Laps_ImData.size-1,1):
-            # print('corr',i)
-            for j in np.arange(1,self.i_Laps_ImData.size-1,1):
-    
-                # results[i,j] = np.nanmean(Mcorrcoef(np.transpose(ratemaps[i,:,cellids]), np.transpose(ratemaps[j,:,cellids])))
-                results[i,j] = np.nanmean(np.diagonal(np.corrcoef(np.transpose(ratemaps[i,:,cellids]), np.transpose(ratemaps[j,:,cellids]))[0:self.N_pos_bins,self.N_pos_bins:]))
-                if np.isnan(results[i,j]) == True:
-                    print(i,j)
+
+        for i in np.arange(self.i_Laps_ImData.size):
+            for j in np.arange(i):
+                ri = ratemaps[i,:,cellids].reshape(len(cellids)* self.N_pos_bins)
+                rj = ratemaps[j,:,cellids].reshape(len(cellids)* self.N_pos_bins)
+                rr12 = np.corrcoef(ri, rj)[0,1]
+                lap2lap_corr[i,j] = rr12
+                lap2lap_corr[j,i] = rr12
+
+                # lap2lap_corr[i,j] = np.nanmean(Mcorrcoef(np.transpose(ratemaps[i,:,cellids]), np.transpose(ratemaps[j,:,cellids])))
+                # lap2lap_corr[i,j] = np.nanmean(np.diagonal(np.corrcoef(np.transpose(ratemaps[i,:,cellids]), np.transpose(ratemaps[j,:,cellids]))[0:self.N_pos_bins,self.N_pos_bins:]))
+                # if np.isnan(lap2lap_corr[i,j]) == True:
+                #     print(i,j)
     
         fig, axs = plt.subplots(1,2)
-        im0 = axs[0].imshow(results, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
+        im0 = axs[0].imshow(lap2lap_corr, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
         plt.colorbar(im0, orientation='horizontal',ax=axs[0])
         
 
+        substage_change_laps = np.array(self.substage_change_laps)
+        i_substage_change_ImData = (substage_change_laps > np.min(self.i_Laps_ImData)) & (substage_change_laps < np.max(self.i_Laps_ImData))
+        if (sum(i_substage_change_ImData) > 0):
+            i_lap_stage_change = substage_change_laps[i_substage_change_ImData]
+            ii_lap_stage_change = np.flatnonzero(self.i_Laps_ImData == i_lap_stage_change) - .5
+
+            axs[0].vlines(ii_lap_stage_change, 0, len(self.i_Laps_ImData)-1, linewidth=.5)
+            axs[0].hlines(ii_lap_stage_change, 0, len(self.i_Laps_ImData)-1, linewidth=.5)
+
+
+        if (corridors is None):
+            corridors = self.corridors
+        else :
+            if (len(np.intersect1d(corridors, self.corridors)) < len(corridors)):
+                print('Error: some corridors given are not used in this session.')
+                corridors = np.intersect1d(corridors, self.corridors)
+        
+        ###################################################
+        ## calculating the number of laps in each corridor and their ordering
+        N_laps_corr = np.zeros(len(corridors))
         i_laps = np.array((1)).reshape(1,)
-        for i_corrid in self.corridors:
-            i_laps = np.concatenate((i_laps, np.flatnonzero(self.i_corridors[self.i_Laps_ImData] == i_corrid)))
+        i = 0
+        N_corridors = len(corridors)
+        for i_corrid in corridors:
+            i_laps_corridor = np.flatnonzero(self.i_corridors[self.i_Laps_ImData] == i_corrid)
+            i_laps = np.concatenate((i_laps, i_laps_corridor))
+            N_laps_corr[i] = len(i_laps_corridor)
+            i = i + 1
         order = i_laps[1:]
- 
-        results2 = results[order, :]
-        results2 = results2[:,order]
+        i_corr_bounds = np.cumsum(N_laps_corr)-0.5
+        i_corr_mids = N_laps_corr / 2 + np.concatenate(([0], i_corr_bounds[0:(N_corridors-1)]))
+
+        lap2lap_corr_ordered = lap2lap_corr[order, :]
+        lap2lap_corr_ordered = lap2lap_corr_ordered[:,order]
         # print(results2.shape)
         
-        im1 = axs[1].imshow(results2, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
+        im1 = axs[1].imshow(lap2lap_corr_ordered, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
         plt.colorbar(im1, orientation='horizontal',ax=axs[1])
+
+        axs[1].vlines(i_corr_bounds, 0, len(self.i_Laps_ImData)-1, linewidth=.5, colors='g')
+        axs[1].hlines(i_corr_bounds, 0, len(self.i_Laps_ImData)-1, linewidth=.5, colors='g')
+        for i_cor in np.arange(N_corridors):
+            axs[1].text(i_corr_mids[i_cor], -20, 'cor ' + str(corridors[i_cor]), fontsize=10, ha='center', weight='600')
+
+        if ((sum(i_substage_change_ImData) > 0) & add_switch_ordered):
+            axs[1].vlines(ii_lap_stage_change, 0, len(self.i_Laps_ImData)-1, linewidth=.5)
+            axs[1].hlines(ii_lap_stage_change, 0, len(self.i_Laps_ImData)-1, linewidth=.5)
+
         if (filename is None):
             plt.show(block=False)
         else:
