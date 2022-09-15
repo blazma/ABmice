@@ -1888,7 +1888,7 @@ class ImagingSessionData:
             
     
 
-    def plot_popact(self, cellids, corridor=-1, name_string='selected_cells', bylaps=False):
+    def plot_popact(self, cellids, corridor=-1, name_string='selected_cells', bylaps=False, set_ymax=None):
         ## plot the total population activity in all trials in a given corridor
         ## cellids: numpy array. The index of the cells included in the population activity
         ## corridor: integer, the ID of a valid corridor
@@ -1951,8 +1951,11 @@ class ImagingSessionData:
 
                 ax[0,cor_index].set_xlim(0, 51)
                 ax[0,cor_index].set_title(title_string)
+                if (set_ymax is None):
+                    ax[0,0].set_ylim(0, ymax)
+                else :
+                    ax[0,0].set_ylim(0, set_ymax)
 
-                ax[0,0].set_ylim(0, ymax)
 
             ## add reward zones
             zone_starts = self.corridor_list.corridors[corridor_to_plot].reward_zone_starts
@@ -2555,8 +2558,14 @@ class ImagingSessionData:
         plt.title(title)
         plt.show()
         
-    def lap_decode(self, cellids, ratemaps, labels, title):
+    def lap_decode(self, cellids, ratemaps=None, labels=None, title=''):
         ## D1.lap_decode(cellids, D1.ratemaps, D1.corridors, '')
+        add_true_corridor_ids = False
+        if (ratemaps is None):
+            ratemaps = self.ratemaps
+            labels = self.corridors
+            add_true_corridor_ids = True
+
         results = np.zeros((len(ratemaps), self.i_Laps_ImData.size))
         ratemap = np.zeros((self.N_pos_bins, self.N_cells))
         
@@ -2581,9 +2590,10 @@ class ImagingSessionData:
         x=np.arange(0, self.i_Laps_ImData.size)
         for  k in range(len(ratemaps)):
             ax.scatter(x, results[k,:], label=labels[k])
-        for k in range(self.i_Laps_ImData.size):
-            i_corridor = np.flatnonzero(self.corridors == self.i_corridors[self.i_Laps_ImData[k]])
-            ax.scatter(x[k], results[i_corridor,k], facecolor='w', s=5)
+        if (add_true_corridor_ids):
+            for k in range(self.i_Laps_ImData.size):
+                i_corridor = np.flatnonzero(self.corridors == self.i_corridors[self.i_Laps_ImData[k]])
+                ax.scatter(x[k], results[i_corridor,k], facecolor='w', s=5)
 
         substage_change_laps = np.array(self.substage_change_laps)
         i_substage_change_ImData = (substage_change_laps > np.min(self.i_Laps_ImData)) & (substage_change_laps < np.max(self.i_Laps_ImData))
