@@ -42,7 +42,7 @@ else:
 
 class ImagingSessionData:
     'Base structure for both imaging and behaviour data'
-    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False):
+    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False, reward_zones=None):
         self.datapath = datapath
         self.date_time = date_time
         self.name = name
@@ -79,6 +79,16 @@ class ImagingSessionData:
 
         self.get_stage(self.datapath, self.date_time, self.name, self.task) # reads the stage of the experiment from the log file
         self.all_corridors = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])# we always add corridor 0 - that is the grey zone
+
+        if (reward_zones is not None):
+            corridors_changed = np.unique(reward_zones[:,0])
+            for i_corrid in corridors_changed:
+                zones_i = np.flatnonzero(reward_zones[:,0] == i_corrid)
+                zones_start_corrid = reward_zones[zones_i,1]
+                zones_end_corrid = reward_zones[zones_i,2]
+                self.corridor_list.corridors[int(i_corrid)].reward_zone_starts = zones_start_corrid
+                self.corridor_list.corridors[int(i_corrid)].reward_zone_ends = zones_end_corrid
+                print ('reward zones added manually')
 
         ## in certain tasks, the same corridor may appear multiple times in different substages
         ## Labview uses different indexes for corridors in different substages, therefore 
@@ -914,10 +924,13 @@ class ImagingSessionData:
                 self.cell_rates.append(rates)
 
                 if (self.task == 'contingency_learning'):
+                    zone_start = int(np.floor(self.ImLaps[0].zones[0]*self.N_pos_bins))
+                    zone_end = int(np.floor(self.ImLaps[0].zones[1]*self.N_pos_bins))
+
                     rates_pattern1 = np.sum(total_spikes[0:14,:], axis=0) / np.sum(total_time[0:14])
                     rates_pattern2 = np.sum(total_spikes[14:28,:], axis=0) / np.sum(total_time[14:28])
                     rates_pattern3 = np.sum(total_spikes[28:42,:], axis=0) / np.sum(total_time[28:42])
-                    rates_reward = np.sum(total_spikes[42:47,:], axis=0) / np.sum(total_time[42:47])
+                    rates_reward = np.sum(total_spikes[zone_start:zone_end,:], axis=0) / np.sum(total_time[zone_end:zone_end])
                     self.cell_pattern_rates.append(np.vstack([rates_pattern1, rates_pattern2, rates_pattern3, rates_reward]))
 
                 ## reliability and Fano factor
@@ -933,7 +946,7 @@ class ImagingSessionData:
 
 
                 print('calculating Skaggs spatial info...')
-                ## Skaggs spatial info
+                ## Skaggs spatial info in bits per spike
                 skaggs_vector=np.zeros(self.N_cells)
                 P_x=total_time/np.sum(total_time)
                 for i_cell in range(self.N_cells):
@@ -1863,7 +1876,7 @@ class ImagingSessionData:
                 ax[1,cor_index].set_xlim(0, nbins+1)
                 ax[0,cor_index].set_facecolor(matcols.CSS4_COLORS['palegreen'])
 
-            ## add reward zones
+            ## add reward zones - rewardZones
             for cor_index in range(corridor.size):
                 zone_starts = self.corridor_list.corridors[corridor[cor_index]].reward_zone_starts
                 if (len(zone_starts) > 0):
@@ -2063,8 +2076,8 @@ class ImagingSessionData:
 
                     if (self.ImLaps[lap].zones.shape[1] > 0):
                         bottom, top = axs[row,0].get_ylim()
-                        left = self.ImLaps[lap].zones[0,0] * self.corridor_length_roxel
-                        right = self.ImLaps[lap].zones[1,0] * self.corridor_length_roxel
+                        left = np.round(self.ImLaps[lap].zones[0,0] * self.corridor_length_roxel, -1) - 4.5 # threshold of the position rounded to 10s - this is what LabView does
+                        right = np.round(self.ImLaps[lap].zones[1,0] * self.corridor_length_roxel, -1) - 4.5
 
                         if (average):
                             polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color=reward_zone_color, alpha=0.15)
@@ -2073,9 +2086,9 @@ class ImagingSessionData:
                             axs[row,0].vlines((left, right), ymin=bottom, ymax=top, colors=reward_zone_color, lw=3)
                         n_zones = np.shape(self.ImLaps[lap].zones)[1]
                         if (n_zones > 1):
-                            for i in range(1, np.shape(self.ImLaps[lap].zones)[1]):
-                                left = self.ImLaps[lap].zones[0,i] * self.corridor_length_roxel
-                                right = self.ImLaps[lap].zones[1,i] * self.corridor_length_roxel
+                            for i in range(1, n_zones):
+                                left = np.round(self.ImLaps[lap].zones[0,i] * self.corridor_length_roxel, -1) - 4.5 # threshold of the position rounded to 10s - this is what LabView does
+                                right = np.round(self.ImLaps[lap].zones[1,i] * self.corridor_length_roxel, -1) - 4.5
                                 if (average):
                                     polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color=reward_zone_color, alpha=0.15)
                                     axs[row,0].add_patch(polygon)
@@ -2757,10 +2770,10 @@ class Lap_ImData:
 
         self.last_zone_start = max(self.corridor_list.corridors[self.corridor].reward_zone_starts)
         self.last_zone_end = max(self.corridor_list.corridors[self.corridor].reward_zone_ends)
-
-        self.zones = np.vstack([np.array(self.corridor_list.corridors[self.corridor].reward_zone_starts), np.array(self.corridor_list.corridors[self.corridor].reward_zone_ends)])
+        self.zones = np.vstack([np.array(self.corridor_list.corridors[self.corridor].reward_zone_starts), np.array(self.corridor_list.corridors[self.corridor].reward_zone_ends)])        
         self.n_zones = np.shape(self.zones)[1]
         self.preZoneRate = [None, None] # only if 1 lick zone; Compare the 210 roxels just before the zone with the preceeding 210 
+
 
         # approximate frame period for imaging - 0.033602467
         # only use it to convert spikes to rates and to prepare uniform time axis!
@@ -2900,9 +2913,8 @@ class Lap_ImData:
         ## only when the number of zones is 1!
 
         if (self.n_zones == 1):
-
-            zone_start = int(self.zones[0][0] * self.corridor_length_roxel)
-            zone_end = int(self.zones[1][0] * self.corridor_length_roxel)
+            zone_start = np.round(self.zones[0,0] * self.corridor_length_roxel, -1) - 4.5 # threshold of the position rounded to 10s - this is what LabView does
+            zone_end = np.round(self.zones[1,0] * self.corridor_length_roxel, -1) - 4.5
             if (len(self.lick_position) > 0):
                 lz_posbins = np.array([np.min((np.min(self.frames_pos)-1, np.min(self.lick_position)-1, 0)), zone_start-420, zone_start-210, zone_start, zone_end, self.corridor_length_roxel])
             else :
