@@ -728,8 +728,8 @@ class ImagingSessionData:
                 print('More than one substage in a lap before lap ', self.n_laps)
                 corridor = -2
 
-            if (sum(y) < self.N_pos_bins):
-                print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in a lap before lap', self.n_laps)
+            if (y.size < self.N_pos_bins):
+                print('Very short lap found, we have total ', len(y), 'datapoints recorded by the ExpStateMachine in a lap before lap', self.n_laps)
                 corridor = -3
             
             # print('processing corridor', corridor, 'in lap', i_lap)
