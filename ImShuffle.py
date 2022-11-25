@@ -386,7 +386,7 @@ class ImShuffle:
                 print('More than one substage in lap ', self.n_laps)
                 corridor = -2
 
-            if (sum(y) < self.N_pos_bins):
+            if (y.size < self.N_pos_bins):
                 print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in lap ', self.n_laps)
                 corridor = -3
 
