@@ -390,6 +390,13 @@ class ImShuffle:
                 print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in lap ', self.n_laps)
                 corridor = -3
 
+            if (corridor > 0) :
+                pos_lap = pos[y]
+                n_posbins = len(np.unique(pos_lap))
+                if (n_posbins < (self.corridor_length_roxel/2)):
+                    print('Short lap found, we have total ', n_posbins, 'position bins recorded by the ExpStateMachine in a lap before lap', self.n_laps)
+                    corridor = -4
+
             if (corridor > 0):
                 # if we select laps, then we check lap ID:
                 if (selected_laps is None):
