@@ -1538,8 +1538,11 @@ class ImagingSessionData:
             if len(ratemaps_array) != len(corridor):
                 print('ratemaps and corridor must have same size!')
                 return
+            N_all_cells = ratemaps[0].shape[1]
+
         # checking specified corridor is valid, check if it is a singla ratemap to plot sorted in single variable
         else:
+            N_all_cells = self.N_cells
             if (corridor == -1):
                 ratemaps = self.ratemaps
                 single = False
@@ -1554,12 +1557,12 @@ class ImagingSessionData:
                     
         #ncells
         if cellids[0] != -1:
-            if len(cellids) < self.N_cells:
+            if len(cellids) < N_all_cells:
                 title_string_base = 'some cells '
             else:
                 title_string_base = 'all cells '
         else:
-            cellids = np.arange(self.N_cells)
+            cellids = np.arange(N_all_cells)
             title_string_base = 'all cells '
         
             
@@ -1658,7 +1661,7 @@ class ImagingSessionData:
             axs[0,i].set_title(title_string)
             ims.append(axs[0,i].matshow(ratemap_to_plot, aspect='auto', origin='lower', vmin=0, vmax=vmax, cmap='binary'))
             axs[0,i].set_facecolor(matcols.CSS4_COLORS['palegreen'])
-            if (len(cellids)<300):
+            if (len(cellids) < 30):
                 axs[0,i].set_yticks(np.arange(len(cellids)))
                 axs[0,i].set_yticklabels(cellids[sort_index])
             plt.colorbar(ims[i], orientation='horizontal',ax=axs[0,i])
