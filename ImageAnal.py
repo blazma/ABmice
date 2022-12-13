@@ -395,6 +395,7 @@ class ImagingSessionData:
             self.frame_times = np.zeros(len_frames_used)
             for i in range(len_frames_used):
                 self.frame_times[i] = (float(frames[i].attributes['relativeTime'].value) + float(frames[i+1].attributes['relativeTime'].value))/2 + corrected_offset
+            
         else:
             print('single-plane')
 
@@ -402,9 +403,6 @@ class ImagingSessionData:
             self.im_reftime = float(frames[1].attributes['relativeTime'].value) - float(frames[1].attributes['absoluteTime'].value)
             for i in range(len(frames)):
                 self.frame_times[i] = float(frames[i].attributes['relativeTime'].value) + corrected_offset       
-        
-        self.dt_imaging = np.average(np.median(self.frame_times))
-        print('Frame delta T according to imaging log is: ', self.dt_imaging)
         
         if (len(self.frame_times) != self.F_all.shape[1]):
             print('ERROR: imaging frame number does not match suite2p frame number! Something is wrong!')
@@ -687,7 +685,7 @@ class ImagingSessionData:
         #################################################
         ## add position, and lap info into the imaging frames
         #################################################
-        F = interp1d(laptime, pos)
+        F = interp1d(laptime, pos) 
         self.frame_pos = np.round(F(self.frame_times), 2)
         F = interp1d(laptime, lap) 
         self.frame_laps = F(self.frame_times) 
@@ -826,7 +824,7 @@ class ImagingSessionData:
                         lap_frames_pos = np.nan 
                         lap_frames_events = np.nan
                         
-                    self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, lap_frames_events, self.dt_imaging, speed_threshold=self.speed_threshold, elfiz=self.elfiz))
+                    self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, lap_frames_events, speed_threshold=self.speed_threshold, elfiz=self.elfiz))
                     self.n_laps = self.n_laps + 1
                     lap_count = lap_count + 1
                 else :
@@ -2755,7 +2753,7 @@ class ImagingSessionData:
 class Lap_ImData:
     'common base class for individual laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, lap_frames_events, dt_imaging, printout=False, speed_threshold=5, elfiz=False, verbous=0):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, lap_frames_events, printout=False, speed_threshold=5, elfiz=False, verbous=0):
         if (verbous > 0):
             print('ImData initialised')
         # begin_time = datetime.now()
@@ -2787,19 +2785,19 @@ class Lap_ImData:
         self.preZoneRate = [None, None] # only if 1 lick zone; Compare the 210 roxels just before the zone with the preceeding 210 
 
 
+        # approximate frame period for imaging - 0.033602467
+        # only use it to convert spikes to rates and to prepare uniform time axis!
+        if (self.elfiz==True):
+            self.dt_imaging = 0.0002 # s - 5000 Hz
+        else: 
+            self.dt_imaging = 0.033602467 # s - 33 Hz
+
         self.frames_dF_F = lap_frames_dF_F
         self.frames_spikes = lap_frames_spikes
         self.frames_pos = lap_frames_pos
         self.frames_time = lap_frames_time
         self.frames_events = lap_frames_events
-        
-        # only use it to convert spikes to rates and to prepare uniform time axis!
-        self.dt_imaging = dt_imaging
-        if (self.elfiz==True):
-            self.dt_imaging = 0.0002 # s - 5000 Hz
-        # else: 
-        #     self.dt_imaging = 0.033602467 # s - 30 Hz
-            
+
         self.n_cells = 1 # we still create the same np arrays even if there are no cells
         self.bincenters = np.arange(0, self.corridor_length_roxel, 70) + 70 / 2.0
 
@@ -2916,6 +2914,7 @@ class Lap_ImData:
             for bin_number in range(self.N_pos_bins):
                 if (self.T_pos_fast[bin_number] > 0): # otherwise the rate will remain 0
                     self.event_rate[:,bin_number] = self.spks_pos[:,bin_number] / self.T_pos_fast[bin_number]
+
         if (verbous > 0):
             print('ratemaps calculated')
 
