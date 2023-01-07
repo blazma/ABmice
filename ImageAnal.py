@@ -608,8 +608,11 @@ class ImagingSessionData:
         self.active_cells = np.nonzero(n_events>active_threshold)[0]
         self.N_events = np.array(n_events)
         
-    def detect_events(self,sd_times = 3):
-        #this function is redundant with the calc_active function in some parts. We need this in order to be able to pass events to individual laps
+    def detect_events(self,sd_times = 3):\
+        # detecting significant events in the fluorescence signal
+        # an event is significant, if the Gaussian filtered (SD = 3 x Interframe interval ) dF/F 
+        # 
+        # this function is redundant with the calc_active function in some parts. We need this in order to be able to pass events to individual laps
         sdfilt = 3
         N = 10
         sampling_time = 1
@@ -1242,7 +1245,8 @@ class ImagingSessionData:
             # random: totally randomize the spike times; 
             # shift: circularly shift spike times 
         ## batchsize: integer. To make computation faster, shuffling is done in batches of size batchsize
-        ## verbous: True of False: information is gizev about the progress
+        ## verbous: True of False: information is given about the progress
+        ## name string: optional string saved in the file to specify the peculiarities of the analysis
 
         cellids = np.array(cellids)
         raw_spikes = self.raw_spks[cellids,:]
@@ -1391,6 +1395,7 @@ class ImagingSessionData:
         ##########################################################################
 
         # shuffle_Pvalues:
+        # if N is the number of corridors
         # cellids + N x Skaggs + N x specificits + N x reliability + (selectivity + similarity + (4 x pattern_selectivity)) + N x Hainmuller
 
         self.shuffle_Pvalues = shuffle_Pvalues
@@ -1503,7 +1508,7 @@ class ImagingSessionData:
         ##              ARRAY :  if you want plot custom-defined ratemaps
         ##                           corridor must be an array to be able to add reward zones to every ratemap defined in ratemaps_array
         ## normalized: True or False. If True then  each cell ratemap is normalized to have a max = 1
-        ## sorted: sorting the ramemaps by their peaks
+        ## sorted: sorting the ratemaps by their peaks
         ## corridor_sort: which corridor to use for sorting the ratemaps
         ##              Corridor ID of the ratemap            
         ##                          if you plot default ratemaps 
@@ -1513,9 +1518,9 @@ class ImagingSessionData:
         ## cellids: np array with the indexes of the cells to be plotted. when -1: all cells are plotted
         ## vmax: float. If ratemaps are not normalised then the max range of the colors will be at least vmax. 
                 # If one of the ratemaps has a higher peak, then vmax is replaced by that peak 
-        ## ratemaps_array: an array containing the ratemaps to visualize
-        ## ratemaps_title: an array containing string which is used for annotating the corresponding ratemaps. Must have same length as ratemaps_array
-        
+        ## ratemaps_array: a list containing the ratemaps as numpy arrays to visualize, if custom ratemaps are to be plotted. By default it is empy and default ratemaps are plotted.
+        ## ratemaps_title: a list containing N strings which is used for annotating the corresponding ratemaps. Must have same length as ratemaps_array. Only needed if ratemaps_array is given.
+        ## filename: optional string. The name of the pdf file to save the figure.
         
         # checking whether we use default ratemaps or a different set of custom-defined ratemaps - and store this info in ratemap_base variable
         if type(corridor) == int:
@@ -1639,7 +1644,7 @@ class ImagingSessionData:
                     zone_ends.append(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends)
         
         #plotting
-        fig, axs = plt.subplots(1, len(ratemaps), figsize=(6+len(ratemaps)*2,8), sharex=True, sharey=True, squeeze=False)
+        fig, axs = plt.subplots(1, len(ratemaps), figsize=(len(ratemaps)*3.5,8), sharex=True, sharey=True, squeeze=False)
         ims = []
         for i in range(len(ratemaps)):
             ratemap_to_sort = np.transpose(np.copy(ratemaps[i][:,cellids]))
@@ -1651,7 +1656,7 @@ class ImagingSessionData:
                     ratemap_to_plot[j,:] = (ratemap_to_plot[j,:] - min(ratemap_to_plot[j,:])) / rate_range
             # subplot title
             if ratemap_base == 'spec':
-                title_string = title_string_base + ratemaps_title[i] + ' ' + str(corridor[i])
+                title_string = ratemaps_title[i]
             else:
                 if single:
                     title_string = title_string_base + ' in corridor ' + str(corridor)
@@ -1999,6 +2004,8 @@ class ImagingSessionData:
             # - speed
             # - lick rate
         ## selected laps: numpy array indexing the laps to be included in the plot
+        ## average: boolean. If True (default) session averages are plotted. If False, individual alps will be plotted as image plot.
+        ## filename: name of a file to save the image in pdf format
 
         ## find the number of different corridors
         if (selected_laps is None):
@@ -2250,6 +2257,7 @@ class ImagingSessionData:
         # save_ratemaps: True or False. If True, the ratemaps are saved.
         # save_laptime: True or False. If True, the raw data is saved for each lap.
         # save_lick_speed_stats: True or False, average lick rate and speed are calculated before the reward zone and in a control position 
+        # save_place_code_stats: True or False, average lick rate and speed are calculated before the reward zone and in a control position 
 
 
         data_folder = self.suite2p_folder + 'analysed_data'
@@ -2631,6 +2639,10 @@ class ImagingSessionData:
 
         ax.legend()
         ax2.legend()
+        ax2.set_ylabel('speed (cm/s)')
+        ax.set_xlabel('lap')
+        ax.set_ylabel('correlation')
+
         plt.title(title)
         plt.show()
         
@@ -2668,6 +2680,8 @@ class ImagingSessionData:
         im0 = axs[0].imshow(lap2lap_corr, cmap = 'seismic', vmin = -1, vmax = 1, origin='lower')
         plt.colorbar(im0, orientation='horizontal',ax=axs[0])
         
+        #############################################################################
+        ## indicate the substage change lap with vertical and horizontal lines
 
         substage_change_laps = np.array(self.substage_change_laps)
         i_substage_change_ImData = (substage_change_laps > np.min(self.i_Laps_ImData)) & (substage_change_laps < np.max(self.i_Laps_ImData))
@@ -2678,6 +2692,9 @@ class ImagingSessionData:
             axs[0].vlines(ii_lap_stage_change, 0, len(self.i_Laps_ImData)-1, linewidth=.5)
             axs[0].hlines(ii_lap_stage_change, 0, len(self.i_Laps_ImData)-1, linewidth=.5)
 
+
+        #############################################################################
+        ## reorder the laps to have the laps in the same corridors next to each other
 
         if (corridors is None):
             corridors = self.corridors
@@ -2970,7 +2987,7 @@ class Lap_ImData:
         ax_top.set_ylim(0, self.corridor_length_roxel)
 
         ## next, plot dF/F versus time (or spikes)
-        if (self.n_cells > 0):
+        if (self.n_cells > 1):
             # act_cells = np.nonzero(np.amax(self.frames_dF_F, 1) > th)[0]
             act_cells = np.nonzero(np.amax(self.frames_spikes, 1) > th)[0]
             max_range = np.nanmax(self.event_rate)
@@ -3034,7 +3051,7 @@ class Lap_ImData:
         ax2.set_ylim([-1,max(2*np.nanmax(self.lick_rate), 20)])
 
         ## next, plot event rates versus space
-        if (self.n_cells > 0):
+        if (self.n_cells > 1):
             max_range = np.nanmax(self.event_rate)
             # for i in np.arange(250, 280):
             for i in range(self.n_cells):
