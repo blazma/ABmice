@@ -2256,8 +2256,10 @@ class ImagingSessionData:
         # save_properties: True or False. If True, the cell properties are saved. 
         # save_ratemaps: True or False. If True, the ratemaps are saved.
         # save_laptime: True or False. If True, the raw data is saved for each lap.
-        # save_lick_speed_stats: True or False, average lick rate and speed are calculated before the reward zone and in a control position 
-        # save_place_code_stats: True or False, average lick rate and speed are calculated before the reward zone and in a control position 
+        # save_lick_speed_stats: True or False, prepares an array that contains all the brhavioral measures of the session. Each row is a separate lap. 
+        #           First 5 columns are: 1: lap number, 2: corridor ID, 3: correct, 4: reward, 5: imaging available. 
+        #           The remaining columns are speed and lick rate in the spatial bins
+        # save_place_code_stats: True or False, 
 
 
         data_folder = self.suite2p_folder + 'analysed_data'
@@ -2336,33 +2338,51 @@ class ImagingSessionData:
             
             
         if (save_lick_speed_stats):
-            # outputs
-            self.reference_lickrate = []
-            self.reference_speed =  []
-            self.prezone_lickrate = []
-            self.prezone_speed = []
-            
-            
-            for i_corrid in np.arange(self.corridors.size):
+        # save_lick_speed_stats: True or False, prepares an array that contains all the brhavioral measures of the session. Each row is a separate lap. 
+        #           First 5 columns are: 0: lap number, 1: corridor ID, 2: correct, 3: reward, 4: imaging available. 
+        #           The remaining columns are speed and lick rate in the spatial bins
+        
 
-                ids_all = np.nonzero(self.i_corridors == self.corridors[i_corrid])[0]
-                i_laps = np.intersect1d(ids_all, self.i_Laps_ImData)
+            self.behavior_stats = np.zeros((self.n_laps, self.N_pos_bins * 2 + 5))
+            colnames = ['#lap number', 'corridor', 'correct', 'reward', 'imaging', 'lick 0 - ' + str(self.N_pos_bins), 'speed 0 - ' + str(self.N_pos_bins)]
+            
+            for i_lap in np.arange(self.n_laps):
+                self.behavior_stats[i_lap,0:5] = [i_lap, self.ImLaps[i_lap].corridor, self.ImLaps[i_lap].correct, len(self.ImLaps[i_lap].reward_position), self.ImLaps[i_lap].imaging_data]
+                b = 5
+                c = self.N_pos_bins + 5
+                d = 2 * self.N_pos_bins + 5
+                self.behavior_stats[i_lap, b:c] = self.ImLaps[i_lap].lick_rate
+                self.behavior_stats[i_lap, c:d] = self.ImLaps[i_lap].ave_speed
 
-                last_prezone_bin = int(np.floor(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends * self.N_pos_bins ))-1
-                n = i_laps.size
+            behavior_file = 'behavior_data.csv'
+            filename = data_folder + '/' + behavior_file
+            with open(filename, mode='w', newline='') as behav_file:
+                file_writer = csv.writer(behav_file, **csv_kwargs)
+                file_writer.writerow(colnames)
+                for i_row in np.arange(self.n_laps):
+                    file_writer.writerow(np.round(self.behavior_stats[i_row,:], 4))
+            print('behavioral data saved into file: ', filename)
+
+            # for i_corrid in np.arange(self.corridors.size):
+
+            #     ids_all = np.nonzero(self.i_corridors == self.corridors[i_corrid])[0]
+            #     i_laps = np.intersect1d(ids_all, self.i_Laps_ImData)
+
+            #     last_prezone_bin = int(np.floor(self.corridor_list.corridors[self.corridors[i_corrid]].reward_zone_ends * self.N_pos_bins ))-1
+            #     n = i_laps.size
                 
-                lickrate_matrix = np.zeros((n,self.N_pos_bins))
-                speed_matrix = np.zeros((n,self.N_pos_bins))
-                for i in range(i_laps.size):
-                    lickrate_matrix[i,:] = self.ImLaps[i_laps[i]].lick_rate
-                    speed_matrix[i,:]  = self.ImLaps[i_laps[i]].ave_speed
-                ave_speed = np.nanmean(speed_matrix, axis=0)
-                ave_lick = np.nanmean(lickrate_matrix, axis=0)
+            #     lickrate_matrix = np.zeros((n,self.N_pos_bins))
+            #     speed_matrix = np.zeros((n,self.N_pos_bins))
+            #     for i in range(i_laps.size):
+            #         lickrate_matrix[i,:] = self.ImLaps[i_laps[i]].lick_rate
+            #         speed_matrix[i,:]  = self.ImLaps[i_laps[i]].ave_speed
+            #     ave_speed = np.nanmean(speed_matrix, axis=0)
+            #     ave_lick = np.nanmean(lickrate_matrix, axis=0)
 
-                self.reference_lickrate.append(np.mean(ave_lick[8:10]))
-                self.reference_speed.append(np.mean(ave_speed[8:10]))
-                self.prezone_lickrate.append(np.mean(ave_lick[(last_prezone_bin-3):last_prezone_bin]))
-                self.prezone_speed.append(np.mean(ave_speed[(last_prezone_bin-3):last_prezone_bin]))
+            #     self.reference_lickrate.append(np.mean(ave_lick[8:10]))
+            #     self.reference_speed.append(np.mean(ave_speed[8:10]))
+            #     self.prezone_lickrate.append(np.mean(ave_lick[(last_prezone_bin-3):last_prezone_bin]))
+            #     self.prezone_speed.append(np.mean(ave_speed[(last_prezone_bin-3):last_prezone_bin]))
 
             if plot:
                 self.plot_session(selected_laps=self.i_Laps_ImData)
@@ -2509,7 +2529,7 @@ class ImagingSessionData:
                     if (n_used > i_laps.size):
                         i_laps_start = i_laps[0:int(i_laps.size/2)]
                         i_laps_end = i_laps[int(i_laps.size/2):]
-                        print('Specified n_used is too large, using half-half the laps')
+                        print('Specified n_used is too large, using half-half the laps in corridor ', self.corridors[i])
                     else:
                         i_laps_start = i_laps[0:n_used]
                         i_laps_end = i_laps[i_laps.size-n_used:]
@@ -2645,6 +2665,8 @@ class ImagingSessionData:
 
         plt.title(title)
         plt.show()
+
+        return results
         
     def lap_correlate(self, cellids, filename=None, corridors=None, normalize_rates=False, add_switch_ordered=False):
         lap2lap_corr = np.zeros((self.i_Laps_ImData.size, self.i_Laps_ImData.size))
