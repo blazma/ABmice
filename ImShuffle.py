@@ -37,7 +37,7 @@ def breakpoints(Nframes, Lmin=500, Nbreak=5, rngD=None):
 
 class ImShuffle:
     'Base structure for shuffling analysis of imaging data'
-    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None, selected_laps=None, speed_threshold=5, randseed=476, elfiz=False, min_Nlaps=5):
+    def __init__(self, datapath, date_time, name, task, stage, raw_spikes, frame_times, frame_pos, frame_laps, N_shuffle=1000, cellids=np.array([-1]), mode='random', batchsize=None, selected_laps=None, speed_threshold=5, randseed=476, elfiz=False, min_Nlaps=5, multiplane=False):
         ###########################################
         ## setting basic parameters for the session
         ###########################################
@@ -46,6 +46,7 @@ class ImShuffle:
         self.date_time = date_time
         self.name = name
         self.task = task
+        self.multiplane = multiplane
 
         self.stage = stage
         self.stages = []
@@ -72,7 +73,7 @@ class ImShuffle:
         input_file.close()
 
         self.all_corridors_raw = np.hstack([0, np.array(self.stage_list.stages[self.stage].corridors)])# we always add corridor 0 - that is the grey zone
-
+        print('raw corridors', self.all_corridors_raw)
         ## in certain tasks, the same corridor may appear multiple times in different substages
         ## Labview uses different indexes for corridors in different substages, therefore 
         ## we need to keep this corridor in the list self.corridors for running self.get_lapdata()
@@ -96,14 +97,14 @@ class ImShuffle:
         ###########################################
         ## imaging data - imaging data and time axis is given as an argument - we don't need to reload it
         ###########################################
-        if (elfiz == True):
+        if (self.elfiz == True):
             ## we downsample it to 50 Hz for shuffling - this is not going to affect the spatial tuning too much, but use much less memory...
             N_frames = raw_spikes.shape[1]
             N_frames_new = int(N_frames / 100)
             Nmax = N_frames_new * 100
-            self.dt_imaging = 0.02
             self.raw_spikes = np.sum(raw_spikes[0,0:Nmax].reshape(N_frames_new, 100), axis=1).reshape(1, N_frames_new)
             self.frame_times = np.mean(frame_times[0:Nmax].reshape(N_frames_new, 100), axis=1)
+            self.frame_period = np.median(np.diff(self.frame_times))
             self.frame_pos = np.mean(frame_pos[0:Nmax].reshape(N_frames_new, 100), axis=1)
             self.frame_laps = np.mean(frame_laps[0:Nmax].reshape(N_frames_new, 100), axis=1)
         else :
@@ -111,7 +112,7 @@ class ImShuffle:
             self.frame_times = frame_times
             self.frame_pos = frame_pos
             self.frame_laps = frame_laps
-            self.dt_imaging = 0.033602467 # s - 33 Hz
+            self.frame_period = np.median(np.diff(self.frame_times))
 
         self.N_cells = self.raw_spikes.shape[0]
         if (cellids.size != self.N_cells):
@@ -221,6 +222,7 @@ class ImShuffle:
             ## we need to keep this corridor in the list self.all_corridors for running self.get_lapdata()
             ## but we should remove the redundancy after the data is loaded
             self.all_corridors = np.unique(self.all_corridors_raw)
+            print('all corridors:', self.all_corridors)
             self.N_all_corridors = len(self.all_corridors)
 
             ## only analyse corridors with at least 3 laps 
@@ -244,7 +246,8 @@ class ImShuffle:
             self.activity_tensor = np.zeros((self.N_pos_bins, batchsize, self.N_ImLaps, self.N_shuffle+1)) # same as the activity tensor spatially smoothed
             self.activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # same as the activity_tensor_time spatially smoothed
             self.combine_lapdata_shuffle() ## fills in the cell_activity tensor
-
+            print(self.activity_tensor.shape)
+            print(np.sum(self.activity_tensor))
 
             self.cell_rates_batch = [] # a list, each element is a 1 x n_cells matrix with the average rate of the cells in the total corridor
             if (self.task == 'contingency_learning'):
@@ -445,7 +448,7 @@ class ImShuffle:
                     iframes = np.where(self.frame_laps == i_lap)[0]
                     # print(self.n_laps, len(iframes), i_lap)
 
-                    if ((len(iframes) > self.N_pos_bins) & (add_lap == True)): # there is imaging data belonging to this lap...
+                    if ((len(iframes) > (self.N_pos_bins/5)) & (add_lap == True)): # there is imaging data belonging to this lap...
                         # print('imaging data found', min(iframes), max(iframes))
                         lap_frames_spikes = self.shuffle_spikes[:,iframes,:]
                         lap_frames_time = self.frame_times[iframes]
@@ -458,7 +461,7 @@ class ImShuffle:
                         lap_frames_pos = np.nan 
                         
                     # sessions.append(Lap_Data(name, i, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions))
-                    self.shuffle_ImLaps.append(Shuffle_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, speed_threshold=self.speed_threshold, elfiz=self.elfiz, dt_imaging=self.dt_imaging))
+                    self.shuffle_ImLaps.append(Shuffle_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.frame_period, self.corridor_list, speed_threshold=self.speed_threshold, elfiz=self.elfiz, multiplane=self.multiplane))
                     self.n_laps = self.n_laps + 1
                     lap_count = lap_count + 1                    
                 else:
@@ -980,9 +983,10 @@ class ImShuffle:
 class Shuffle_ImData:
     'common base class for shuffled laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, dt=0.01, printout=False, speed_threshold=5, elfiz=False, dt_imaging=0.033602467):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_spikes, lap_frames_pos, lap_frames_time, frame_period, corridor_list, dt=0.01, printout=False, speed_threshold=5, elfiz=False, multiplane=False):
         self.name = name
         self.lap = lap
+        self.multiplane = multiplane
 
         self.correct = False
         self.raw_time = laptime
@@ -1001,7 +1005,7 @@ class Shuffle_ImData:
         self.speed_factor = 106.5 / 3500 ## constant to convert distance from pixel to cm
         self.corridor_length_cm = self.corridor_length_roxel * self.speed_factor # cm
 
-        self.dt_imaging = dt_imaging
+        self.frame_period = frame_period
 
         self.frames_spikes = lap_frames_spikes
         self.frames_pos = lap_frames_pos
@@ -1026,14 +1030,14 @@ class Shuffle_ImData:
         if (np.isnan(self.frames_time).any()): # we have real data
             self.imaging_data = False
             ## resample time uniformly for calculating speed
-            start_time = np.ceil(self.raw_time.min()/self.dt_imaging)*self.dt_imaging
-            end_time = np.floor(self.raw_time.max()/self.dt_imaging)*self.dt_imaging
-            Ntimes = int(round((end_time - start_time) / self.dt_imaging)) + 1
+            start_time = np.ceil(self.raw_time.min()/self.frame_period)*self.frame_period
+            end_time = np.floor(self.raw_time.max()/self.frame_period)*self.frame_period
+            Ntimes = int(round((end_time - start_time) / self.frame_period)) + 1
             self.frames_time = np.linspace(start_time, end_time, Ntimes)
             self.frames_pos = F(self.frames_time)
 
         ## calculate the speed during the frames
-        speed = np.diff(self.frames_pos) * self.speed_factor / self.dt_imaging # cm / s       
+        speed = np.diff(self.frames_pos) * self.speed_factor / self.frame_period # cm / s       
         speed_first = 2 * speed[0] - speed[1] # linear extrapolation: x1 - (x2 - x1)
         self.frames_speed = np.hstack([speed_first, speed])
 
@@ -1044,35 +1048,51 @@ class Shuffle_ImData:
         ####################################################################
         ## calculate the lick-rate and the average speed versus location    
         bin_counts = np.zeros(self.N_pos_bins)
-        fast_bin_counts = np.zeros(self.N_pos_bins)
 
         for i_frame in range(len(self.frames_pos)):
             bin_number = int(self.frames_pos[i_frame] // 70)
             bin_counts[bin_number] += 1
-            if (self.frames_speed[i_frame] > self.speed_threshold):
-                fast_bin_counts[bin_number] += 1
 
-        self.T_pos = bin_counts * self.dt_imaging           # used for lick rate and average speed
-        self.T_pos_fast = fast_bin_counts * self.dt_imaging # used for spike rate calculations
+        self.T_pos = bin_counts * self.frame_period           # used for lick rate and average speed
 
 
         ####################################################################
         ## calculate the cell activations (spike rate) as a function of position
-        if (self.imaging_data == True):        
+        if (self.imaging_data == True):
+            fast_bin_counts = np.zeros(self.N_pos_bins)
             self.n_cells = self.frames_spikes.shape[0]
             self.n_shuffle = self.frames_spikes.shape[2]
     
             self.spks_pos = np.zeros((self.n_cells, self.N_pos_bins, self.n_shuffle)) # sum of spike counts measured at a given position
             self.event_rate = np.zeros((self.n_cells, self.N_pos_bins, self.n_shuffle)) # spike rate 
             
+            last_bin_number = 0 # each spike is assigned to all position bins since the last imaging frame 
             for i_frame in range(len(self.frames_pos)):
-                bin_number = int(self.frames_pos[i_frame] // 70)
+                next_bin_number = int(self.frames_pos[i_frame] // 70) 
+                if ((next_bin_number > last_bin_number + 1) & self.multiplane):
+                    bin_number = np.arange(last_bin_number+1, next_bin_number+1) # the sequence ends at next_bun_number
+                    n_bins = len(bin_number)
+                    B = np.tile(self.frames_spikes[:,i_frame,:], (n_bins, 1, 1))
+                    added_spikes = np.moveaxis(B, 0, 1) # prepare a matrix with the spikes to add at multiple spatial bins
+                    # print('multiple position bins: ', self.lap, i_frame, n_bins)
+                else:
+                    bin_number = next_bin_number
+                    n_bins = 1
+                    added_spikes = self.frames_spikes[:,i_frame,:]
+
                 if (self.frames_speed[i_frame] > self.speed_threshold):
+                    fast_bin_counts[bin_number] += 1 / n_bins
                     if (self.elfiz):
-                        self.spks_pos[:,bin_number,:] = self.spks_pos[:,bin_number,:] + self.frames_spikes[:,i_frame,:]
+                        self.spks_pos[:,bin_number,:] = self.spks_pos[:,bin_number,:] + added_spikes
                     else:
-                        ### we need to multiply the values with dt_imaging as this converts probilities to expected counts
-                        self.spks_pos[:,bin_number,:] = self.spks_pos[:,bin_number,:] + self.frames_spikes[:,i_frame,:] * self.dt_imaging
+                        ### we need to multiply the values with frame_period as this converts probilities to expected counts
+                        self.spks_pos[:,bin_number,:] = self.spks_pos[:,bin_number,:] + added_spikes * self.frame_period / n_bins
+                last_bin_number = next_bin_number
+
+            self.T_pos_fast = fast_bin_counts * self.frame_period # used for spike rate calculations
             for bin_number in range(self.N_pos_bins):
                 if (self.T_pos_fast[bin_number] > 0): # otherwise the rate will remain 0
                     self.event_rate[:,bin_number,:] = self.spks_pos[:,bin_number,:] / self.T_pos_fast[bin_number]                
+
+
+

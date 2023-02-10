@@ -49,6 +49,7 @@ class ImagingSessionData:
         self.task = task
         self.suite2p_folder = suite2p_folder
         self.imaging_logfile_name = imaging_logfile_name
+        self.multiplane = False
 
         self.stage = 0
         self.stages = []
@@ -144,8 +145,10 @@ class ImagingSessionData:
 
             self.frame_times = np.load(time_string)[0] + self.imstart_time
             print('elfiz time axis loaded')       
+            self.frame_period = np.median(np.diff(self.frame_times))
             self.frame_pos = np.zeros(len(self.frame_times)) # position and 
             self.frame_laps = np.zeros(len(self.frame_times)) # lap number for the imaging frames, to be filled later
+
 
             ## arrays containing only valid cells
             self.dF_F = np.copy(self.F)
@@ -174,6 +177,7 @@ class ImagingSessionData:
             imtimes_success = self.LoadImaging_times(self.imstart_time)
             if (imtimes_success == False):
                 return 
+            self.frame_period = np.median(np.diff(self.frame_times))
             self.frame_pos = np.zeros(len(self.frame_times)) # position and 
             self.frame_laps = np.zeros(len(self.frame_times)) # lap number for the imaging frames, to be filled later
             print('suite2p time axis loaded')       
@@ -383,6 +387,7 @@ class ImagingSessionData:
         frames = imaging_logfile.getElementsByTagName('Frame')
         if sequence[0].attributes['type'].value == 'TSeries ZSeries Element':
             print('multi-plane')
+            self.multiplane = True
             #for multiplane recordings we drop last frame as it is sometimes 'missing' for one of the planes
             self.F_all = self.F_all[:, 0:-1]
             self.spks_all = self.spks_all[:, 0:-1]
@@ -393,8 +398,9 @@ class ImagingSessionData:
                 len_frames_used = int((len(frames)-1)/2)
             # for frame time we use the average of the two planes time
             self.frame_times = np.zeros(len_frames_used)
-            for i in range(len_frames_used):
-                self.frame_times[i] = (float(frames[i].attributes['relativeTime'].value) + float(frames[i+1].attributes['relativeTime'].value))/2 + corrected_offset
+            self.im_reftime = float(frames[1].attributes['relativeTime'].value) - float(frames[1].attributes['absoluteTime'].value)
+            for i in range(len_frames_used): ## checkit: why i and i+1 and not 2i and 2i - 1?
+                self.frame_times[i] = (float(frames[2*i].attributes['relativeTime'].value) + float(frames[2*i+1].attributes['relativeTime'].value))/2 + corrected_offset
             
         else:
             print('single-plane')
@@ -467,7 +473,7 @@ class ImagingSessionData:
         self.cell_baselines = np.zeros(self.N_cells) # a vector with the baseline F of the cells
 
         ## to calculate the SD and SNR, we need baseline periods with no spikes for at least 1 sec
-        frame_rate = int(np.ceil(1/np.median(np.diff(self.frame_times))))
+        frame_rate = int(np.ceil(1/self.frame_period))
         sp_threshold = 20 # 
         T_after_spike = 3 #s 
         T_before_spike = 0.5 #s 
@@ -571,8 +577,6 @@ class ImagingSessionData:
         filt = filt/sum(filt)
         
         # calculating events
-        dt = np.median(np.diff(self.frame_times))
-        
         #if not all laps are loaded we need to adjust the threshold accordingly!
         #if all laps are used:
         if self.selected_laps is None:
@@ -586,7 +590,7 @@ class ImagingSessionData:
             print('active_cells may be unreliable due to the shortness of the analysed period')
         
         # print('active threshold: ', active_threshold)
-        refractoriness = int(refract_seconds/dt) 
+        refractoriness = int(refract_seconds/self.frame_period) 
         
         n_events = np.zeros([self.N_cells])
         self.events=np.zeros(self.F.shape)
@@ -811,7 +815,7 @@ class ImagingSessionData:
 
                     # print('In lap ', self.n_laps, ' we have ', len(t_lap), 'datapoints and ', len(iframes), 'frames')
 
-                    if ((len(iframes) > self.N_pos_bins) & (add_ImLap == True)): # there is imaging data belonging to this lap...
+                    if ((len(iframes) > (self.N_pos_bins/5)) & (add_ImLap == True)): # there is imaging data belonging to this lap...
                         # print('frames:', min(iframes), max(iframes))
                         # print('max of iframes:', max(iframes))
                         lap_frames_dF_F = self.dF_F[:,iframes]
@@ -825,9 +829,9 @@ class ImagingSessionData:
                         lap_frames_spikes = np.nan
                         lap_frames_time = np.nan
                         lap_frames_pos = np.nan 
-                        lap_frames_events = np.nan
-                        
-                    self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, lap_frames_events, speed_threshold=self.speed_threshold, elfiz=self.elfiz))
+                        lap_frames_events = np.nan                        
+
+                    self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, lap_frames_events, self.frame_period, speed_threshold=self.speed_threshold, elfiz=self.elfiz, multiplane=self.multiplane))
                     self.n_laps = self.n_laps + 1
                     lap_count = lap_count + 1
                 else :
@@ -853,6 +857,8 @@ class ImagingSessionData:
             k_lap = k_lap + 1
 
         ## smoothing - average of the 3 neighbouring bins
+        # self.activity_tensor = self.raw_activity_tensor
+        # self.activity_tensor_time = self.raw_activity_tensor_time
         self.activity_tensor[0,:,:] = (self.raw_activity_tensor[0,:,:] + self.raw_activity_tensor[1,:,:]) / 2
         self.activity_tensor[-1,:,:] = (self.raw_activity_tensor[-1,:,:] + self.raw_activity_tensor[-1,:,:]) / 2
         self.activity_tensor_time[0,:] = (self.raw_activity_tensor_time[0,:] + self.raw_activity_tensor_time[1,:]) / 2
@@ -1310,7 +1316,7 @@ class ImagingSessionData:
         if (calculate_shuffles):
             if (verbous > 0):
                 print('calculating shuffles...')
-            shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode, batchsize=batchsize, randseed=self.randseed, selected_laps=self.selected_laps, elfiz=self.elfiz, min_Nlaps=self.minimum_Nlaps)
+            shuffle_stats = ImShuffle(self.datapath, self.date_time, self.name, self.task, self.stage, raw_spikes, self.frame_times, self.frame_pos, self.frame_laps, N_shuffle=n, cellids=cellids, mode=mode, batchsize=batchsize, randseed=self.randseed, selected_laps=self.selected_laps, elfiz=self.elfiz, min_Nlaps=self.minimum_Nlaps, multiplane=self.multiplane)
             # shuffle_stats = ImShuffle(D1.datapath,   D1.date_time,   D1.name,   D1.task,   D1.stage,   raw_spikes, D1.frame_times,   D1.frame_pos,   D1.frame_laps,   N_shuffle=N_shuffle, cellids=cellids, mode='shift', batchsize=25,        randseed=D1.randseed, selected_laps=np.arange(20,80), elfiz=True)
 
             # NN = cellids.size
@@ -1472,15 +1478,17 @@ class ImagingSessionData:
 
     def plot_dF_lapstarts(self, cellid):
         corridor_types = np.unique(np.array(self.all_corridor_start_IDs))
+        corridor_types = corridor_types[corridor_types >= 0]
+
         colors = ['coral', 'lime', 'peru', 'deepskyblue', 'olive', 'deeppink', 'teal']
 
         fig, ax = plt.subplots(2,1,squeeze=False, figsize=(10,6), sharex=True, sharey=True)
         ax[0,0].plot(self.frame_times - self.im_reftime, self.dF_F[cellid,:], '-k', alpha=0.5)
-        ax[0,0].plot(self.frame_times - self.im_reftime, self.spks[cellid,:] * 0.033602467, '-', c='deepskyblue', alpha=0.5)
+        ax[0,0].plot(self.frame_times - self.im_reftime, self.spks[cellid,:] * self.frame_period, '-', c='deepskyblue', alpha=0.5)
         ax[0,0].set_title('absolute time - old')
         # ax[0,0].vlines(np.array(self.all_corridor_start_time) - self.im_reftime, 0, 200, colors=np.array(self.all_corridor_start_IDs) + 1)
         ax[1,0].plot(self.frame_times, self.dF_F[cellid,:], '-k', alpha=0.5)
-        ax[1,0].plot(self.frame_times, self.spks[cellid,:] * 0.033602467, '-', c='deepskyblue', alpha=0.5)
+        ax[1,0].plot(self.frame_times, self.spks[cellid,:] * self.frame_period, '-', c='deepskyblue', alpha=0.5)
         ax[1,0].set_title('relative time - new')
 
         i_col = 0
@@ -1490,7 +1498,8 @@ class ImagingSessionData:
                 corr_color = 'silver'
             else:
                 corr_color = colors[int(i_col)]
-                i_col = i_col + 1
+                if (i_col < 7):
+                    i_col = i_col + 1
             corrname = 'corridor' + str(c_type)
             ax[0,0].vlines(np.array(self.all_corridor_start_time)[ii], 0, 2, colors=corr_color)
             ax[1,0].vlines(np.array(self.all_corridor_start_time)[ii], 0, 2, colors=corr_color, label=corrname)
@@ -1797,7 +1806,7 @@ class ImagingSessionData:
             for cor_index in range(corridor.size):
                 corridor_to_plot=corridor[cor_index]
                 
-                #calculate rate matrix ...again :(
+                #calculate rate matrix - to set the scales right
                 i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor_to_plot)[0]
                 
                 total_spikes = self.activity_tensor[:,cellid,i_laps]
@@ -1977,7 +1986,7 @@ class ImagingSessionData:
                 ax[0,cor_index].plot(mean_rate,zorder=0)
                 # n_laps = popact_laps.shape[1]
 
-                ax[0,cor_index].set_xlim(0, 51)
+                ax[0,cor_index].set_xlim(0, self.N_pos_bins)
                 ax[0,cor_index].set_title(title_string)
                 if (set_ymax is None):
                     ax[0,0].set_ylim(0, ymax)
@@ -2338,7 +2347,7 @@ class ImagingSessionData:
             
             
         if (save_lick_speed_stats):
-        # save_lick_speed_stats: True or False, prepares an array that contains all the brhavioral measures of the session. Each row is a separate lap. 
+        # save_lick_speed_stats: True or False, prepares an array that contains all the behavioral measures of the session. Each row is a separate lap. 
         #           First 5 columns are: 0: lap number, 1: corridor ID, 2: correct, 3: reward, 4: imaging available. 
         #           The remaining columns are speed and lick rate in the spatial bins
         
@@ -2792,13 +2801,14 @@ class ImagingSessionData:
 class Lap_ImData:
     'common base class for individual laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, lap_frames_events, printout=False, speed_threshold=5, elfiz=False, verbous=0):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, lap_frames_events, frame_period, printout=False, speed_threshold=5, elfiz=False, verbous=0, multiplane=False):
         if (verbous > 0):
             print('ImData initialised')
         # begin_time = datetime.now()
 
         self.name = name
         self.lap = lap
+        self.multiplane = multiplane
 
         self.correct = False
         self.raw_time = laptime
@@ -2824,13 +2834,7 @@ class Lap_ImData:
         self.preZoneRate = [None, None] # only if 1 lick zone; Compare the 210 roxels just before the zone with the preceeding 210 
 
 
-        # approximate frame period for imaging - 0.033602467
-        # only use it to convert spikes to rates and to prepare uniform time axis!
-        if (self.elfiz==True):
-            self.dt_imaging = 0.0002 # s - 5000 Hz
-        else: 
-            self.dt_imaging = 0.033602467 # s - 33 Hz
-
+        self.frame_period = frame_period
         self.frames_dF_F = lap_frames_dF_F
         self.frames_spikes = lap_frames_spikes
         self.frames_pos = lap_frames_pos
@@ -2877,19 +2881,19 @@ class Lap_ImData:
         if (np.isnan(self.frames_time).any()): # we don't have imaging data
             self.imaging_data = False
             ## resample time uniformly for calculating speed
-            start_time = np.ceil(self.raw_time.min()/self.dt_imaging)*self.dt_imaging
-            end_time = np.floor(self.raw_time.max()/self.dt_imaging)*self.dt_imaging
-            Ntimes = int(round((end_time - start_time) / self.dt_imaging)) + 1
+            start_time = np.ceil(self.raw_time.min()/self.frame_period)*self.frame_period
+            end_time = np.floor(self.raw_time.max()/self.frame_period)*self.frame_period
+            Ntimes = int(round((end_time - start_time) / self.frame_period)) + 1
             self.frames_time = np.linspace(start_time, end_time, Ntimes)
             self.frames_pos = F(self.frames_time)
         else:
             self.n_cells = self.frames_dF_F.shape[0]
 
-        # if (max(self.frames_time) < self.raw_time.max() - self.dt_imaging): # imiging finished before end of lap...
+        # if (max(self.frames_time) < self.raw_time.max() - self.frame_period): # imiging finished before end of lap...
         #     ## we need to amend the frames_time, frames_pos and frames_spikes and frames_dF
-        #     start_time = max(self.frames_time) + self.dt_imaging
-        #     end_time = np.floor(self.raw_time.max()/self.dt_imaging)*self.dt_imaging
-        #     Ntimes = int(round((end_time - start_time) / self.dt_imaging)) + 1
+        #     start_time = max(self.frames_time) + self.frame_period
+        #     end_time = np.floor(self.raw_time.max()/self.frame_period)*self.frame_period
+        #     Ntimes = int(round((end_time - start_time) / self.frame_period)) + 1
         #     new_frames_time = np.linspace(start_time, end_time, Ntimes)
         #     L_new_frames = len(new_frames_time)
         #     self.frames_pos = np.hstack((self.frames_pos, F(new_frames_time)))
@@ -2898,7 +2902,7 @@ class Lap_ImData:
         #     self.frames_time = np.hstack((self.frames_time, new_frames_time))
 
         ## calculate the speed during the frames
-        speed = np.diff(self.frames_pos) * self.speed_factor / self.dt_imaging # cm / s       
+        speed = np.diff(self.frames_pos) * self.speed_factor / self.frame_period # cm / s       
         speed_first = 2 * speed[0] - speed[1] # linear extrapolation: x1 - (x2 - x1)
         self.frames_speed = np.hstack([speed_first, speed])
 
@@ -2912,20 +2916,26 @@ class Lap_ImData:
         ####################################################################
         ## calculate the lick-rate and the average speed versus location    
         bin_counts = np.zeros(self.N_pos_bins)
-        fast_bin_counts = np.zeros(self.N_pos_bins)
         total_speed = np.zeros(self.N_pos_bins)
 
+        last_bin_number = 0 # each spike is assigned to all position bins since the last imaging frame 
         for i_frame in range(len(self.frames_pos)):
-            bin_number = int(self.frames_pos[i_frame] // 70)
-            bin_counts[bin_number] += 1
-            if (self.frames_speed[i_frame] > self.speed_threshold):
-                fast_bin_counts[bin_number] += 1
-            total_speed[bin_number] = total_speed[bin_number] + self.frames_speed[i_frame]
+            next_bin_number = int(self.frames_pos[i_frame] // 70) 
+            if ((next_bin_number > last_bin_number + 1) & self.multiplane):
+                bin_number = np.arange(last_bin_number+1, next_bin_number+1) # the sequence ends at next_bun_number
+                n_bins = len(bin_number)
+                speed_to_add = np.repeat(self.frames_speed[i_frame] * self.frame_period/n_bins, n_bins)
+            else:
+                bin_number = next_bin_number
+                n_bins = 1
+                speed_to_add = self.frames_speed[i_frame] * self.frame_period
+            bin_counts[bin_number] += 1 / n_bins
+            total_speed[bin_number] = total_speed[bin_number] + speed_to_add
+            last_bin_number = next_bin_number
 
-        self.T_pos = bin_counts * self.dt_imaging           # used for lick rate and average speed
-        self.T_pos_fast = fast_bin_counts * self.dt_imaging # used for spike rate calculations
+        self.T_pos = bin_counts * self.frame_period           # used for lick rate and average speed
 
-        total_speed = total_speed * self.dt_imaging
+        # total_speed = total_speed * self.frame_period
         self.ave_speed = nan_divide(total_speed, self.T_pos, where=(self.T_pos > 0.025))
 
         lbin_counts = np.zeros(self.N_pos_bins)
@@ -2940,16 +2950,31 @@ class Lap_ImData:
         ####################################################################
         ## calculate the cell activations (spike rate) as a function of position
         if (self.imaging_data == True):
+            fast_bin_counts = np.zeros(self.N_pos_bins)
             self.spks_pos = np.zeros((self.n_cells, self.N_pos_bins)) # sum of spike counts measured at a given position
             self.event_rate = np.zeros((self.n_cells, self.N_pos_bins)) # spike rate 
 
+            last_bin_number = 0 # each spike is assigned to all position bins since the last imaging frame 
             for i_frame in range(len(self.frames_pos)):
-                bin_number = int(self.frames_pos[i_frame] // 70)
+                next_bin_number = int(self.frames_pos[i_frame] // 70) 
+                if ((next_bin_number > last_bin_number + 1) & self.multiplane):
+                    bin_number = np.arange(last_bin_number+1, next_bin_number+1) # the sequence ends at next_bun_number
+                    n_bins = len(bin_number)
+                    added_spikes = np.tile(self.frames_spikes[:,i_frame], (n_bins, 1)).T # prepare a matrix with the spikes to add at multiple spatial bins
+                    # print('multiple position bins: ', self.lap, i_frame, n_bins)
+                else:
+                    bin_number = next_bin_number
+                    n_bins = 1
+                    added_spikes = self.frames_spikes[:,i_frame]
                 if (self.frames_speed[i_frame] > self.speed_threshold):
+                    fast_bin_counts[bin_number] += 1 / n_bins
                     if (self.elfiz):
-                        self.spks_pos[:,bin_number] = self.spks_pos[:,bin_number] + self.frames_spikes[:,i_frame]
+                        self.spks_pos[:,bin_number] = self.spks_pos[:,bin_number] + added_spikes
                     else: ### we need to multiply the values with dt_imaging as this converts probilities to expected counts
-                        self.spks_pos[:,bin_number] = self.spks_pos[:,bin_number] + self.frames_spikes[:,i_frame] * self.dt_imaging
+                        self.spks_pos[:,bin_number] = self.spks_pos[:,bin_number] + added_spikes * self.frame_period / n_bins
+                last_bin_number = next_bin_number
+
+            self.T_pos_fast = fast_bin_counts * self.frame_period # used for spike rate calculations
             for bin_number in range(self.N_pos_bins):
                 if (self.T_pos_fast[bin_number] > 0): # otherwise the rate will remain 0
                     self.event_rate[:,bin_number] = self.spks_pos[:,bin_number] / self.T_pos_fast[bin_number]
@@ -2958,7 +2983,7 @@ class Lap_ImData:
             print('ratemaps calculated')
 
         ####################################################################
-        ## Calculate the lick rate befor the reward zone - anticipatory licks 210 roxels before zone start
+        ## Calculate the lick rate before the reward zone - anticipatory licks 210 roxels before zone start
         ## only when the number of zones is 1!
 
         if (self.n_zones == 1):
@@ -2974,7 +2999,7 @@ class Lap_ImData:
             for pos in self.frames_pos:
                 bin_number = np.max(np.where(pos > lz_posbins))
                 lz_bin_counts[bin_number] += 1
-            T_lz_pos = lz_bin_counts * self.dt_imaging
+            T_lz_pos = lz_bin_counts * self.frame_period
 
             lz_lbin_counts = np.zeros(5)
             for lpos in self.lick_position:
