@@ -267,6 +267,32 @@ class ImagingSessionData:
 
         self.test_anticipatory()
 
+    def get_analysis_ID(self, s2p_ids):
+        # map suite2p ids to analysis ids - writes results to console and returns them
+        s2p_ids = np.array(s2p_ids) 
+        if np.nonzero(s2p_ids>self.iscell.shape[0])[0].size !=0:
+            print("Too large input ID found!")
+            return 
+        helper_array = np.zeros(self.iscell.shape[0]) 
+        new_index = 0 
+        for i in range(self.iscell.shape[0]): 
+            if self.iscell[i,0]==1: 
+                helper_array[i] = new_index 
+                new_index += 1 
+            else: 
+                # helper_array[i] = np.nan
+                helper_array[i] = -1
+        helper_array = np.array([int(x) for x in helper_array])
+        print(helper_array)
+        print(helper_array[s2p_ids])
+        return helper_array[s2p_ids]
+    
+    def get_suite2p_ID(self, cellids):
+        # map analysis ids to suite2p ids - writes results to console and returns them
+        cellids = np.array(cellids)
+        print(self.neuron_index[cellids])
+        return self.neuron_index[cellids]
+    
     def write_params(self, filename):
         # write the parameters of the current ImagingSessionData into the given file
 
