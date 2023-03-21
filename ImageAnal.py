@@ -27,6 +27,7 @@ import pickle
 from xml.dom import minidom
 from matplotlib.backends.backend_pdf import PdfPages
 from datetime import datetime
+import pandas as pd
 
 from utils import *
 from Stages import *
@@ -1209,6 +1210,124 @@ class ImagingSessionData:
             plt.show(block=False)
         else :
             plt.show(block=False)
+            
+    def plot_hist_save_data(self, prop, cellids = np.nan, 
+                            N_bins = 30, bins_start = np.nan, bins_end = np.nan,normalised = False,logx_scale=False,logy_scale=False, 
+                            labels=[], title = '_', saveplot_name = np.nan, save_data = False, plot = True):
+        # function to make histograms of and/or save to excel any property specified, or the slice of these properties using the cellids parameter for indexing
+        
+        #helper function for plotting
+        def draw(array, N_bins, bins_start, bins_end, labels, title): 
+            if np.isnan(bins_start):
+                bins_start = np.min(array)
+            if np.isnan(bins_end):
+                bins_end = np.max(array)        
+            counts, bins = np.histogram(array, bins=np.linspace(bins_start,bins_end,N_bins))
+            if normalised:
+                counts = counts/len(array)
+            plt.stairs(counts, bins, label = label)
+            if logy_scale:
+                plt.yscale('log')
+            if logx_scale:
+                plt.xscale('log')
+        
+        if save_data:
+            to_save = [] #we will prepare the data to be saved in an this array
+        
+        cellids = np.array(cellids)
+        
+        #plotting
+        if plot:
+            plt.figure()
+        if hasattr(prop, '__iter__'):
+            if hasattr(prop[0], '__iter__'):
+                # 2dim input
+                for i_prop in range(len(prop)):
+                    #celect cellids if specified
+                    if np.any(np.isnan(cellids)):
+                        array = prop[i_prop]
+                    else:
+                        array = prop[i_prop][cellids]
+                        
+                    #prepare data to save if specified
+                    if save_data:
+                        to_save.append(array)
+                    
+                    #prepare labels for plotting
+                    if len(labels)==0:
+                        label = str(i_prop)
+                    else:
+                        try:
+                            label = labels[i_prop]
+                        except IndexError:
+                            print('Warning! not enough labels specified...')
+                            label = str(i_prop)
+                    #draw histogram using the helper function
+                    if plot:
+                        draw(array, N_bins, bins_start, bins_end, label, title)
+            else:
+                # 1dim input
+                #celect cellids if specified
+                if np.any(np.isnan(cellids)):
+                    array = prop
+                else:
+                    array = prop[cellids]
+                    
+                #prepare data to save if specified
+                if save_data:
+                    to_save.append(array)
+                    
+                #prepare labels for plotting
+                if len(labels)==0:
+                    label = ' '
+                else:
+                    label = labels[0]
+                    
+                #draw histogram using the helper function
+                if plot:
+                    draw(array, N_bins, bins_start, bins_end, labels, title)
+        else:
+            print("Input not iterable - returning")
+            return
+        
+        #plot annotation
+        if plot:
+            plt.title(title)
+            if normalised:
+                if logy_scale:
+                    plt.ylabel('log fraction')
+                else:
+                    plt.ylabel('fraction')
+            else:
+                if logy_scale:
+                    plt.ylabel('log N')
+                else:
+                    plt.ylabel('N')
+            if logx_scale:
+                plt.xlabel('log property value')
+            else:
+                plt.xlabel('property value')
+            plt.legend()
+            
+            #save if filename is given
+            if type(saveplot_name) == str:
+                plt.savefig(self.suite2p_folder + saveplot_name)
+        
+        # save data to excel:
+        if save_data:
+            writer = pd.ExcelWriter(self.suite2p_folder + title + '.xlsx', engine='openpyxl') 
+            wb  = writer.book
+            startcol=0
+            for i in range(len(to_save)):
+                try:
+                    header = labels[i]
+                except:
+                    header = 'property ' + str(i)
+                df = pd.DataFrame(to_save[i], columns=[header])
+                df.to_excel(writer, index=False, startcol=startcol)
+                startcol+=1
+            wb.save(self.suite2p_folder + title + '.xlsx')
+    
 
     def Hainmuller_PCs(self):
         ## ratemaps: similar to the activity tensor, the laps are sorted by the corridors
