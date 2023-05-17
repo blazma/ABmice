@@ -66,6 +66,9 @@ class Lap_Data:
         self.n_zones = np.shape(self.zones)[1]
         self.preZoneRate = [None, None] # only if 1 lick zone; Compare the 210 roxels just before the zone with the preceeding 210 
 
+        self.last_zone_start = max(self.corridor_list.corridors[self.corridor].reward_zone_starts)
+        self.last_zone_end = max(self.corridor_list.corridors[self.corridor].reward_zone_ends)
+
         # approximate frame period for imaging - 0.033602467
         # only use it to prepare uniform time axis
         self.dt_imaging = 0.033602467
@@ -83,7 +86,10 @@ class Lap_Data:
         if (len(self.reward_times) > 0):
             self.correct = True
         # correct: if no licking in the zone
-        lick_in_zone = np.nonzero((self.lick_position > self.zones[0] * self.corridor_length_roxel) & (self.lick_position <= self.zones[1] * self.corridor_length_roxel + 1))[0]
+        if (len(self.lick_times) > 0):
+            lick_in_zone = np.nonzero((self.lick_position > self.last_zone_start * self.corridor_length_roxel) & (self.lick_position <= self.last_zone_end * self.corridor_length_roxel + 1))[0]
+        else:
+            lick_in_zone = np.array([])
         if (self.corridor_list.corridors[self.corridor].reward == 'Left'):
             if (len(lick_in_zone) == 0):
                 self.correct = True
