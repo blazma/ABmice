@@ -139,6 +139,7 @@ class Close_Mouse:
                 return
             else :
                 self.load_session(i_session_anal)
+                print('session loaded successfully')
         ## we load the selected session if ... a different session was loaded
         if (self.loaded_session != i_session_anal):
             if (i_session_anal > len(self.mouse.sessions)):
@@ -146,6 +147,7 @@ class Close_Mouse:
                 return
             else :
                 self.load_session(i_session_anal)
+                print('session loaded successfully')
         
         if (self.newsession):
             self.sessiondata.plot_session()
