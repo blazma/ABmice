@@ -173,7 +173,7 @@ class ImShuffle:
             batch_ids = np.arange(i_start, i_end)
             print('calculating minibatch ' + str(i_minibatch) + ', batch length: ', str(batchsize))
 
-            self.shuffle_spikes = np.zeros((batchsize, self.N_frames, self.N_shuffle+1))
+            self.shuffle_spikes = np.zeros((batchsize, self.N_frames, self.N_shuffle+1), dtype='float32')
             self.shuffle_spikes[:,:,self.N_shuffle] = self.raw_spikes[batch_ids,:] # the last element is the real data ...
 
             rngP = np.random.default_rng(self.randseed)
@@ -246,8 +246,8 @@ class ImShuffle:
             self.activity_tensor = np.zeros((self.N_pos_bins, batchsize, self.N_ImLaps, self.N_shuffle+1)) # same as the activity tensor spatially smoothed
             self.activity_tensor_time = np.zeros((self.N_pos_bins, self.N_ImLaps)) # same as the activity_tensor_time spatially smoothed
             self.combine_lapdata_shuffle() ## fills in the cell_activity tensor
-            print(self.activity_tensor.shape)
-            print(np.sum(self.activity_tensor))
+            # print(self.activity_tensor.shape)
+            # print(np.sum(self.activity_tensor))
 
             self.cell_rates_batch = [] # a list, each element is a 1 x n_cells matrix with the average rate of the cells in the total corridor
             if (self.task == 'contingency_learning'):
@@ -487,9 +487,9 @@ class ImShuffle:
 
         ## smoothing - average of the 3 neighbouring bins
         self.activity_tensor[0,:,:,:] = (self.raw_activity_tensor[0,:,:,:] + self.raw_activity_tensor[1,:,:,:]) / 2
-        self.activity_tensor[-1,:,:,:] = (self.raw_activity_tensor[-1,:,:,:] + self.raw_activity_tensor[-1,:,:,:]) / 2
+        self.activity_tensor[-1,:,:,:] = (self.raw_activity_tensor[-2,:,:,:] + self.raw_activity_tensor[-1,:,:,:]) / 2
         self.activity_tensor_time[0,:] = (self.raw_activity_tensor_time[0,:] + self.raw_activity_tensor_time[1,:]) / 2
-        self.activity_tensor_time[-1,:] = (self.raw_activity_tensor_time[-1,:] + self.raw_activity_tensor_time[-1,:]) / 2
+        self.activity_tensor_time[-1,:] = (self.raw_activity_tensor_time[-2,:] + self.raw_activity_tensor_time[-1,:]) / 2
         for i_bin in np.arange(1, self.N_pos_bins-1):
             self.activity_tensor[i_bin,:,:,:] = np.average(self.raw_activity_tensor[(i_bin-1):(i_bin+2),:,:,:], axis=0)
             self.activity_tensor_time[i_bin,:] = np.average(self.raw_activity_tensor_time[(i_bin-1):(i_bin+2),:], axis=0)
