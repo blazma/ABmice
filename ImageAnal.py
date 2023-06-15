@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue Apr 27 18:14:19 2020
-
 @author: bbujfalussy - ubalazs317@gmail.com
 luko.balazs - lukobalazs@gmail.com
 , 
@@ -43,7 +42,7 @@ else:
 
 class ImagingSessionData:
     'Base structure for both imaging and behaviour data'
-    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False, reward_zones=None):
+    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False, reward_zones=None, spikes_tag='', data_folder='analysed_data'):
         self.datapath = datapath
         self.date_time = date_time
         self.name = name
@@ -62,6 +61,7 @@ class ImagingSessionData:
         self.minimum_Nlaps = 3
         self.substage_change_laps = [0]
         self.substage_change_time = [0]
+        self.data_folder = data_folder
 
         stagefilename = self.datapath + self.task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
@@ -163,7 +163,7 @@ class ImagingSessionData:
         else :
             F_string = self.suite2p_folder + 'F.npy'
             # Fneu_string = self.suite2p_folder + 'Fneu.npy'
-            spks_string = self.suite2p_folder + 'spks.npy'
+            spks_string = self.suite2p_folder + 'spks' + spikes_tag + '.npy'
             iscell_string = self.suite2p_folder + 'iscell.npy'
             
             self.F_all = np.load(F_string) # npy array, N_ROI x N_frames, fluorescence traces of ROIs from suite2p
@@ -297,7 +297,7 @@ class ImagingSessionData:
     def write_params(self, filename):
         # write the parameters of the current ImagingSessionData into the given file
 
-        data_folder = self.suite2p_folder + 'analysed_data'
+        data_folder = self.suite2p_folder + self.data_folder
         if not os.path.exists(data_folder):
             os.makedirs(data_folder)
 
@@ -318,7 +318,7 @@ class ImagingSessionData:
 
     def check_params(self, filename):
         # read the parameters from the file and compare it to the current ImagingSessionData 
-        data_folder = self.suite2p_folder + 'analysed_data'
+        data_folder = self.suite2p_folder + self.data_folder
         if not os.path.exists(data_folder):
             print ('Error: data directory', data_folder, 'does NOT exist!')    
             return False
@@ -887,9 +887,9 @@ class ImagingSessionData:
         # self.activity_tensor = self.raw_activity_tensor
         # self.activity_tensor_time = self.raw_activity_tensor_time
         self.activity_tensor[0,:,:] = (self.raw_activity_tensor[0,:,:] + self.raw_activity_tensor[1,:,:]) / 2
-        self.activity_tensor[-1,:,:] = (self.raw_activity_tensor[-1,:,:] + self.raw_activity_tensor[-1,:,:]) / 2
+        self.activity_tensor[-1,:,:] = (self.raw_activity_tensor[-2,:,:] + self.raw_activity_tensor[-1,:,:]) / 2
         self.activity_tensor_time[0,:] = (self.raw_activity_tensor_time[0,:] + self.raw_activity_tensor_time[1,:]) / 2
-        self.activity_tensor_time[-1,:] = (self.raw_activity_tensor_time[-1,:] + self.raw_activity_tensor_time[-1,:]) / 2
+        self.activity_tensor_time[-1,:] = (self.raw_activity_tensor_time[-2,:] + self.raw_activity_tensor_time[-1,:]) / 2
         for i_bin in np.arange(1, self.N_pos_bins-1):
             self.activity_tensor[i_bin,:,:] = np.average(self.raw_activity_tensor[(i_bin-1):(i_bin+2),:,:], axis=0)
             self.activity_tensor_time[i_bin,:] = np.average(self.raw_activity_tensor_time[(i_bin-1):(i_bin+2),:], axis=0)
@@ -1407,7 +1407,7 @@ class ImagingSessionData:
         ## reading shuffling data from file
         ##########################################################################
 
-        data_folder = self.suite2p_folder + 'analysed_data'
+        data_folder = self.suite2p_folder + self.data_folder
         shuffle_filename = 'shuffle_stats_' + name_string + 'n' + str(n) + '_mode_' + mode + '.csv'
         shuffle_path = data_folder + '/' + shuffle_filename
         if os.path.exists(shuffle_path):
@@ -1864,7 +1864,7 @@ class ImagingSessionData:
         return(cell_info)
 
 
-    def plot_cell_laps(self, cellid, multipdf_object=-1, signal='dF', corridor=-1, reward=True, write_pdf=False, plot_laps='all'):
+    def plot_cell_laps(self, cellid, multipdf_object=-1, signal='dF', corridor=-1, reward=True, write_pdf=False, plot_laps='all', n_grey_bins=100):
         ## plot the activity of a single cell in all trials in a given corridor
         ## signal can be 
         ##          'dF' when dF/F and spikes are plotted as a function of time
@@ -1970,8 +1970,8 @@ class ImagingSessionData:
             # max_intensity: 100 or higher, the highest rate
             # min_intensity: 0 or lower, the lowest rate
 
-            colors1 = plt.cm.binary(np.linspace(0., 1, 100)) 
-            n_col2 = int(np.round(max_intensity - 100))
+            colors1 = plt.cm.binary(np.linspace(0., 1, n_grey_bins)) 
+            n_col2 = int(np.round(max_intensity - n_grey_bins))
             max_col2 = min(0.65, 0.25 + n_col2 / 100)
             colors2 = plt.cm.autumn(np.linspace(0, max_col2, n_col2))
 
@@ -2416,9 +2416,9 @@ class ImagingSessionData:
         # save_place_code_stats: True or False, 
 
 
-        data_folder = self.suite2p_folder + 'analysed_data'
+        data_folder = self.suite2p_folder + self.data_folder
         if (self.elfiz == True):
-            data_folder = self.suite2p_folder + 'analysed_data_' + self.imaging_logfile_name
+            data_folder = self.suite2p_folder + self.data_folder + '_' + self.imaging_logfile_name
 
         if not os.path.exists(data_folder):
             os.makedirs(data_folder)
