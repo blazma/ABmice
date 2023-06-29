@@ -744,6 +744,13 @@ class ImagingSessionData:
         lap_count = 0 # counting all laps except grey zone
         N_0lap = 0 # counting the non-valid laps
 
+        grey_zone_active = False
+        if (np.unique(maze)[0] == 0):
+            grey_zone_active = True
+            # print('grey zone is active')
+            # grey_zone_duration = []
+            # correct_error = []
+
         for i_lap in np.unique(lap): 
             y = np.flatnonzero(lap == i_lap) # index for the current lap
 
@@ -759,23 +766,31 @@ class ImagingSessionData:
             sstage_lap = np.unique(sstage[y])
             
             if (len(sstage_lap) > 1):
-                print('More than one substage in a lap before lap ', self.n_laps)
+                print('More than one substage in a lap before lap ', self.n_laps, 'in corridor', corridor)
                 corridor = -2
 
-            if (y.size < self.N_pos_bins):
-                print('Very short lap found, we have total ', len(y), 'datapoints recorded by the ExpStateMachine in a lap before lap', self.n_laps)
-                corridor = -3
+            if (corridor > 0) :
+                if (y.size < self.N_pos_bins):
+                    print('Very short lap found, we have total ', len(y), 'datapoints recorded by the ExpStateMachine in a lap before lap', self.n_laps, 'in corridor', corridor)
+                    corridor = -3
 
             if (corridor > 0) :
                 pos_lap = pos[y]
                 n_posbins = len(np.unique(pos_lap))
-                if (n_posbins < (self.corridor_length_roxel/2)):
-                    print('Short lap found, we have total ', n_posbins, 'position bins recorded by the ExpStateMachine in a lap before lap', self.n_laps)
+                if (n_posbins < (self.corridor_length_roxel * 0.9)):
+                    print('Short lap found, we have total ', n_posbins, 'position bins recorded by the ExpStateMachine in a lap before lap', self.n_laps, 'in corridor', corridor)
                     corridor = -4
+
+                # if (min(pos_lap) > 10):
+                #     print('Late-start lap found, first position:', np.min(pos_lap), 'in lap', self.n_laps, 'in corridor', corridor)
+
+                # if (max(pos_lap) < (self.corridor_length_roxel - 10)):
+                #     print('Early-end lap found, last position:', np.max(pos_lap), 'in lap', self.n_laps, 'in corridor', corridor)
             
             # print('processing corridor', corridor, 'in lap', i_lap)
 
             t_lap = laptime[y]
+            next_grey_lap_duration = None
             self.all_corridor_start_time.append(min(t_lap))          
             self.all_corridor_start_IDs.append(int(corridor))
             
@@ -826,6 +841,18 @@ class ImagingSessionData:
                         mode_lap = 0
                         # print('invalid lap', self.n_laps)
 
+                    if (grey_zone_active): # we calculate the duration of the next grey zone - we can use this to double check rewarded laps
+                        y_g = np.flatnonzero(lap == i_lap+1) # index for the current lap
+                        if (len(y_g) > 1):
+                            maze_lap_g = np.unique(maze[y_g])
+                            if (len(maze_lap_g) == 1):
+                                corridor_g = self.all_corridors[int(maze_lap_g)] # the maze_lap is the index of the available corridors in the given stage
+                            if (corridor_g != 0):
+                                print('no next grey zone found')
+                            else:
+                                t_g_lap = laptime[y_g]
+                                next_grey_lap_duration = np.max(t_g_lap) - np.min(t_g_lap)
+
                     actions = []
                     for j in range(len(action_lap)):
                         if not((action_lap[j]) in ['No', 'TrialReward']):
@@ -839,26 +866,36 @@ class ImagingSessionData:
 
                     ### imaging data    
                     iframes = np.flatnonzero(self.frame_laps == i_lap)
-
-                    # print('In lap ', self.n_laps, ' we have ', len(t_lap), 'datapoints and ', len(iframes), 'frames')
-
-                    if ((len(iframes) > (self.N_pos_bins/5)) & (add_ImLap == True)): # there is imaging data belonging to this lap...
-                        # print('frames:', min(iframes), max(iframes))
-                        # print('max of iframes:', max(iframes))
+                    if (len(iframes) > 1): # there is imaging data belonging to this lap...
                         lap_frames_dF_F = self.dF_F[:,iframes]
                         lap_frames_spikes = self.spks[:,iframes]
                         lap_frames_time = self.frame_times[iframes]
                         lap_frames_pos = self.frame_pos[iframes]
                         lap_frames_events = self.events[:,iframes]
-                        i_ImData.append(self.n_laps)
+                        # print(self.n_laps, np.min(lap_frames_pos), np.max(lap_frames_pos))
+                        if (np.min(lap_frames_pos) > 200):
+                            add_ImLap = False
+                            print('Late-start lap found, first position:', np.min(lap_frames_pos), 'in lap', self.n_laps, 'in corridor', corridor)
+                        if (np.max(lap_frames_pos) < (self.corridor_length_roxel - 200)):
+                            add_ImLap = False
+                            print('Early end lap found, last position:', np.max(lap_frames_pos), 'in lap', self.n_laps, 'in corridor', corridor)
                     else:
+                        add_ImLap = False
+
+                    if (not add_ImLap):
                         lap_frames_dF_F = np.nan
                         lap_frames_spikes = np.nan
                         lap_frames_time = np.nan
                         lap_frames_pos = np.nan 
                         lap_frames_events = np.nan                        
+                    # print('In lap ', self.n_laps, ' we have ', len(t_lap), 'datapoints and ', len(iframes), 'frames')
 
-                    self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, lap_frames_events, self.frame_period, speed_threshold=self.speed_threshold, elfiz=self.elfiz, multiplane=self.multiplane))
+                    if (add_ImLap == True): # there is imaging data belonging to this lap...
+                        # print('frames:', min(iframes), max(iframes))
+                        # print('max of iframes:', max(iframes))
+                        i_ImData.append(self.n_laps)
+
+                    self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, lap_frames_events, self.frame_period, speed_threshold=self.speed_threshold, elfiz=self.elfiz, multiplane=self.multiplane, next_grey_lap_duration=next_grey_lap_duration))
                     self.n_laps = self.n_laps + 1
                     lap_count = lap_count + 1
                 else :
@@ -866,7 +903,22 @@ class ImagingSessionData:
                     lap_count = lap_count + 1
                     # print(self.n_laps)
             else:
+                # if (corridor == 0):
+                #     lap_duration = np.max(t_lap) - np.min(t_lap)
+                #     previous_correct = 'first lap'
+                #     if ((lap_count > 0) & (corridor == 0)):
+                #         previous_correct = self.ImLaps[self.n_laps-1].correct
+                #         print('duration of grey zone after lap', self.n_laps-1, ': ', lap_duration, previous_correct)
+                #         correct_error.append(previous_correct)
+                #         grey_zone_duration.append(lap_duration)
                 N_0lap = N_0lap + 1 # grey zone (corridor == 0) or invalid lap (corridor = -1) - we do not do anything with this...
+
+
+        # correct_error = np.array(correct_error)
+        # i_correct = np.flatnonzero(correct_error == 1)
+        # i_error = np.flatnonzero(correct_error == 0)
+        # grey_zone_duration = np.array(grey_zone_duration)
+        # print('minimum grey zone after error:', np.min(grey_zone_duration[i_error]), ', max grey zone after correct:', np.max(grey_zone_duration[i_correct]))
 
         self.i_Laps_ImData = np.array(i_ImData) # index of laps with imaging data
         self.i_corridors = np.array(i_corrids) # ID of corridor for the current lap
@@ -967,7 +1019,7 @@ class ImagingSessionData:
                 self.cell_rates.append(rates)
 
                 if (self.task == 'contingency_learning'):
-                    zone_start = int(np.floor(self.ImLaps[0].zones[0]*self.N_pos_bins))
+                    zone_start = int(np.floor(self.ImLaps[0].zones[0]*self.N_pos_bins)) # 42-46 or 45-49
                     zone_end = int(np.floor(self.ImLaps[0].zones[1]*self.N_pos_bins))
 
                     rates_pattern1 = np.sum(total_spikes[0:14,:], axis=0) / np.sum(total_time[0:14])
@@ -2946,7 +2998,7 @@ class ImagingSessionData:
 class Lap_ImData:
     'common base class for individual laps'
 
-    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, lap_frames_events, frame_period, printout=False, speed_threshold=5, elfiz=False, verbous=0, multiplane=False):
+    def __init__(self, name, lap, laptime, position, lick_times, reward_times, corridor, mode, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, corridor_list, lap_frames_events, frame_period, printout=False, speed_threshold=5, elfiz=False, verbous=0, multiplane=False, next_grey_lap_duration=None):
         if (verbous > 0):
             print('ImData initialised')
         # begin_time = datetime.now()
@@ -3014,6 +3066,15 @@ class Lap_ImData:
         else :
             if ((len(lick_in_zone) == 0) & self.correct):
                 print ('Warning: rewarded lap with no lick in zone! lap number:' + str(self.lap))
+
+        if (next_grey_lap_duration is not None):
+            self.grey_threshold = 0.7 # max duration of grey zone after correct
+            if (self.correct):
+                if (next_grey_lap_duration > self.grey_threshold):
+                    raise ValueError('Error: too long grey zone duration after correct trial:', next_grey_lap_duration)                    
+            else:
+                if (next_grey_lap_duration < self.grey_threshold):
+                    raise ValueError('Error: too short grey zone duration after incorrect trial:', next_grey_lap_duration)
 
         if (verbous > 0):
             print('lick and reward position calculated')
