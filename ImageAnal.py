@@ -882,18 +882,17 @@ class ImagingSessionData:
                     else:
                         add_ImLap = False
 
-                    if (not add_ImLap):
+                    if (add_ImLap): # there is imaging data belonging to this lap...
+                        i_ImData.append(self.n_laps)
+                        # print('frames:', min(iframes), max(iframes))
+                        # print('max of iframes:', max(iframes))
+                    else :
                         lap_frames_dF_F = np.nan
                         lap_frames_spikes = np.nan
                         lap_frames_time = np.nan
                         lap_frames_pos = np.nan 
                         lap_frames_events = np.nan                        
                     # print('In lap ', self.n_laps, ' we have ', len(t_lap), 'datapoints and ', len(iframes), 'frames')
-
-                    if (add_ImLap == True): # there is imaging data belonging to this lap...
-                        # print('frames:', min(iframes), max(iframes))
-                        # print('max of iframes:', max(iframes))
-                        i_ImData.append(self.n_laps)
 
                     self.ImLaps.append(Lap_ImData(self.name, self.n_laps, t_lap, pos_lap, t_licks, t_reward, corridor, mode_lap, actions, lap_frames_dF_F, lap_frames_spikes, lap_frames_pos, lap_frames_time, self.corridor_list, lap_frames_events, self.frame_period, speed_threshold=self.speed_threshold, elfiz=self.elfiz, multiplane=self.multiplane, next_grey_lap_duration=next_grey_lap_duration))
                     self.n_laps = self.n_laps + 1
