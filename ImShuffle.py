@@ -441,9 +441,9 @@ class ImShuffle:
                             actions.append([t_lap[j], action_lap[j]])
 
                     ### include only a subset of laps
-                    add_lap = True
+                    add_ImLap = True
                     if (mode_lap == 0):
-                        add_lap = False
+                        add_ImLap = False
 
                     ### imaging data    
                     iframes = np.where(self.frame_laps == i_lap)[0]
