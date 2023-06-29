@@ -1025,7 +1025,7 @@ class ImagingSessionData:
                     rates_pattern1 = np.sum(total_spikes[0:14,:], axis=0) / np.sum(total_time[0:14])
                     rates_pattern2 = np.sum(total_spikes[14:28,:], axis=0) / np.sum(total_time[14:28])
                     rates_pattern3 = np.sum(total_spikes[28:42,:], axis=0) / np.sum(total_time[28:42])
-                    rates_reward = np.sum(total_spikes[zone_start:zone_end,:], axis=0) / np.sum(total_time[zone_end:zone_end])
+                    rates_reward = np.sum(total_spikes[zone_start:zone_end,:], axis=0) / np.sum(total_time[zone_start:zone_end])
                     self.cell_pattern_rates.append(np.vstack([rates_pattern1, rates_pattern2, rates_pattern3, rates_reward]))
 
                 ## reliability and Fano factor
