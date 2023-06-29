@@ -389,14 +389,15 @@ class ImShuffle:
                 print('More than one substage in lap ', self.n_laps)
                 corridor = -2
 
-            if (y.size < self.N_pos_bins):
-                print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in lap ', self.n_laps)
-                corridor = -3
+            if (corridor > 0) :
+                if (y.size < self.N_pos_bins):
+                    print('Very short lap found, we have total ', sum(y), 'datapoints recorded by the ExpStateMachine in lap ', self.n_laps)
+                    corridor = -3
 
             if (corridor > 0) :
                 pos_lap = pos[y]
                 n_posbins = len(np.unique(pos_lap))
-                if (n_posbins < (self.corridor_length_roxel/2)):
+                if (n_posbins < (self.corridor_length_roxel * 0.9)):
                     print('Short lap found, we have total ', n_posbins, 'position bins recorded by the ExpStateMachine in a lap before lap', self.n_laps)
                     corridor = -4
 
@@ -448,14 +449,23 @@ class ImShuffle:
                     iframes = np.where(self.frame_laps == i_lap)[0]
                     # print(self.n_laps, len(iframes), i_lap)
 
-                    if ((len(iframes) > (self.N_pos_bins/5)) & (add_lap == True)): # there is imaging data belonging to this lap...
+                    if (len(iframes) > 1): # there is imaging data belonging to this lap...
                         # print('imaging data found', min(iframes), max(iframes))
                         lap_frames_spikes = self.shuffle_spikes[:,iframes,:]
                         lap_frames_time = self.frame_times[iframes]
                         lap_frames_pos = self.frame_pos[iframes]
-                        i_ImData.append(self.n_laps)
+                        if (np.min(lap_frames_pos) > 200):
+                            add_ImLap = False
+                            print('Late-start lap found, first position:', np.min(lap_frames_pos), 'in lap', self.n_laps, 'in corridor', corridor)
+                        if (np.max(lap_frames_pos) < (self.corridor_length_roxel - 200)):
+                            add_ImLap = False
+                            print('Early end lap found, last position:', np.max(lap_frames_pos), 'in lap', self.n_laps, 'in corridor', corridor)
                     else:
-                        # print('no imaging data found in lap', self.n_laps)
+                        add_ImLap = False
+
+                    if (add_ImLap): # there is imaging data belonging to this lap...
+                        i_ImData.append(self.n_laps)
+                    else :
                         lap_frames_spikes = np.nan
                         lap_frames_time = np.nan
                         lap_frames_pos = np.nan 
