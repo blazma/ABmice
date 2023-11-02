@@ -327,6 +327,13 @@ class ImShuffle:
                 i_end = i_end + 1
             i_minibatch = i_minibatch + 1
 
+        self.p95 = []
+        for i_cor in range(self.N_corridors):
+            rate_matrix = self.ratemaps[i_cor]
+            p95_cor = np.zeros([self.N_pos_bins, self.N_cells])
+            for i_cell in range(self.N_cells):
+                p95_cor[:, i_cell] = np.percentile(rate_matrix[:, i_cell, :], 95, axis=1)
+            self.p95.append(p95_cor)
 
     def get_lapdata_shuffle(self, datapath, date_time, name, task, selected_laps=None):
 
