@@ -11,7 +11,6 @@ warnings.filterwarnings("ignore")
 import argparse
 import seaborn as sns
 
-
 ANIMALS = {
     "CA1": ["KS028",
             "KS029",
@@ -26,7 +25,6 @@ SESSIONS_TO_IGNORE = {
     "CA1": ['srb131_211019'], # reshuffles
     "CA3": []
 }
-
 CORRIDORS = [14, 15,  # random
              16, 18,  # block
              17]  # new environment
@@ -40,22 +38,23 @@ def grow_df(df_a, df_b):
     return df_a
 
 
-class BehaviorAnalysis():
-    def __init__(self, area, generate_plots=False, extra_info=""):
+class BehaviorAnalysis:
+    def __init__(self, area, data_path, output_path, generate_plots=False, extra_info=""):
         self.area = area
         self.animals = ANIMALS[area]
         self.sessions_to_ignore = SESSIONS_TO_IGNORE[area]
         self.meta_xlsx = f"{area}_meta.xlsx"
+        self.data_path = data_path
         self.generate_plots = generate_plots  # if True, generates ImageAnal plots for each session
+        self.date = datetime.today().strftime("%y%m%d")
 
         # set output folder
-        self.output_root = "behavioral_analysis"
         self.extra_info = "" if not extra_info else f"_{extra_info}"
+        self.output_root = f"{output_path}/behavioral_analysis_{self.area}_{self.date}{self.extra_info}"
         if not os.path.exists(self.output_root):
             os.makedirs(self.output_root)
 
         # set up logging
-        self.date = datetime.today().strftime("%y%m%d")
         logging_format = "%(asctime)s [%(levelname)s] %(message)s"
         logging.basicConfig(filename=f"{self.output_root}/behavlog_{self.date}{self.extra_info}.log",
                             level=logging.INFO, format=logging_format)
@@ -68,7 +67,7 @@ class BehaviorAnalysis():
 
     def _read_meta(self, animal):
         logging.info(f"reading meta file at data/{self.meta_xlsx}")
-        wb = openpyxl.load_workbook(filename=f"data/{self.meta_xlsx}")
+        wb = openpyxl.load_workbook(filename=f"{self.data_path}/data/{self.meta_xlsx}")
         ws = wb.worksheets[0]
         sessions = {}
         for row in ws.rows:
@@ -96,8 +95,8 @@ class BehaviorAnalysis():
         date_time = sessions_all[current_session]["date_time"]
         name = sessions_all[current_session]["name"]
         task = sessions_all[current_session]["task"]
-        datapath = os.getcwd() + '/'
-        suite2p_folder = datapath + 'data/' + f"{name}_imaging/" + sessions_all[current_session]["suite2p_folder"] + "/"
+        datapath = f"{self.data_path}/"
+        suite2p_folder = f"{datapath}/data/{name}_imaging/{sessions_all[current_session]["suite2p_folder"]}/"
         imaging_logfile_name = suite2p_folder + sessions_all[current_session]["imaging_logfile_name"]
         TRIGGER_VOLTAGE_FILENAME = suite2p_folder + sessions_all[current_session]["TRIGGER_VOLTAGE_FILENAME"]
 
@@ -288,17 +287,22 @@ class BehaviorAnalysis():
         self._plot_correlation_matrix()
         self._plot_behavioral_metrics()
 
+
 # parse arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
-parser.add_argument("-g", "--generate-plots", type=bool)
+parser.add_argument("-dp", "--data-path", required=True)
+parser.add_argument("-op", "--output-path", default=os.getcwd())
+parser.add_argument("-gp", "--generate-plots", type=bool)
 parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
 args = parser.parse_args()
 
 area = args.area
+data_path = args.data_path
+output_path = args.output_path
 generate_plots = args.generate_plots
 extra_info = args.extra_info
 
 # run analysis
-analysis = BehaviorAnalysis(area, generate_plots, extra_info)
+analysis = BehaviorAnalysis(area, data_path, output_path, generate_plots, extra_info)
 analysis.analyze_behavior()

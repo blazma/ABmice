@@ -348,7 +348,6 @@ def plot_shift_gain_distribution(plot_all=True, logy=False, zoom=False):
     plt.xlim([-15, 15])
     plt.axvline(x=0, c="k", linestyle="--")
     plt.axhline(y=1, c="k", linestyle="--")
-    plt.show()
 
     # subsampling
     shift_diffs = []
@@ -388,6 +387,43 @@ def plot_shift_gain_distribution(plot_all=True, logy=False, zoom=False):
     axs[1].legend()
 
     plt.tight_layout()
+    plt.show()
+
+def plot_distance_from_RZ_distribution():
+    place_fields_df, _ = load_data("CA1", date_CA1)
+    place_fields_df["newly formed"] = np.where(place_fields_df["category"].isin(["transient", "non-btsp", "btsp"]), True, False)
+    #shift_gain_df = place_fields_df[["newly formed", "initial shift", "formation gain"]].reset_index(drop=True)
+    #shift_gain_df = shift_gain_df[(shift_gain_df["initial shift"].notna()) & (shift_gain_df["formation gain"].notna())]
+
+    # pfoi = place fields of interest
+    pfoi = place_fields_df[(place_fields_df["corridor"] == 0) & (place_fields_df["category"] != "unreliable")].reset_index(drop=True)
+    pfoi["pf middle bin"] = pfoi["lower bound"] + (pfoi["upper bound"] - pfoi["lower bound"])/2
+
+    # TODO: these are guesses based on plots, needs to be exact
+    reward_zones = {
+        0: [38, 46],  # corridor 14
+        1: [61, 69]   # corridor 15
+    }
+    RZ_middle_bin = 42 #65
+    pfoi["distance from RZ"] = pfoi["pf middle bin"] - RZ_middle_bin
+
+    # make distances from RZ symmetrical:
+    pfoi = pfoi[(pfoi["distance from RZ"] > -20) & (pfoi["distance from RZ"] < 20)]
+
+    shift_distance_df = pfoi[["newly formed", "initial shift", "distance from RZ"]].reset_index(drop=True)
+    shift_distance_df = shift_distance_df[(shift_distance_df["initial shift"].notna())].reset_index(drop=True)
+
+    gain_distance_df = pfoi[["newly formed", "formation gain", "distance from RZ"]].reset_index(drop=True)
+    gain_distance_df = gain_distance_df[(gain_distance_df["formation gain"].notna())].reset_index(drop=True)
+
+    prop_stable_afterRZ_to_stable_beforeRZ = pfoi[(pfoi["newly formed"] == False) & (pfoi["distance from RZ"] > 0)].shape[0] /  pfoi[(pfoi["newly formed"] == False) & (pfoi["distance from RZ"] < 0)].shape[0]
+    prop_newlyf_afterRZ_to_newlyf_beforeRZ = pfoi[(pfoi["newly formed"] == True) & (pfoi["distance from RZ"] > 0)].shape[0] /  pfoi[(pfoi["newly formed"] == True) & (pfoi["distance from RZ"] < 0)].shape[0]
+    print(f"proportion of 'non-NF PFs after RZ' to 'non-NF PFs before RZ' = {prop_stable_afterRZ_to_stable_beforeRZ}")
+    print(f"proportion of 'newlyF PFs after RZ' to 'newlyF PFs before RZ' = {prop_newlyf_afterRZ_to_newlyf_beforeRZ}")
+
+    #g = sns.jointplot(data=gain_distance_df, y="formation gain", x="distance from RZ",
+    #                  hue="newly formed", alpha=1, s=3, marginal_kws={"common_norm": False})
+    sns.histplot(data=pfoi, x="distance from RZ", hue="newly formed", multiple="dodge", binwidth=1)
     plt.show()
 
 def no_shift_criterion_plot():
@@ -441,8 +477,8 @@ def no_shift_criterion_plot():
 #no_shift_criterion_plot()
 
 #plot_shift_gain_distribution(plot_all=True, zoom=False, logy=False)
-plot_shift_gain_distribution(plot_all=True, zoom=True, logy=True)
+#plot_shift_gain_distribution(plot_all=True, zoom=True, logy=True)
 #plot_shift_gain_distribution(plot_all=False, zoom=False, logy=False)
 #plot_shift_gain_distribution(plot_all=False, zoom=True, logy=True)
-
+plot_distance_from_RZ_distribution()
 plt.show()

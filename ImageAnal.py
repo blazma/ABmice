@@ -37,7 +37,7 @@ from ImShuffle import *
 
 import PlaceField as PF
 from PlaceField import PlaceField
-from BtspAnalysis import BtspAnalysis
+from BtspAnalysisSingleCell import BtspAnalysisSingleCell
 
 if (platform == 'darwin'):
     csv_kwargs = {'delimiter':' '}
@@ -281,7 +281,7 @@ class ImagingSessionData:
 
         # BTSP analysis
         self.p95 = []
-        self.btsp_analysis = None  # this will be a BtspAnalysis object after calling run_btsp_analysis()
+        self.btsp_analysis = None  # this will be a BtspAnalysisSingleCell object after calling run_btsp_analysis()
 
         # lick and speed selectivity
         self.speed_selectivity_laps = {}
@@ -1906,7 +1906,7 @@ class ImagingSessionData:
             for zone in range(len(zone_starts[i])):
                 left = zone_starts[i][zone] * self.N_pos_bins             
                 right = zone_ends[i][zone] * self.N_pos_bins
-                polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), color='green', alpha=0.15)
                 axs[0,i].add_patch(polygon)
                 
         fig.suptitle(sort_title)
@@ -2314,7 +2314,7 @@ class ImagingSessionData:
                     for i_zone in range(len(zone_starts)):
                         left = zone_starts[i_zone] * nbins             
                         right = zone_ends[i_zone] * nbins              
-                        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), color='green', alpha=0.15)
                         ax[0,cor_index].add_patch(polygon)
                         # print('adding reward zone to the ', cor_index, 'th corridor, ', self.corridors[cor_index+1])
 
@@ -2588,7 +2588,7 @@ class ImagingSessionData:
                 for i_zone in range(len(zone_starts)):
                     left = zone_starts[i_zone] * nbins
                     right = zone_ends[i_zone] * nbins
-                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True,
+                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]),
                                       color='green', alpha=0.15)
                     ax[0, cor_index].add_patch(polygon)
                     # print('adding reward zone to the ', cor_index, 'th corridor, ', self.corridors[cor_index+1])
@@ -2614,9 +2614,9 @@ class ImagingSessionData:
             p95_cell = self.p95[cor_index][:, i_cell]
             bins_p95_geq_afr = [i for i in range(self.N_pos_bins) if average_firing_rate[i] >= p95_cell[i]]
             
-            btsp_analysis_corridor = BtspAnalysis(self.sessionID, cellid, rate_matrix,
-                                                  corridors=self.corridors, bins_p95_geq_afr=bins_p95_geq_afr,
-                                                  i_laps=i_laps, shift_criterion=shift_criterion)
+            btsp_analysis_corridor = BtspAnalysisSingleCell(self.sessionID, cellid, rate_matrix,
+                                                            corridors=self.corridors, bins_p95_geq_afr=bins_p95_geq_afr,
+                                                            i_laps=i_laps, shift_criterion=shift_criterion)
             btsp_analysis_corridor.categorize_place_fields(cor_index)
 
             if isinstance(self.btsp_analysis, type(None)):  # first corridor in iteration
@@ -2701,7 +2701,7 @@ class ImagingSessionData:
                 for i_zone in range(len(zone_starts)):
                     left = zone_starts[i_zone] * nbins             
                     right = zone_ends[i_zone] * nbins              
-                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), color='green', alpha=0.15)
                     ax[0,cor_index].add_patch(polygon)
 
         plt.show(block=False)
@@ -2894,7 +2894,7 @@ class ImagingSessionData:
                         right = np.round(self.ImLaps[lap].zones[1,0] * self.corridor_length_roxel, -1) - 4.5
 
                         if (average):
-                            polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color=reward_zone_color, alpha=0.15)
+                            polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), color=reward_zone_color, alpha=0.15)
                             axs[row,0].add_patch(polygon)
                         else :
                             axs[row,0].vlines((left, right), ymin=bottom, ymax=top, colors=reward_zone_color, lw=3)
@@ -2904,7 +2904,7 @@ class ImagingSessionData:
                                 left = np.round(self.ImLaps[lap].zones[0,i] * self.corridor_length_roxel, -1) - 4.5 # threshold of the position rounded to 10s - this is what LabView does
                                 right = np.round(self.ImLaps[lap].zones[1,i] * self.corridor_length_roxel, -1) - 4.5
                                 if (average):
-                                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color=reward_zone_color, alpha=0.15)
+                                    polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), color=reward_zone_color, alpha=0.15)
                                     axs[row,0].add_patch(polygon)
                                 else :
                                     axs[row,0].vlines((left, right), ymin=bottom, ymax=top, colors=reward_zone_color, lw=3)
@@ -3927,13 +3927,13 @@ class Lap_ImData:
         left = self.zones[0,0] * self.corridor_length_roxel
         right = self.zones[1,0] * self.corridor_length_roxel
 
-        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), color='green', alpha=0.15)
         ax_top.add_patch(polygon)
         if (self.n_zones > 1):
             for i in range(1, np.shape(self.zones)[1]):
                 left = self.zones[0,i] * self.corridor_length_roxel
                 right = self.zones[1,i] * self.corridor_length_roxel
-                polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), color='green', alpha=0.15)
                 ax_top.add_patch(polygon)
 
         ax2 = ax_top.twinx()
@@ -3999,13 +3999,13 @@ class Lap_ImData:
         left = self.zones[0,0] * self.corridor_length_roxel
         right = self.zones[1,0] * self.corridor_length_roxel
 
-        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+        polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), color='green', alpha=0.15)
         ax_bottom.add_patch(polygon)
         if (self.n_zones > 1):
             for i in range(1, np.shape(self.zones)[1]):
                 left = self.zones[0,i] * self.corridor_length_roxel
                 right = self.zones[1,i] * self.corridor_length_roxel
-                polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), True, color='green', alpha=0.15)
+                polygon = Polygon(np.array([[left, bottom], [left, top], [right, top], [right, bottom]]), color='green', alpha=0.15)
                 ax_bottom.add_patch(polygon)
 
         ax2 = ax_bottom.twinx()
