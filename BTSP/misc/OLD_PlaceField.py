@@ -16,6 +16,7 @@ SPEARMAN_SKIP_LAPS = 3 # skip some laps following the formation lap to allow for
 NMF_MINIMUM_LAPS = 10  # minimum number of laps for inclusion in non-negative matrix factorization
 NMF_STD_PF_WIDTH = 6  # comes from CA1 data
 
+
 class PlaceField:
     def __init__(self):
         # measurement attribute
@@ -43,6 +44,7 @@ class PlaceField:
         self.category = ""
         self.notes = ""
         self.rate_matrix_pf_centered = None  # used for NMF
+        self.formation_rate_sum = -1  # integral of firing rate should be proportional to Ca2+ signal size
 
         # BTSP signatures`
         self.has_high_gain = False
@@ -59,14 +61,14 @@ class PlaceField:
         is_btsp = self.has_high_gain and self.has_no_drift and self.has_backwards_shift
         initial_shift = np.mean(self.com_diffs[1:1+SPEARMAN_SKIP_LAPS])
         data = [
-            self.animalID, self.sessionID, self.cellid, self.cor_index, self.category, self.bounds[0], self.bounds[1], self.formation_lap,
+            self.animalID, self.sessionID, self.cellid, self.cor_index, self.category, self.bounds[0], self.bounds[1], self.formation_lap, self.formation_lap_uncorrected,
             self.formation_bin, self.end_lap, is_btsp, self.has_high_gain, self.has_no_drift, self.has_backwards_shift, self.formation_gain,
-            initial_shift, self.spearman_corrs[0], self.spearman_corrs[1], self.linear_coeffs[0], self.linear_coeffs[1], self.notes
+            initial_shift, self.spearman_corrs[0], self.spearman_corrs[1], self.linear_coeffs[0], self.linear_coeffs[1], self.formation_rate_sum, self.notes
         ]
         columns = [
-            "animal id", "session id", "cell id", "corridor", "category", "lower bound", "upper bound", "formation lap",
+            "animal id", "session id", "cell id", "corridor", "category", "lower bound", "upper bound", "formation lap", "formation lap uncorrected",
             "formation bin", "end lap", "is BTSP", "has high gain", "has no drift", "has backwards shift", "formation gain", "initial shift",
-            "spearman r", "spearman p", "linear fit m", "linear fit b", "notes"
+            "spearman r", "spearman p", "linear fit m", "linear fit b", "formation rate sum", "notes"
         ]
         df = pd.DataFrame(columns=columns)
         df.loc[0] = data
@@ -100,7 +102,10 @@ class PlaceField:
                     formation_lap = i + formation_lap_uncorrected
                 break
         self.formation_lap_uncorrected = formation_lap_uncorrected
+
+        # disabling formation lap correction:
         self.formation_lap = formation_lap
+        #self.formation_lap = formation_lap_uncorrected
 
         try:
             if formation_lap > -1:
@@ -108,6 +113,7 @@ class PlaceField:
                 rate_matrix_from_formation_lap = self.rate_matrix[lb:ub, self.formation_lap:]
                 formation_bin = lb + np.average(pf_bins_range, weights=rate_matrix_from_formation_lap[:, 0])
                 self.formation_bin = formation_bin
+                self.formation_rate_sum = np.sum(rate_matrix_from_formation_lap[:,0])
         except Exception:
             pass  # TODO: ezt jobban megnézni, van amikor ZeroDivisionError, máskor IndexError
 
@@ -132,7 +138,8 @@ class PlaceField:
 
     def calculate_formation_gain(self):
         formation_rate = np.nanmax(self.rate_matrix_pf[:, 0])
-        window_rate = np.nanmax(self.rate_matrix_pf[:, 1:1 + FORMATION_GAIN_WINDOW],axis=0).mean()
+        window_rate = np.nanmax(self.rate_matrix_pf[:,self.active_laps[1:1+FORMATION_GAIN_WINDOW]],axis=0).mean()
+        #window_rate = np.nanmax(self.rate_matrix_pf[:, 1:1 + FORMATION_GAIN_WINDOW],axis=0).mean()
         formation_gain = formation_rate / window_rate
         self.formation_gain = formation_gain
         if formation_gain > 1.0:
@@ -219,9 +226,14 @@ class PlaceField:
             else:
                 coms_laps[i_lap] = np.average(pf_bins_range, weights=rates_lap)
         avg_com = np.nanmean(coms_laps)
-        center_bin = int(lb + np.round(avg_com))
-        centered_lb = center_bin - 4*NMF_STD_PF_WIDTH
-        centered_ub = center_bin + 4*NMF_STD_PF_WIDTH
+        try:
+            center_bin = int(lb + np.round(avg_com))
+            centered_lb = center_bin - 4*NMF_STD_PF_WIDTH
+            centered_ub = center_bin + 4*NMF_STD_PF_WIDTH
+        except ValueError:
+            print(f"ERROR in preparing PF for NMF in {self.sessionID}, cellid={self.cellid},"
+                  f"corridor={self.cor_index}, bounds=({lb},{ub}), fl,el=({self.formation_lap},{self.end_lap})")
+            return
 
         if centered_lb <= 0 or centered_ub >= self.N_pos_bins:
             return

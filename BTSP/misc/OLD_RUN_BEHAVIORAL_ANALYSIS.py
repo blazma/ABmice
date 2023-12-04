@@ -1,58 +1,38 @@
 import os
-import pandas
+import json
 import numpy as np
 import openpyxl
 import logging
-from ImageAnal import *
 from datetime import datetime
 from matplotlib import pyplot as plt
-import warnings
-warnings.filterwarnings("ignore")
 import argparse
 import seaborn as sns
-
-ANIMALS = {
-    "CA1": ["KS028",
-            "KS029",
-            "KS030",
-            "srb131"],
-    "CA3": ["srb231",
-            "srb251",
-            "srb269",
-            "srb270"]
-}
-SESSIONS_TO_IGNORE = {
-    "CA1": ['srb131_211019'], # reshuffles
-    "CA3": []
-}
-CORRIDORS = [14, 15,  # random
-             16, 18,  # block
-             17]  # new environment
-
-
-def grow_df(df_a, df_b):
-    if df_a is None:
-        df_a = df_b
-    else:
-        df_a = pandas.concat((df_a, df_b))
-    return df_a
+from ImageAnal import *
+from constants import ANIMALS, SESSIONS_TO_IGNORE, CORRIDORS
+from utils import grow_df, truncate_dict, makedir_if_needed
+import warnings
+warnings.filterwarnings("ignore")
 
 
 class BehaviorAnalysis:
-    def __init__(self, area, data_path, output_path, generate_plots=False, extra_info=""):
+    def __init__(self, area, data_path, output_path, random_only=True, generate_plots=False, extra_info=""):
         self.area = area
         self.animals = ANIMALS[area]
         self.sessions_to_ignore = SESSIONS_TO_IGNORE[area]
         self.meta_xlsx = f"{area}_meta.xlsx"
         self.data_path = data_path
+        self.random_only = random_only  # defaults to True
         self.generate_plots = generate_plots  # if True, generates ImageAnal plots for each session
         self.date = datetime.today().strftime("%y%m%d")
+
+        # load json containing session-protocol pairs (to filter sessions by protocol later)
+        with open("sessions.json") as session_protocol_file:
+            self.session_protocol_dict = json.load(session_protocol_file)[self.area]
 
         # set output folder
         self.extra_info = "" if not extra_info else f"_{extra_info}"
         self.output_root = f"{output_path}/behavioral_analysis_{self.area}_{self.date}{self.extra_info}"
-        if not os.path.exists(self.output_root):
-            os.makedirs(self.output_root)
+        makedir_if_needed(self.output_root)
 
         # set up logging
         logging_format = "%(asctime)s [%(levelname)s] %(message)s"
@@ -89,6 +69,9 @@ class BehaviorAnalysis:
     def _load_session(self, sessions_all, current_session):
         if current_session in SESSIONS_TO_IGNORE[self.area]:
             logging.info(f"{current_session} part of SESSIONS_TO_IGNORE list; skipping")
+            return None
+        if self.random_only and self.session_protocol_dict[current_session] != "random":
+            logging.info(f"{current_session} has protocol {self.session_protocol_dict[current_session]}; skipping")
             return None
 
         # set up ImagingSessionData parameters
@@ -154,59 +137,6 @@ class BehaviorAnalysis:
 
         self.behavior_dict_sess[f"Lsel(X-corr)"] = np.round(ISD.lick_selectivity_cross_corridor, 2)
 
-    def _plot_sessions(self, animal):
-        beh_df_animal = self.behavior_df[self.behavior_df["animalID"] == animal]
-        y_cols = ["Pcorrect(14)", "Pcorrect(15)", "Vsel(14)", "Vsel(15)", "Vsel(X-corr)", "Lsel(14)", "Lsel(15)", "Lsel(X-corr)"]
-        beh_df_animal_selcols = beh_df_animal[["sessionID", "protocol", *y_cols]]
-        beh_df_animal_selcols_melted = beh_df_animal_selcols.melt(["sessionID", "protocol"], var_name="cols", value_name="vals")
-
-        plt.figure()
-        ax = sns.lineplot(x="sessionID", y="vals", hue="cols", data=beh_df_animal_selcols_melted)
-        sns.scatterplot(x="sessionID", style="protocol", y="vals", hue="cols", data=beh_df_animal_selcols_melted, ax=ax, s=60)
-        handles, labels = ax.get_legend_handles_labels()
-        plt.ylim([-1.1, 1.1])
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
-        plt.legend(handles[len(y_cols):], labels[len(y_cols):], bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
-        plt.tight_layout()
-        plt.savefig(f"{self.output_root}/{animal}_behavior.pdf")
-        plt.close()
-
-    def _plot_correlation_matrix(self):
-        y_cols = ["Pcorrect(14)", "Pcorrect(15)", "Vsel(14)", "Vsel(15)", "Vsel(X-corr)", "Lsel(14)", "Lsel(15)", "Lsel(X-corr)"]
-        behavior_df_selcols = self.behavior_df[y_cols].abs()  # we take absolute value, since selectivity in either direction is fine
-        corr_matrix = behavior_df_selcols.corr()
-        plt.figure()
-        sns.heatmap(corr_matrix, annot=True)
-        plt.tight_layout()
-        plt.savefig(f"{self.output_root}/corr_matrix.pdf")
-        plt.close()
-
-    def _plot_behavioral_metrics(self):
-        plt.figure()
-        y_cols = ["Pcorrect(14)", "Pcorrect(15)", "Vsel(14)", "Vsel(15)", "Vsel(X-corr)", "Lsel(14)", "Lsel(15)", "Lsel(X-corr)"]
-        behavior_df_selcols = self.behavior_df[y_cols].abs()  # we take absolute value, since selectivity in either direction is fine
-
-        # plot all sessions
-        ax = sns.boxplot(data=behavior_df_selcols)
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
-        sns.stripplot(data=behavior_df_selcols, ax=ax, color="black")
-        handles, labels = ax.get_legend_handles_labels()
-        plt.legend(handles[len(y_cols):], labels[len(y_cols):], bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
-        plt.tight_layout()
-
-        # plot disengaged sessions
-        disengaged_sessions = ["srb251_221027_T1", "srb251_221027_T2"]
-        de_sess_df = self.behavior_df[self.behavior_df["sessionID"].isin(disengaged_sessions)]
-        de_sess_df_selcols = de_sess_df[y_cols].abs()
-        sns.stripplot(data=de_sess_df_selcols, ax=ax, color="red")
-
-        plt.savefig(f"{self.output_root}/behavioral_measures.pdf")
-        plt.close()
-
-    def _export_to_excel(self):
-        with pd.ExcelWriter(f"{self.output_root}/behavior_{self.area}{self.extra_info}.xlsx") as xlsx_writer:
-            self.behavior_df.to_excel(xlsx_writer, index=False)
-
     def analyze_behavior(self):
         sessions_meta_df = None
         for animal in self.animals:
@@ -256,20 +186,17 @@ class BehaviorAnalysis:
 
                 if self.generate_plots:
                     # plot selectivity histograms
-                    if not os.path.exists(f"{self.output_root}/selectivities"):
-                        os.makedirs(f"{self.output_root}/selectivities")
+                    makedir_if_needed(f"{self.output_root}/selectivities")
                     ISD.plot_speed_and_lick_selectivity(f"{self.output_root}/selectivities/{current_session}_selectivity.pdf")
 
                     # plot lap-by-lap behavior
-                    if not os.path.exists(f"{self.output_root}/behavior_lap_by_lap"):
-                        os.makedirs(f"{self.output_root}/behavior_lap_by_lap")
+                    makedir_if_needed(f"{self.output_root}/behavior_lap_by_lap")
                     save_path = f"{self.output_root}/behavior_lap_by_lap/{current_session}_lap_by_lap.pdf"
                     ISD.plot_session(average=False, filename=save_path, selected_laps=ISD.i_Laps_ImData)
 
                     # plot dF/F for problematic (high) tau sessions
                     if current_session in ["srb251_221027_T1", "srb251_221027_T2"]:
-                        if not os.path.exists(f"{self.output_root}/dF_F"):
-                            os.makedirs(f"{self.output_root}/dF_F")
+                        makedir_if_needed(f"{self.output_root}/dF_F")
                         for cellid in ISD.tuned_cells[0][0:3]:
                             save_path = f"{self.output_root}/dF_F/dF_F_{current_session}_cell_{cellid}.pdf"
                             ISD.plot_cell_laps(cellid, multipdf_object=save_path, write_pdf=True)
@@ -279,30 +206,30 @@ class BehaviorAnalysis:
 
             # sort sessions alphabetically (~ by date)
             self.behavior_df = self.behavior_df.sort_values(by=["area", "animalID", "sessionID"])
-            self._plot_sessions(animal)
 
         # sort sessions alphabetically (~ by date)
         self.behavior_df = self.behavior_df.sort_values(by=["area", "animalID", "sessionID"])
-        self._export_to_excel()
-        self._plot_correlation_matrix()
-        self._plot_behavioral_metrics()
+        self.behavior_df.to_pickle(f"{self.output_root}/behavior_df_{area}.pickle")
 
 
-# parse arguments
-parser = argparse.ArgumentParser()
-parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
-parser.add_argument("-dp", "--data-path", required=True)
-parser.add_argument("-op", "--output-path", default=os.getcwd())
-parser.add_argument("-gp", "--generate-plots", type=bool)
-parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
-args = parser.parse_args()
+if __name__ == "__main__":
+    # parse arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
+    parser.add_argument("-dp", "--data-path", required=True)
+    parser.add_argument("-op", "--output-path", default=os.getcwd())
+    parser.add_argument("-gp", "--generate-plots", type=bool)
+    parser.add_argument("-ro", "--random-only", type=bool, default=True)
+    parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
+    args = parser.parse_args()
 
-area = args.area
-data_path = args.data_path
-output_path = args.output_path
-generate_plots = args.generate_plots
-extra_info = args.extra_info
+    area = args.area
+    data_path = args.data_path
+    output_path = args.output_path
+    generate_plots = args.generate_plots
+    random_only = args.random_only
+    extra_info = args.extra_info
 
-# run analysis
-analysis = BehaviorAnalysis(area, data_path, output_path, generate_plots, extra_info)
-analysis.analyze_behavior()
+    # run analysis
+    analysis = BehaviorAnalysis(area, data_path, output_path, generate_plots, random_only, extra_info)
+    analysis.analyze_behavior()

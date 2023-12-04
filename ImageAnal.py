@@ -35,9 +35,9 @@ from Stages import *
 from Corridors import *
 from ImShuffle import *
 
-import PlaceField as PF
-from PlaceField import PlaceField
-from BtspAnalysisSingleCell import BtspAnalysisSingleCell
+from BTSP.TunedCellList import TunedCell
+import BTSP.PlaceField as PF
+from BTSP.BtspAnalysisSingleCell import BtspAnalysisSingleCell
 
 if (platform == 'darwin'):
     csv_kwargs = {'delimiter':' '}
@@ -2598,7 +2598,7 @@ class ImagingSessionData:
         plt.savefig(filename)
         plt.close()
 
-    def run_btsp_analysis(self, cellid, shift_criterion=True):
+    def run_btsp_analysis(self, cellid, shift_criterion=True, shuffled_laps=False):
         for cor_index in range(self.corridors.size):
             current_corridor = self.corridors[cor_index]
             i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == current_corridor)[0]
@@ -2613,7 +2613,11 @@ class ImagingSessionData:
             i_cell = np.where(place_cells == cellid)[0]
             p95_cell = self.p95[cor_index][:, i_cell]
             bins_p95_geq_afr = [i for i in range(self.N_pos_bins) if average_firing_rate[i] >= p95_cell[i]]
-            
+
+            if shuffled_laps:
+                rng = np.random.default_rng()
+                rng.shuffle(rate_matrix, axis=1)
+
             btsp_analysis_corridor = BtspAnalysisSingleCell(self.sessionID, cellid, rate_matrix,
                                                             corridors=self.corridors, bins_p95_geq_afr=bins_p95_geq_afr,
                                                             i_laps=i_laps, shift_criterion=shift_criterion)
@@ -2623,6 +2627,31 @@ class ImagingSessionData:
                 self.btsp_analysis = btsp_analysis_corridor
             else:
                 self.btsp_analysis += btsp_analysis_corridor
+
+    def prepare_btsp_analysis(self, shuffled_laps=False):
+        tuned_cell_ids = np.union1d(self.tuned_cells[0], self.tuned_cells[1])
+        tuned_cells = []
+        for cellid in tuned_cell_ids:
+            for i_cor, corridor in enumerate(self.corridors):
+                i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor)[0]
+
+                # calculate rate matrix
+                total_spikes = self.activity_tensor[:, cellid, i_laps]
+                total_time = self.activity_tensor_time[:, i_laps]
+                rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
+                average_firing_rate = np.nansum(rate_matrix, axis=1) / i_laps.size
+
+                i_cell = np.where(tuned_cell_ids == cellid)[0]
+                p95_cell = self.p95[i_cor][:, i_cell]
+                bins_p95_geq_afr = [i for i in range(self.N_pos_bins) if average_firing_rate[i] >= p95_cell[i]]
+
+                if shuffled_laps:
+                    rng = np.random.default_rng()
+                    rng.shuffle(rate_matrix, axis=1)
+
+                tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, bins_p95_geq_afr)
+                tuned_cells.append(tuned_cell)
+        return tuned_cells
 
     def plot_popact(self, cellids, corridor=-1, name_string='selected_cells', bylaps=False, set_ymax=None):
         ## plot the total population activity in all trials in a given corridor

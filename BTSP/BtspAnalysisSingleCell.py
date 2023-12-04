@@ -1,15 +1,10 @@
-import os
-import csv
 import numpy as np
-import pandas as pd
-
-import PlaceField as PF
+from utils import grow_df
 from PlaceField import PlaceField
-from matplotlib import pyplot as plt
 
 
 class BtspAnalysisSingleCell:
-    def __init__(self, sessionID, cellid, rate_matrix, corridors=None,
+    def __init__(self, sessionID, cellid, rate_matrix, params=None, corridors=None,
                  place_field_bounds=None, bins_p95_geq_afr=None, i_laps=None, shift_criterion=True):
         """
         BTSP analysis for a single cell from a given session
@@ -33,6 +28,7 @@ class BtspAnalysisSingleCell:
             self.animalID, _, _ = self.sessionID.partition("_")
         self.cellid = cellid
         self.rate_matrix = rate_matrix
+        self.params = params
 
         if corridors is None:
             self.corridors = np.zeros(1)
@@ -93,7 +89,7 @@ class BtspAnalysisSingleCell:
                 candidate_pfs.append(candidate_pf)
 
         # filter out too short candidate place fields
-        candidate_pfs_filtered = list(filter(lambda cpf: len(cpf) > PF.FORMATION_CONSECUTIVE_BINS, candidate_pfs))
+        candidate_pfs_filtered = list(filter(lambda cpf: len(cpf) > self.params["FORMATION_CONSECUTIVE_BINS"], candidate_pfs))
         place_field_bounds = [(cpf[0], cpf[-1]) for cpf in candidate_pfs_filtered]
         return place_field_bounds
 
@@ -115,6 +111,7 @@ class BtspAnalysisSingleCell:
                 place_field.i_laps = self.i_laps
                 place_field.rate_matrix = self.rate_matrix
                 place_field.N_pos_bins = self.rate_matrix.shape[0]
+                place_field.params = self.params
 
                 place_field.set_bounds(self.place_field_bounds[i_cpf])
                 place_field.find_formation_lap(start_lap=0)
@@ -131,9 +128,11 @@ class BtspAnalysisSingleCell:
 
                 # calculate formation gain and shift for all reliable place fields
                 # which have the minimum number of laps required for shift calculation
-                if len(place_field.i_laps) > PF.FORMATION_GAIN_WINDOW and len(place_field.active_laps) > PF.SHIFT_WINDOW:
+                if len(place_field.i_laps) > self.params["FORMATION_GAIN_WINDOW"] and len(place_field.active_laps) > self.params["FORMATION_GAIN_WINDOW"]:
+                #if len(place_field.i_laps) > PF.FORMATION_GAIN_WINDOW and len(place_field.active_laps) > PF.SHIFT_WINDOW:
                     place_field.calculate_formation_gain()
                     place_field.calculate_shift()
+                    place_field.evaluate_quality()
 
                 # filter place fields that form too early to assess novelty
                 if place_field.formation_lap_uncorrected < 2:
@@ -142,7 +141,7 @@ class BtspAnalysisSingleCell:
                     continue
 
                 # filter place fields that are too short to meaningfully assess drift
-                if len(place_field.active_laps) <= PF.SHIFT_WINDOW + PF.SPEARMAN_SKIP_LAPS + 2:  # +2 points are at least necessary to calculate spearman correlation (else nan)
+                if len(place_field.active_laps) <= self.params["SHIFT_WINDOW"] + self.params["SPEARMAN_SKIP_LAPS"] + 2:  # +2 points are at least necessary to calculate spearman correlation (else nan)
                     place_field.category = "transient"
                     self.transient_place_fields.append(place_field)
                     continue
@@ -164,12 +163,6 @@ class BtspAnalysisSingleCell:
                 self.candidate_btsp_place_fields.append(place_field)
 
     def combine_place_field_dataframes(self):
-        columns = [
-            "session id", "cell id", "corridor", "category", "lower bound", "upper bound", "formation lap", "end lap",
-            "is BTSP", "has high gain", "has no drift", "has backwards shift", "formation gain", "initial shift",
-            "spearman r", "spearman p", "linear fit m", "linear fit b"
-        ]
-        place_fields_df = pd.DataFrame(columns=columns)
         place_field_categories = [
             self.unreliable_place_fields,
             self.early_place_fields,
@@ -177,11 +170,10 @@ class BtspAnalysisSingleCell:
             self.nonbtsp_novel_place_fields,
             self.btsp_place_fields
         ]
+        place_fields_df = None
         for place_field_category in place_field_categories:
             for place_field in place_field_category:
-                place_fields_df = pd.concat([place_fields_df, place_field.to_dataframe()], ignore_index=True, axis=0)
-        if len(self.corridors) == 1:
-            del place_fields_df["corridor"]
+                place_fields_df = grow_df(place_fields_df, place_field.to_dataframe())
         return place_fields_df
 
     def create_nmf_matrix(self, type=""):

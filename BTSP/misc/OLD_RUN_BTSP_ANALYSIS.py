@@ -1,75 +1,48 @@
 import os
-from copy import deepcopy
-import pandas
 import numpy as np
-import pickle
 import openpyxl
+import json
 import logging
-from ImageAnal import *
 from datetime import datetime
-from collections import defaultdict, OrderedDict
+import argparse
+from ImageAnal import *
+from constants import ANIMALS, SESSIONS_TO_IGNORE, CORRIDORS, DISENGAGEMENT
+from utils import grow_df, makedir_if_needed
 import warnings
 warnings.filterwarnings("ignore")
-import argparse
-
-ANIMALS = {
-    "CA1": ["KS028",
-            "KS029",
-            "KS030",
-            "srb131"],
-    "CA3": ["srb231",
-            "srb251",
-            "srb269",
-            "srb270"]
-}
-SESSIONS_TO_IGNORE = {
-    "CA1": [#'KS028_110521',  # error
-            'KS029_110321',   # no p95
-            'KS029_110721',   # error
-            'KS029_110821',   # error
-            'KS029_110521',   # error
-            'KS030_110721',   # error
-            'srb131_211019'], # reshuffles
-    "CA3": []
-}
-CORRIDORS = [14, 15,  # random
-             16, 18,  # block
-             17]  # new environment
-
-
-def grow_df(df_a, df_b):
-    if df_a is None:
-        df_a = df_b
-    else:
-        df_a = pandas.concat((df_a, df_b))
-    return df_a
-
-
-def makedir_if_needed(dir_path):
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
 
 
 class BtspAnalysis:
-    def __init__(self, area, data_path, output_path, extra_info="",
-                 is_shift_criterion_on=True, is_create_ratemaps=False, is_masks=False, is_poster=False):
+    def __init__(self, area, data_path, output_path, extra_info="", random_only=True,
+                 is_shift_criterion_on=True, is_create_ratemaps=False, is_masks=False, is_poster=False,
+                 selected_sessions=None):
         self.area = area
         self.animals = ANIMALS[area]
         self.sessions_to_ignore = SESSIONS_TO_IGNORE[area]
         self.meta_xlsx = f"{area}_meta.xlsx"
         self.data_path = data_path
         self.date = datetime.today().strftime("%y%m%d")
+        self.random_only = True
+        self.selected_sessions = None
+
+        # load json containing session-protocol pairs (to filter sessions by protocol later)
+        with open("sessions.json") as session_protocol_file:
+            self.session_protocol_dict = json.load(session_protocol_file)[self.area]
 
         # set output folder
-        self.extra_info = "" if not extra_info else f"_{extra_info}"
+        self.shuffled_laps = True
+        if self.shuffled_laps:
+            self.extra_info = "_shuffled_laps" if not extra_info else f"_{extra_info}_shuffled_laps"
+        else:
+            self.extra_info = "" if not extra_info else f"_{extra_info}"
         self.output_root = f"{output_path}/BTSP_analysis_{self.area}_{self.date}{self.extra_info}"
         makedir_if_needed(self.output_root)
 
         # read extra arguments
-        self.is_shift_criterion_on = is_shift_criterion_on
-        self.is_create_ratemaps = is_create_ratemaps
-        self.is_masks = is_masks
-        self.is_poster = is_poster
+        self.is_shift_criterion_on = True
+        self.is_create_ratemaps = False
+        self.is_masks = False
+        self.is_poster = False
 
         # set up logging
         logging_format = "%(asctime)s [%(levelname)s] %(message)s"
@@ -106,8 +79,19 @@ class BtspAnalysis:
         if current_session in SESSIONS_TO_IGNORE[self.area]:
             logging.info(f"{current_session} part of SESSIONS_TO_IGNORE list; skipping")
             return None
+        if self.random_only and self.session_protocol_dict[current_session] != "random":
+            logging.info(f"{current_session} has protocol {self.session_protocol_dict[current_session]}; skipping")
+            return None
+        if current_session in DISENGAGEMENT[self.area]:
+            logging.info(f"{current_session} part of DISENGAGEMENT list; skipping")
+            return None
+        if self.selected_sessions is not None:
+            if current_session not in self.selected_sessions:
+                logging.info(f"{current_session} NOT part of selected sessions list; skipping")
+                return None
 
         # set up ImagingSessionData parameters
+        logging.info(f"running analysis for session {current_session}")
         date_time = sessions_all[current_session]["date_time"]
         name = sessions_all[current_session]["name"]
         task = sessions_all[current_session]["task"]
@@ -212,7 +196,6 @@ class BtspAnalysis:
                 "btsp": None
             }
             for current_session in sessions_all:
-                logging.info(f"running analysis for session {current_session}")
                 ISD = self._load_session(sessions_all, current_session)
 
                 # if failed to load ISD, skip
@@ -240,7 +223,7 @@ class BtspAnalysis:
                 # run BTSP analysis
                 logging.info(f"running BTSP analysis for session {current_session}, create_ratemap_plots={self.is_create_ratemaps}")
                 for cellid in tuned_cells:
-                    ISD.run_btsp_analysis(cellid, self.is_shift_criterion_on)
+                    ISD.run_btsp_analysis(cellid, self.is_shift_criterion_on, shuffled_laps=self.shuffled_laps)
                     if self.is_create_ratemaps:
                         makedir_if_needed(f"{self.output_root}/ratemaps")
                         makedir_if_needed(f"{self.output_root}/ratemaps/{current_session}")
@@ -290,19 +273,23 @@ class BtspAnalysis:
                     np.save(nmf_file, nmf_matrices_animal[nmf_type])
 
 
-# parse arguments
-parser = argparse.ArgumentParser()
-parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
-parser.add_argument("-dp", "--data-path", required=True)
-parser.add_argument("-op", "--output-path", default=os.getcwd())
-parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
-parser.add_argument("--shift", type=bool)
-parser.add_argument("--ratemaps", type=bool)
-parser.add_argument("--masks", type=bool)
-parser.add_argument("--poster", type=bool)
-args = parser.parse_args()
+if __name__ == "__main__":
+    #parse arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
+    parser.add_argument("-dp", "--data-path", required=True)
+    parser.add_argument("-op", "--output-path", default=os.getcwd())
+    parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
+    #parser.add_argument("-ro", "--random-only", type=bool, default=True)
+    parser.add_argument("--shift", type=bool)
+    #parser.add_argument("--ratemaps", type=bool, default=False)
+    parser.add_argument("--masks", type=bool)
+    parser.add_argument("--poster", type=bool)
+    parser.add_argument("--selected-sessions", nargs="+")
+    args = parser.parse_args()
 
-# run analysis
-analysis = BtspAnalysis(args.area, args.data_path, args.output_path, extra_info=args.extra_info, is_masks=args.masks,
-                        is_shift_criterion_on=args.shift, is_create_ratemaps=args.ratemaps, is_poster=args.poster)
-analysis.run_btsp_analysis()
+    #run analysis
+    analysis = BtspAnalysis(args.area, args.data_path, args.output_path, extra_info=args.extra_info, random_only=True,
+                            is_masks=args.masks, is_shift_criterion_on=args.shift, is_create_ratemaps=False,
+                            is_poster=args.poster, selected_sessions = args.selected_sessions)
+    analysis.run_btsp_analysis()

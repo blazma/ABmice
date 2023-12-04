@@ -6,60 +6,14 @@ import matplotlib
 import seaborn as sns
 import cmasher
 import os
-import scipy
 import argparse
 from datetime import datetime
-from collections import namedtuple
-
-ANIMALS = {
-    "CA1": ["KS028",
-            "KS029",
-            "KS030",
-            "srb131"],
-    "CA3": ["srb231",
-            "srb251",
-            "srb269",
-            "srb270"]
-}
-SESSIONS_TO_IGNORE = {
-    "CA1": [#'KS028_110521',  # error
-            'KS029_110321',   # no p95
-            'KS029_110721',   # error
-            'KS029_110821',   # error
-            'KS029_110521',   # error
-            'KS030_110721',   # error
-            'srb131_211019'], # reshuffles
-    "CA3": []
-}
-CORRIDORS = [14, 15,  # random
-             16, 18,  # block
-             17]  # new environment
-
-Category = namedtuple('Category', ["order", "color"])
-CATEGORIES = {
-    "unreliable": Category(0, "#a2a1a1"),
-    "early": Category(1, "#00e3ff"),
-    "transient": Category(2, "#ffe000"),
-    "non-btsp": Category(3, "#ff000f"),
-    "btsp": Category(4, "#be70ff"),
-}
-
-
-def grow_df(df_a, df_b):
-    if df_a is None:
-        df_a = df_b
-    else:
-        df_a = pd.concat((df_a, df_b))
-    return df_a
-
-
-def makedir_if_needed(dir_path):
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
+from constants import ANIMALS, SESSIONS_TO_IGNORE, CORRIDORS, CATEGORIES
+from utils import grow_df, makedir_if_needed
 
 
 class BtspStatistics:
-    def __init__(self, area, data_path, output_path, extra_info=""):
+    def __init__(self, area, data_path, output_path="", extra_info=""):
         self.area = area
         self.animals = ANIMALS[area]
         self.data_path = data_path
@@ -73,12 +27,17 @@ class BtspStatistics:
 
         # set output folder
         self.extra_info = "" if not extra_info else f"_{extra_info}"
-        self.output_root = f"{output_path}/BTSP_plots_{self.area}_{self.date}{self.extra_info}"
-        makedir_if_needed(self.output_root)
+        if output_path:
+            self.output_root = f"{output_path}/BTSP_plots_{self.area}_{self.date}{self.extra_info}"
+            makedir_if_needed(self.output_root)
 
         # dataframes for place fields and cell statistics
         self.pfs_df = None
         self.cell_stats_df = None
+        self.shift_gain_df = None
+
+        # "debug"
+        self.long_pf_only = True
 
     def _use_font(self):
         from matplotlib import font_manager
@@ -102,6 +61,8 @@ class BtspStatistics:
             self.cell_stats_df = grow_df(self.cell_stats_df, cell_stats_df_animal)
             self.pfs_df = grow_df(self.pfs_df, pfs_df_animal)
         self.pfs_df = self.pfs_df.reset_index().drop("index", axis=1)
+        #if self.long_pf_only:
+        #    self.pfs_df = self.pfs_df[self.pfs_df["end lap"] - self.pfs_df["formation lap"] > 15].reset_index()
         self.cell_stats_df = self.cell_stats_df.reset_index().drop("index", axis=1)
 
         # assign category orders
@@ -166,14 +127,14 @@ class BtspStatistics:
         axs[0].set_ylabel("# place fields")
         axs[0].set_xlabel("")
         axs[0].set_xticklabels(axs[0].get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
-        axs[0].set_ylim([0, 250])
+        #axs[0].set_ylim([0, 250])
         # axs[0].set_yticks(np.linspace(0,pfs_by_category["session id"].values.max(),num=5))
         axs[0].spines[['right', 'top']].set_visible(False)
         # plt.suptitle(f"[{area}] Distribution of place fields by PF categories across all animals")
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_place_fields.pdf")
 
-    def plot_place_fields(self):
+    def plot_place_fields_by_session(self):
         fig, ax = plt.subplots()
         pfs_by_category = self.pfs_df.groupby(["category", "session id", "category_order"]).count().sort_values(by="category_order")
         pf_counts = pfs_by_category.reset_index()[["category", "session id", "cell id"]]
@@ -182,7 +143,7 @@ class BtspStatistics:
         plt.title(f"[{self.area}] Number of various place fields for each session")
         ax.set_ylabel("# place fields")
         ax.set_xlabel("")
-        plt.savefig(f"{self.output_root}/plot_place_fields.pdf")
+        plt.savefig(f"{self.output_root}/plot_place_fields_by_session.pdf")
 
     def plot_place_field_proportions(self):
         fig, ax = plt.subplots(figsize=(6, 3), dpi=125)
@@ -333,73 +294,52 @@ class BtspStatistics:
             filename = f"{self.output_root}/plot_place_fields_criteria_venn_diagram.pdf"
         plt.savefig(filename)
 
-    def plot_shift_gain_distribution(self):
+    def calc_shift_gain_distribution(self):
         shift_gain_df = self.pfs_df[["newly formed", "initial shift", "formation gain"]].reset_index(drop=True)
         shift_gain_df = shift_gain_df[(shift_gain_df["initial shift"].notna()) & (shift_gain_df["formation gain"].notna())]
+        shift_gain_df["log10(formation gain)"] = np.log10(shift_gain_df["formation gain"])
+        self.shift_gain_df = shift_gain_df.reset_index(drop=True)
 
-        # plot all PFs
-        g = sns.jointplot(data=shift_gain_df.reset_index(drop=True), x="initial shift", y="formation gain",
-                          hue="newly formed", alpha=1, s=3, marginal_kws={"common_norm": False})
-        g.ax_joint.set_yscale("log")
-        plt.ylim([0.1,10])
+    def plot_shift_gain_distribution(self, newlyf_only=False):
+        if newlyf_only:
+            shift_gain_df_NF = self.shift_gain_df[self.shift_gain_df["newly formed"] == True].reset_index(drop=True)
+            sns.jointplot(data=shift_gain_df_NF, x="initial shift", y="log10(formation gain)",
+                              alpha=1, s=10, marginal_kws={"common_norm": False}, color="orange")
+            filename = "plot_shift_gain_distributions_newlyF_only"
+        else:
+            sns.jointplot(data=self.shift_gain_df, x="initial shift", y="log10(formation gain)",
+                              hue="newly formed", alpha=1, s=10, marginal_kws={"common_norm": False})
+            filename = "plot_shift_gain_distributions"
+        plt.ylim([-1.5,1.5])
         plt.xlim([-15, 15])
         plt.axvline(x=0, c="k", linestyle="--")
-        plt.axhline(y=1, c="k", linestyle="--")
-        plt.savefig(f"{self.output_root}/plot_shift_gain_distributions.pdf")
+        plt.axhline(y=0, c="k", linestyle="--")
+        plt.savefig(f"{self.output_root}/{filename}.pdf")
 
-        # plot only newly formed PFs
-        shift_gain_df_CA1 = shift_gain_df[shift_gain_df["newly formed"] == True]
-        g = sns.jointplot(data=shift_gain_df_CA1.reset_index(drop=True), x="initial shift", y="formation gain",
-                          alpha=1, s=3, marginal_kws={"common_norm": False}, color="orange")
-        g.ax_joint.set_yscale("log")
-        plt.ylim([0.1,10])
-        plt.xlim([-15, 15])
-        plt.axvline(x=0, c="k", linestyle="--")
-        plt.axhline(y=1, c="k", linestyle="--")
-        plt.savefig(f"{self.output_root}/plot_shift_gain_distributions_newlyF_only.pdf")
+        # plot gain-FL distro
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()
+        pfs_df_filt = self.pfs_df[self.pfs_df["end lap"] - self.pfs_df["formation lap"] > 15]
+        FL_gain_df = pfs_df_filt[["formation lap", "formation gain"]].reset_index(drop=True)
+        FL_gain_df = FL_gain_df[(FL_gain_df["formation lap"].notna()) & (FL_gain_df["formation gain"].notna())]
+        FL_gain_df["log10(formation gain)"] = np.log10(FL_gain_df["formation gain"])
+        sns.pointplot(FL_gain_df, x="formation lap", y="log10(formation gain)", ax=ax1)
+        sns.histplot(FL_gain_df, x="formation lap", ax=ax2, binwidth=1)
+        plt.xlim([0,20])
+        ax1.set_ylim([0, 0.75])
+        plt.savefig(f"{self.output_root}/plot_gain_FL_distribution.pdf")
+        plt.close()
 
-        # subsampling
-        if self.area == "CA3":  # we want to subsample only the CA1 PFs and compare against CA3
-            return
-
-        shift_diffs = []
-        gain_diffs = []
-        for seed in range(1000):
-            shift_gain_df_subs = shift_gain_df.sample(n=274, random_state=seed)
-
-            mean_shift_newlyf = shift_gain_df_subs[shift_gain_df_subs['newly formed'] == True]['initial shift'].mean()
-            mean_shift_stable = shift_gain_df_subs[shift_gain_df_subs['newly formed'] == False]['initial shift'].mean()
-            shift_diff = mean_shift_newlyf - mean_shift_stable
-            shift_diffs.append(shift_diff)
-
-            mean_gain_newlyf = shift_gain_df_subs[shift_gain_df_subs['newly formed'] == True]['formation gain'].mean()
-            mean_gain_stable = shift_gain_df_subs[shift_gain_df_subs['newly formed'] == False]['formation gain'].mean()
-            gain_diff = mean_gain_newlyf - mean_gain_stable
-            gain_diffs.append(gain_diff)
-        fig, axs = plt.subplots(2,1)
-        sns.kdeplot(data=shift_diffs, ax=axs[0], color="k")
-        sns.kdeplot(data=gain_diffs, ax=axs[1], color="k")
-        axs[0].set_title("shift")
-        axs[1].set_title("gain")
-
-        # plot CA3 values on distributions
-        shift_diff_CA3 = -0.091
-        gain_diff_CA3 = 0.252
-        axs[0].axvline(shift_diff_CA3, c="red", label="CA3")
-        axs[1].axvline(gain_diff_CA3, c="red", label="CA3")
-
-        # plot confidence intervals
-        axs[0].axvline(np.percentile(shift_diffs, q=95), c="blue", label="CA1 95th p.")
-        axs[0].axvline(np.percentile(shift_diffs, q=99), c="cyan", label="CA1 99th p.")
-        axs[1].axvline(np.percentile(gain_diffs, q=5), c="blue", label="CA1 5th p.")
-        axs[1].axvline(np.percentile(gain_diffs, q=1), c="cyan", label="CA1 1st p.")
-
-        # add legends
-        axs[0].legend()
-        axs[1].legend()
-
-        plt.tight_layout()
-        plt.savefig(f"{self.output_root}/plot_shift_gain_bootstrap_CA3.pdf")
+        # plot FL-lifespan distro
+        fig, ax1 = plt.subplots()
+        #self.pfs_df["lifespan"] = self.pfs_df["end lap"]# - self.pfs_df["formation lap"]
+        pfs_df_filt = self.pfs_df[self.pfs_df["formation lap"] > -1]
+        FL_LS_df = pfs_df_filt[["formation lap", "end lap"]].reset_index(drop=True)
+        FL_LS_df = FL_LS_df[(FL_LS_df["formation lap"].notna()) & (FL_LS_df["end lap"].notna())]
+        sns.violinplot(FL_LS_df, x="formation lap", y="end lap", ax=ax1, inner=None, native_scale=True)
+        plt.xlim([0,10])
+        plt.savefig(f"{self.output_root}/plot_FL_EL_distribution.pdf")
+        plt.close()
 
     def plot_distance_from_RZ_distribution(self, corr=0):
         # pfoi = place fields of interest
@@ -437,7 +377,7 @@ class BtspStatistics:
         sns.histplot(data=pfoi, x="distance from RZ", hue="newly formed", multiple="dodge", binwidth=1)
         plt.savefig(f"{self.output_root}/plot_distance_from_RZ_distribution.pdf")
 
-    def plot_no_shift_criterion(self, noshift_path):
+    def plot_no_shift_criterion(self, noshift_path=None):
         if noshift_path == None:  # if no path was provided then we don't want this comparison
             return
 
@@ -465,32 +405,36 @@ class BtspStatistics:
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/no_shift_criterion_plot.pdf")
 
-# parse arguments
-parser = argparse.ArgumentParser()
-parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
-parser.add_argument("-dp", "--data-path", required=True)
-parser.add_argument("-op", "--output-path", default=os.getcwd())
-parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
-parser.add_argument("-np", "--no-shift-path")
-args = parser.parse_args()
+if __name__ == "__main__":
+    # parse arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
+    parser.add_argument("-dp", "--data-path", required=True)
+    parser.add_argument("-op", "--output-path", default=os.getcwd())
+    parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
+    parser.add_argument("-np", "--no-shift-path")
+    args = parser.parse_args()
 
-area = args.area
-data_path = args.data_path
-output_path = args.output_path
-extra_info = args.extra_info
-noshift_path = args.no_shift_path
+    area = args.area
+    data_path = args.data_path
+    output_path = args.output_path
+    extra_info = args.extra_info
+    noshift_path = args.no_shift_path
 
-# run analysis
-btsp_statistics = BtspStatistics(area, data_path, output_path, extra_info)
-btsp_statistics.load_data()
-btsp_statistics.calc_place_field_proportions()
-btsp_statistics.plot_cells()
-btsp_statistics.plot_place_fields()
-btsp_statistics.plot_place_field_proportions()
-btsp_statistics.plot_place_fields_criteria()
-btsp_statistics.plot_place_field_properties()
-btsp_statistics.plot_place_field_heatmap()
-btsp_statistics.plot_place_fields_criteria_venn_diagram()
-btsp_statistics.plot_shift_gain_distribution()
-btsp_statistics.plot_distance_from_RZ_distribution()
-btsp_statistics.plot_no_shift_criterion(noshift_path=noshift_path)
+    #run analysis
+    btsp_statistics = BtspStatistics(area, data_path, output_path, extra_info)
+    btsp_statistics.load_data()
+    btsp_statistics.calc_place_field_proportions()
+    btsp_statistics.calc_shift_gain_distribution()
+    #btsp_statistics.plot_cells()
+    #btsp_statistics.plot_place_fields()
+    #btsp_statistics.plot_place_fields_by_session()
+    #btsp_statistics.plot_place_field_proportions()
+    #btsp_statistics.plot_place_fields_criteria()
+    #btsp_statistics.plot_place_field_properties()
+    #btsp_statistics.plot_place_field_heatmap()
+    #btsp_statistics.plot_place_fields_criteria_venn_diagram()
+    btsp_statistics.plot_shift_gain_distribution()
+    #btsp_statistics.plot_shift_gain_distribution(newlyf_only=True)
+    #btsp_statistics.plot_distance_from_RZ_distribution()
+    #btsp_statistics.plot_no_shift_criterion(noshift_path=noshift_path)

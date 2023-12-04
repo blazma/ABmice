@@ -1,4 +1,5 @@
-
+import os
+import pandas as pd
 import numpy as np
 
 def vcorrcoef(X,y, zero_var_out=0):
@@ -128,6 +129,18 @@ def test_Mcorrcoeff():
         return False
 
     return True
-    
-test_vcorrcoeff()
-test_Mcorrcoeff()
+
+def grow_df(df_a, df_b):
+    if df_a is None:
+        df_a = df_b
+    else:
+        df_a = pd.concat((df_a, df_b))
+    return df_a
+
+def makedir_if_needed(dir_path):
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+
+def truncate_dict(d):
+    # returns dict with just the first element
+    return dict([list(d.items())[0]])
