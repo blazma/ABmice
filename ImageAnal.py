@@ -35,7 +35,7 @@ from Stages import *
 from Corridors import *
 from ImShuffle import *
 
-from BTSP.TunedCellList import TunedCell
+from BTSP.TunedCell import TunedCell
 import BTSP.PlaceField as PF
 from BTSP.BtspAnalysisSingleCell import BtspAnalysisSingleCell
 
@@ -48,7 +48,9 @@ else:
 
 class ImagingSessionData:
     'Base structure for both imaging and behaviour data'
-    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME, sessionID=np.nan, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False, reward_zones=None, spikes_tag='', data_folder='analysed_data'):
+    def __init__(self, datapath, date_time, name, task, suite2p_folder, imaging_logfile_name, TRIGGER_VOLTAGE_FILENAME,
+                 sessionID=np.nan, selected_laps=None, speed_threshold=5, randseed=123, elfiz=False, reward_zones=None,
+                 spikes_tag='', data_folder='analysed_data', disengaged_laps=None):
         self.datapath = datapath
         self.date_time = date_time
         self.name = name
@@ -282,6 +284,7 @@ class ImagingSessionData:
         # BTSP analysis
         self.p95 = []
         self.btsp_analysis = None  # this will be a BtspAnalysisSingleCell object after calling run_btsp_analysis()
+        self.disengaged_laps = disengaged_laps
 
         # lick and speed selectivity
         self.speed_selectivity_laps = {}
@@ -2631,15 +2634,28 @@ class ImagingSessionData:
     def prepare_btsp_analysis(self, shuffled_laps=False):
         tuned_cell_ids = np.union1d(self.tuned_cells[0], self.tuned_cells[1])
         tuned_cells = []
+        tuning_curves = {
+            14: [],
+            15: []
+        }
         for cellid in tuned_cell_ids:
             for i_cor, corridor in enumerate(self.corridors):
                 i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor)[0]
+
+                # filter out disengaged laps if there exist any
+                if self.disengaged_laps:
+                    DE_start, DE_end = self.disengaged_laps
+                    if DE_start != 0:  # DE must be at the end, so we skip everything after DE start
+                        i_laps = i_laps[:DE_start]
+                    else:  # DE must be at the beginning, so we pick up afterwards (DE_end and beyond)
+                        i_laps = i_laps[DE_end:]
 
                 # calculate rate matrix
                 total_spikes = self.activity_tensor[:, cellid, i_laps]
                 total_time = self.activity_tensor_time[:, i_laps]
                 rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
                 average_firing_rate = np.nansum(rate_matrix, axis=1) / i_laps.size
+                tuning_curves[corridor].append((cellid, average_firing_rate))
 
                 i_cell = np.where(tuned_cell_ids == cellid)[0]
                 p95_cell = self.p95[i_cor][:, i_cell]
@@ -2649,9 +2665,19 @@ class ImagingSessionData:
                     rng = np.random.default_rng()
                     rng.shuffle(rate_matrix, axis=1)
 
-                tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, bins_p95_geq_afr)
+                imaged_ImLaps = np.array(self.ImLaps)[self.i_Laps_ImData][i_laps]
+                frames_pos = [lap.frames_pos for lap in imaged_ImLaps]  # list, long as number of imaged laps in corridor, each element a list of positions (roxel)
+                frames_pos_bins = [np.floor(frames_pos_roxel / self.corridor_length_roxel * self.N_pos_bins) for frames_pos_roxel in frames_pos]  # change pos units from roxel to space bins
+                frames_dF_F = [lap.frames_dF_F[cellid,:] for lap in imaged_ImLaps]  # list, long as number of imaged laps in corridor, each element a list of dF/F for a particular cell
+
+                n_events = self.N_events[cellid]
+                total_time = self.ImLaps[self.i_Laps_ImData[-1]].raw_time.max() - self.ImLaps[self.i_Laps_ImData[0]].raw_time.min()
+                             # take last timestamp of last imaged lap and subtract first timestamp of first imaged lap
+
+                tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, bins_p95_geq_afr,
+                                       frames_pos_bins, frames_dF_F, n_events, total_time)
                 tuned_cells.append(tuned_cell)
-        return tuned_cells
+        return tuned_cells, tuning_curves
 
     def plot_popact(self, cellids, corridor=-1, name_string='selected_cells', bylaps=False, set_ymax=None):
         ## plot the total population activity in all trials in a given corridor
@@ -3098,7 +3124,7 @@ class ImagingSessionData:
             plt.show(block=False)
 
 
-    def save_cell_stats(self, path=""):
+    def save_cell_counts(self, path=""):
         if self.sessionID is None:
             animalID = None
         elif "_" not in self.sessionID:
@@ -3119,8 +3145,7 @@ class ImagingSessionData:
         df = pd.DataFrame.from_dict([cell_stats])
         if path:
             df.to_pickle(path)
-        #with open("C:/home/makaralab/tuned.csv", "a") as tuned_file:
-        #    tuned_file.writelines([self.sessionID, ",", str(N_active_cells), ",", str(N_tuned_cells), ",", str(len(self.tuned_cells[0])), ",", str(len(self.tuned_cells[1])), "\n"])
+
         return df
 
     def save_data(self, save_properties=True, save_ratemaps=True, save_laptime=True, save_lick_speed_stats=True, save_place_code_stats = True, plot=False):

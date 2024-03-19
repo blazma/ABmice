@@ -100,31 +100,48 @@ def spks_cleaner(fc, spks, event_snr_threshold=3.5, peri_median_width=0.5, pre_r
 
 ################## CA3 all
 
-#base_folder_all_CA3 = "D:\\special\\all_CA3_tau0.8_gaspar\\data"
-#base_folders_all_CA3 = [
-#    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220804\\",
-#    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220808\\",
-#    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220809_002\\",
-#    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220809_004\\",
-#    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220812_001\\",
-#    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221027_T1\\",
-#    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221027_T2\\",
-#    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221028_T1\\",
-#    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221028_T2\\",
-#    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221122\\",
-#    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221125\\",
-#    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221205\\",
-#    f"{base_folder_all_CA3}\\srb269_imaging\\srb269_230119\\",
-#    f"{base_folder_all_CA3}\\srb269_imaging\\srb269_230120\\",
-#    f"{base_folder_all_CA3}\\srb269_imaging\\srb269_230125\\",
-#    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230117\\",
-#    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230118\\",
-#    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230119\\",
-#    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230120\\",
-#    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230124\\",
-#    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230127\\",
-#]
+base_folder_all_CA3 = "D:\\special\\all_CA3_tau0.8_gaspar\\data"
+base_folders_all_CA3 = [
+    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220804\\",
+    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220808\\",
+    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220809_002\\",
+    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220809_004\\",
+    f"{base_folder_all_CA3}\\srb231_imaging\\srb231_220812_001\\",
+    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221027_T1\\",
+    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221027_T2\\",
+    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221028_T1\\",
+    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221028_T2\\",
+    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221122\\",
+    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221125\\",
+    f"{base_folder_all_CA3}\\srb251_imaging\\srb251_221205\\",
+    f"{base_folder_all_CA3}\\srb269_imaging\\srb269_230119\\",
+    f"{base_folder_all_CA3}\\srb269_imaging\\srb269_230120\\",
+    f"{base_folder_all_CA3}\\srb269_imaging\\srb269_230125\\",
+    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230117\\",
+    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230118\\",
+    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230119\\",
+    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230120\\",
+    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230124\\",
+    f"{base_folder_all_CA3}\\srb270_imaging\\srb270_230127\\",
+]
 
+base_folders_newAnimals_CA3 = [
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231207\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231208a\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231211\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231212\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231212_a\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231213\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231213a\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231214\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231215\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231215afternoon\\",
+    #f"{base_folder_all_CA3}\\srb363_imaging\\srb363_231218\\",
+    #f"{base_folder_all_CA3}\\srb377_imaging\\srb377_240115\\",
+    f"{base_folder_all_CA3}\\srb377_imaging\\srb377_240116\\",
+    f"{base_folder_all_CA3}\\srb377_imaging\\srb377_240118\\",
+    f"{base_folder_all_CA3}\\srb377_imaging\\srb377_240124\\"
+]
 
 ################## CA1 all (random only)
 
@@ -153,21 +170,26 @@ base_folders_all_CA1 = [
     f"{base_folder_all_CA1}\\srb131_imaging\\srb131_211017",
     f"{base_folder_all_CA1}\\srb131_imaging\\srb131_211021",
 ]
-for base_folder in base_folders_all_CA1:
+
+base_folders_forShuffle = [
+    rf"C:\Users\martin\home\phd\btsp_project\analyses\other\for_reshuffle\srb270_imaging\230118"
+]
+for base_folder in base_folders_forShuffle:
     print(base_folder)
     spks_path = f"{base_folder}/spks_oasis_08s.npy"
     fluo_path = f"{base_folder}/F.npy"
     fpil_path = f"{base_folder}/Fneu.npy"
     #spks_gaspar_path = f"{base_folder}/spks_gaspar.npy"
-    spks_gaspar_path = f"{base_folder}/spks.npy"
 
     spks = np.load(spks_path)
     fluo = np.load(fluo_path)
     fpil = np.load(fpil_path)
 
     F = fluo-(0.7*fpil)  # subtract neuropil
-    Fc = preprocess(F=F, win_baseline=60, sig_baseline=10, fs=30)  # subtract baseline
+    #Fc = preprocess(F=F, win_baseline=60, sig_baseline=10, fs=30)  # subtract baseline
 
-    spks_gaspar = spks_cleaner(Fc, spks)
+    pmw = 0.4
+    spks_gaspar_path = f"{base_folder}/spks.npy"
+    spks_gaspar = spks_cleaner(F, spks, peri_median_width=pmw)
     with open(spks_gaspar_path, "wb") as spks_gaspar_file:
         np.save(spks_gaspar_file, spks_gaspar)

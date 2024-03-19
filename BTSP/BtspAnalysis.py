@@ -15,7 +15,7 @@ class BtspAnalysis:
         self.animals = ANIMALS[area]
         self.data_path = data_path
         self.extra_info = "" if not extra_info else f"_{extra_info}"
-        self.output_root = f"{output_path}/place_fields/{self.area}{self.extra_info}"
+        self.output_root = f"{output_path}/place_fields/{self.area}{self.extra_info}_debug"
         makedir_if_needed(f"{output_path}/place_fields")
         makedir_if_needed(self.output_root)
 
@@ -24,7 +24,6 @@ class BtspAnalysis:
         self.params = self.read_params()
         if params_dict is not None:
             self.update_params(params_dict)
-
 
         # save run parameters
         with open(f"{self.output_root}/script_params.txt", "w") as params_file:
@@ -55,15 +54,11 @@ class BtspAnalysis:
         for key, value in params_dict.items():
             self.params[key] = value
 
-    def run_btsp_analysis(self, shuffled_laps=False):
-        suffix = ""
-        if shuffled_laps:
-            suffix = "_shuffled_laps"
-        tcl_root = f"{self.data_path}\\tuned_cells\\{self.area}{suffix}\\"
-        tcl_paths = os.listdir(tcl_root)
+    def run_btsp_analysis(self):
+        tcl_root = f"{self.data_path}\\tuned_cells\\{self.area}{self.extra_info}\\"
+        tcl_paths = [file for file in os.listdir(tcl_root) if "tuned_cells" in file]
         for animal in self.animals:
             pfs_df_animal = None
-            cell_stats_df_joined_animal = None  # TODO: implement this (probably in create_tuned_cell_list.py)
 
             tcl_paths_animal = [path for path in tcl_paths if animal in path]
             for path in tcl_paths_animal:
@@ -72,7 +67,10 @@ class BtspAnalysis:
 
                 basc_all = None
                 for tuned_cell in tcl:
+                    #tuned_cell.frames_pos_bins = []
+                    #tuned_cell.frames_dF_F = []
                     basc = BtspAnalysisSingleCell(tuned_cell.sessionID, tuned_cell.cellid, tuned_cell.rate_matrix,
+                                                  tuned_cell.frames_pos_bins, tuned_cell.frames_dF_F,
                                                   params=self.params, bins_p95_geq_afr=tuned_cell.bins_p95_geq_afr)
                     basc.categorize_place_fields(cor_index=tuned_cell.corridor)
 
@@ -112,11 +110,7 @@ if __name__ == "__main__":
     parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
     args = parser.parse_args()
 
-    shuffled_laps = False
-    if "shuffled_laps" in args.extra_info:
-        shuffled_laps = True
-
     #run analysis
     analysis = BtspAnalysis(args.area, args.data_path, args.output_path, extra_info=args.extra_info)
-    analysis.run_btsp_analysis(shuffled_laps)
+    analysis.run_btsp_analysis()
     # TODO: hiányzik még NMF, cell stats és ratemaps

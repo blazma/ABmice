@@ -4,7 +4,7 @@ from PlaceField import PlaceField
 
 
 class BtspAnalysisSingleCell:
-    def __init__(self, sessionID, cellid, rate_matrix, params=None, corridors=None,
+    def __init__(self, sessionID, cellid, rate_matrix, frames_pos_bins, frames_dF_F, params=None, corridors=None,
                  place_field_bounds=None, bins_p95_geq_afr=None, i_laps=None, shift_criterion=True):
         """
         BTSP analysis for a single cell from a given session
@@ -46,6 +46,9 @@ class BtspAnalysisSingleCell:
             self.i_laps = np.arange(self.rate_matrix.shape[1])  # because rate_matrix is of shape (bins x laps)
         else:
             self.i_laps = i_laps
+
+        self.frames_pos_bins = frames_pos_bins
+        self.frames_dF_F = frames_dF_F
 
         self.unreliable_place_fields = []
         self.early_place_fields = []
@@ -134,11 +137,18 @@ class BtspAnalysisSingleCell:
                     place_field.calculate_shift()
                     place_field.evaluate_quality()
 
+                #place_field.calculate_dF_F_maxima(self.frames_pos_bins, self.frames_dF_F)
+                #place_field.calculate_lap_by_lap_COM_diffs()
+
                 # filter place fields that form too early to assess novelty
                 if place_field.formation_lap_uncorrected < 2:
                     place_field.category = "early"
                     self.early_place_fields.append(place_field)
                     continue
+
+                ### filter out newly formed PFs who are born relatively early:
+                #if place_field.formation_lap_uncorrected < 10:
+                #    continue
 
                 # filter place fields that are too short to meaningfully assess drift
                 if len(place_field.active_laps) <= self.params["SHIFT_WINDOW"] + self.params["SPEARMAN_SKIP_LAPS"] + 2:  # +2 points are at least necessary to calculate spearman correlation (else nan)

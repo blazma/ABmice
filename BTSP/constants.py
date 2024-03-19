@@ -8,8 +8,21 @@ ANIMALS = {
     "CA3": ["srb231",
             "srb251",
             "srb269",
-            "srb270"]
+            "srb270",
+            "srb363",
+            "srb377"]
 }
+#ANIMALS_PALETTE = ["#796BF0", "#6EB50B", "#FF8E0F", "#FF6096"]
+#ANIMALS_PALETTE_CA3 = ["#73B7FF", "#E7FF0D", "#D57AFF", "#FFB0BA"]
+AREA_PALETTE = {
+    "CA1": "#C0BAFF",
+    "CA3": "#FFB0BA"
+}
+ANIMALS_PALETTE = {
+    "CA1": ["#00DB55", "#00C7DB", "#274FDB", "#B25ADB"],
+    "CA3": ["#D435FD", "#FF9733", "#E7FF33", "#FD3566", "#FFCD33", "#88FF4D"]
+}
+
 SESSIONS_TO_IGNORE = {
     "CA1": ['KS029_110321',   # no p95
             'KS029_110721',   # error
@@ -19,17 +32,22 @@ SESSIONS_TO_IGNORE = {
             'srb131_211019'], # reshuffles
     "CA3": []
 }
+
 DISENGAGEMENT = {
-    "CA1": [
-        "KS030_103021"
-    ],
-    "CA3": [
-        "srb231_220809_004",
-        "srb231_220812_001",
-        "srb251_221027_T1",
-        "srb251_221027_T2"
-    ]
+    # FORMAT: "sessionID": [DE_startLap, DE_endLap]
+    # IMPORTANT: disengagement cannot be "in the middle" of the session (i.e w/ good laps before and after too)
+    "CA1": {
+        "KS030_103021": [25, -1],  # -1 indicates last lap
+    },
+    "CA3": {
+        "srb231_220809_004": [25, -1],
+        "srb231_220812_001": [30, -1],
+        "srb251_221027_T1": [0, -1],  # disengaged throughout -- skipping
+        "srb251_221027_T2": [0, -1],  # disengaged throughout -- skipping
+        "srb269_230125": [55, -1],
+    }
 }
+
 CORRIDORS = [14, 15,  # random
              16, 18,  # block
              17]  # new environment
@@ -37,8 +55,17 @@ CORRIDORS = [14, 15,  # random
 Category = namedtuple('Category', ["order", "color"])
 CATEGORIES = {
     "unreliable": Category(0, "#a2a1a1"),
-    "early": Category(1, "#00e3ff"),
-    "transient": Category(2, "#ffe000"),
-    "non-btsp": Category(3, "#ff000f"),
-    "btsp": Category(4, "#be70ff"),
+    "early": Category(1, "#00B0F0"),
+    "transient": Category(2, "#77D600"),
+    "non-btsp": Category(3, "#FF0000"),
+    "btsp": Category(4, "#AA5EFF"),
 }
+CATEGORIES_DARK = {
+    "unreliable": Category(0, "#2E2E2E"),
+    "early": Category(1, "#001D91"),
+    "transient": Category(2, "#056600"),
+    "non-btsp": Category(3, "#702000"),
+    "btsp": Category(4, "#5E276B"),
+}
+
+

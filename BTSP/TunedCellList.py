@@ -11,17 +11,6 @@ from constants import ANIMALS, SESSIONS_TO_IGNORE, DISENGAGEMENT
 from utils import makedir_if_needed
 
 
-class TunedCell:
-    def __init__(self, sessionID, cellid, rate_matrix, corridor, bins_p95_geq_afr):
-        self.sessionID = sessionID
-        self.cellid = cellid
-        self.rate_matrix = rate_matrix
-        self.corridor = corridor
-
-        # list of spatial bins where tuning curve > 95th percentile of shuffled activity
-        self.bins_p95_geq_afr = bins_p95_geq_afr
-
-
 class TunedCellList:
     def __init__(self, area, data_path, output_path, extra_info="", shuffled_laps=False):
         self.area = area
@@ -89,8 +78,10 @@ class TunedCellList:
             logging.info(f"{current_session} has protocol {self.session_protocol_dict[current_session]}; skipping")
             return None
         if current_session in DISENGAGEMENT[self.area]:
-            logging.info(f"{current_session} part of DISENGAGEMENT list; skipping")
-            return None
+            disengaged_laps = DISENGAGEMENT[self.area][current_session]
+            if disengaged_laps == [0, -1]:  # disengagement starts at beginning and lasts the whole session
+                logging.info(f"{current_session} part of DISENGAGEMENT list; skipping")
+                return None
 
         # set up ImagingSessionData parameters
         logging.info(f"running analysis for session {current_session}")
@@ -116,6 +107,8 @@ class TunedCellList:
         for animal in self.animals:
             logging.info(f"creating tuned cell list for animal {animal}")
             sessions_all = self._read_meta(animal)
+
+            cell_stats_df = None
             for current_session in sessions_all:
                 ISD = self._load_session(sessions_all, current_session)
                 if ISD == None:  # if failed to load ISD, skip
@@ -124,14 +117,37 @@ class TunedCellList:
                 # load shuffle data
                 try:
                     logging.info("loading/calculating shuffle data")
-                    ISD.calc_shuffle(ISD.active_cells, 1000, 'shift', batchsize=12)
+                    ISD.calc_shuffle(ISD.active_cells, 1000, 'shift', batchsize=15)
                 except Exception:
                     logging.exception(f"loading/calculating shuffle data failed for session {current_session}; skipping")
                     continue
 
-                tuned_cell_list = ISD.prepare_btsp_analysis(shuffled_laps=self.shuffled_laps)
+                tuned_cell_list, tuning_curves = ISD.prepare_btsp_analysis(shuffled_laps=self.shuffled_laps)
                 with open(f"{self.output_root}/tuned_cells_{current_session}.pickle", "wb") as tuned_cells_file:
                     pickle.dump(tuned_cell_list, tuned_cells_file)
+
+                tuning_curves_df = None
+                for corridor in [14, 15]:
+                    for cellid, tuning_curve in tuning_curves[corridor]:
+                        tuning_curve_dict = {
+                            "area": self.area,
+                            "animalID": animal,
+                            "sessionID": current_session,
+                            "cellid": cellid,
+                            "corridor": corridor,
+                            "tuning curve": tuning_curve
+                        }
+                        tuning_curve_df = pd.DataFrame.from_dict([tuning_curve_dict])
+                        tuning_curves_df = grow_df(tuning_curves_df, tuning_curve_df)
+                if tuning_curves_df is not None:
+                    tuning_curves_df = tuning_curves_df.reset_index(drop=True)
+                    tuning_curves_df.to_pickle(f"{self.output_root}/tuning_curves_{current_session}.pickle")
+
+                cell_stats_df_session = ISD.save_cell_counts()
+                cell_stats_df = grow_df(cell_stats_df, cell_stats_df_session)
+
+            cell_stats_df.to_pickle(f"{self.output_root}/cell_counts_{animal}.pickle")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -141,6 +157,10 @@ if __name__ == "__main__":
     parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
     args = parser.parse_args()
 
-    shuffled_laps = True
+    shuffled_laps = False
+    if args.extra_info:
+        if "shuffled_laps" in args.extra_info:
+            shuffled_laps = True
+
     tcl = TunedCellList(args.area, args.data_path, args.output_path, extra_info=args.extra_info, shuffled_laps=shuffled_laps)
     tcl.create_tuned_cell_list()
