@@ -29,6 +29,7 @@ from xml.dom import minidom
 from matplotlib.backends.backend_pdf import PdfPages
 from datetime import datetime
 import pandas as pd
+import warnings
 
 from utils import *
 from Stages import *
@@ -287,11 +288,15 @@ class ImagingSessionData:
         self.disengaged_laps = disengaged_laps
 
         # lick and speed selectivity
+        self.VSEL_NORMALIZATION = -0.45  # speed selectivity normalization constant: negative so that speed selectivity is "good" if close to 1 instead of -1, just like lick
         self.speed_selectivity_laps = {}
         self.lick_selectivity_laps = {}
         self.speed_selectivity_cross_corridor = np.nan
         self.lick_selectivity_cross_corridor = np.nan
         self.calc_speed_and_lick_selectivity()
+        self.behavior_score = None
+        self.behavior_score_components = {}
+        self.calculate_behavior_score()
 
     def get_analysis_ID(self, s2p_ids):
         # map suite2p ids to analysis ids - writes results to console and returns them
@@ -2762,7 +2767,7 @@ class ImagingSessionData:
         plt.show(block=False)
 
     def calc_correct_lap_proportions(self):
-        selected_laps = np.arange(self.n_laps)
+        selected_laps = self.i_Laps_ImData
         if (self.n_laps > 0):
             corridor_types = np.unique(self.i_corridors[selected_laps])
             nrow = len(corridor_types)
@@ -2780,7 +2785,8 @@ class ImagingSessionData:
                     self.Ps_correct[self.corridors[row]] = P_correct
 
     def calc_speed_and_lick_selectivity(self):
-        selected_laps = np.arange(self.n_laps)
+        print("calculating speed and lick selectivities, behavior score...")
+        selected_laps = self.i_Laps_ImData
         if (self.n_laps > 0):
             corridor_types = np.unique(self.i_corridors[selected_laps])
             nrow = len(corridor_types)
@@ -2823,17 +2829,18 @@ class ImagingSessionData:
                     ctrl_lb = ctrl_ub - 5
 
                     # within-corridor selectivities
-                    avg_speed_preRZ = np.nanmean(speed_matrix[:, preRZ_lb:preRZ_ub], axis=1)
-                    avg_speed_ctrl = np.nanmean(speed_matrix[:,ctrl_lb:ctrl_ub], axis=1)
-                    speed_selectivity_laps = nan_divide(avg_speed_preRZ - avg_speed_ctrl,
-                                                        avg_speed_preRZ + avg_speed_ctrl)
-                    self.speed_selectivity_laps[self.corridors[row]] = speed_selectivity_laps
+                    with warnings.catch_warnings(action="ignore"):  # nan_divide throws RuntimeWarning but it works as intended
+                        avg_speed_preRZ = np.nanmean(speed_matrix[:, preRZ_lb:preRZ_ub], axis=1)
+                        avg_speed_ctrl = np.nanmean(speed_matrix[:,ctrl_lb:ctrl_ub], axis=1)
+                        speed_selectivity_laps = nan_divide(avg_speed_preRZ - avg_speed_ctrl,
+                                                            avg_speed_preRZ + avg_speed_ctrl)
+                        self.speed_selectivity_laps[self.corridors[row]] = speed_selectivity_laps
 
-                    avg_lick_preRZ = np.nanmean(lick_matrix[:, preRZ_lb:preRZ_ub], axis=1)
-                    avg_lick_ctrl = np.nanmean(lick_matrix[:, ctrl_lb:ctrl_ub], axis=1)
-                    lick_selectivity_laps = nan_divide(avg_lick_preRZ - avg_lick_ctrl,
-                                                        avg_lick_preRZ + avg_lick_ctrl)
-                    self.lick_selectivity_laps[self.corridors[row]] = lick_selectivity_laps
+                        avg_lick_preRZ = np.nanmean(lick_matrix[:, preRZ_lb:preRZ_ub], axis=1)
+                        avg_lick_ctrl = np.nanmean(lick_matrix[:, ctrl_lb:ctrl_ub], axis=1)
+                        lick_selectivity_laps = nan_divide(avg_lick_preRZ - avg_lick_ctrl,
+                                                            avg_lick_preRZ + avg_lick_ctrl)
+                        self.lick_selectivity_laps[self.corridors[row]] = lick_selectivity_laps
 
                     # cross-corridor selectivities
                     current_corr_id = self.corridors[row]
@@ -2846,10 +2853,34 @@ class ImagingSessionData:
                         avg_speeds_by_corridor[current_corr_id] = avg_speed_corr14_preRZ
                         avg_lick_corr14_preRZ = np.nanmean(lick_matrix[:, corr14_preRZ_lb:corr14_preRZ_ub])
                         avg_licks_by_corridor[current_corr_id] = avg_lick_corr14_preRZ
-            self.speed_selectivity_cross_corridor = nan_divide(avg_speeds_by_corridor[14] - avg_speeds_by_corridor[15],
-                                                               avg_speeds_by_corridor[14] + avg_speeds_by_corridor[15])
-            self.lick_selectivity_cross_corridor = nan_divide(avg_licks_by_corridor[14] - avg_licks_by_corridor[15],
-                                                              avg_licks_by_corridor[14] + avg_licks_by_corridor[15])
+            with warnings.catch_warnings(action="ignore"):  # nan_divide throws RuntimeWarning but it works as intended
+                self.speed_selectivity_cross_corridor = nan_divide(avg_speeds_by_corridor[14] - avg_speeds_by_corridor[15],
+                                                                   avg_speeds_by_corridor[14] + avg_speeds_by_corridor[15])
+                self.lick_selectivity_cross_corridor = nan_divide(avg_licks_by_corridor[14] - avg_licks_by_corridor[15],
+                                                                  avg_licks_by_corridor[14] + avg_licks_by_corridor[15])
+
+    def calculate_behavior_score(self):
+        mean_vsel_14 = np.round(np.nanmean(self.speed_selectivity_laps[14]), 2)
+        mean_vsel_15 = np.round(np.nanmean(self.speed_selectivity_laps[15]), 2)
+        mean_lsel_14 = np.round(np.nanmean(self.lick_selectivity_laps[14]), 2)
+        mean_lsel_15 = np.round(np.nanmean(self.lick_selectivity_laps[15]), 2)
+        self.behavior_score_components = {
+            "Pcorrect (corr. 14)": self.Ps_correct[14],
+            "Pcorrect (corr. 15)": self.Ps_correct[15],
+            "Norm. speed selectivity (corr. 14)": mean_vsel_14 / self.VSEL_NORMALIZATION,
+            "Norm. speed selectivity (corr. 15)": mean_vsel_15 / self.VSEL_NORMALIZATION,
+            "Norm. speed selectivity (cross-corr)": float(self.speed_selectivity_cross_corridor / self.VSEL_NORMALIZATION),
+            "Lick selectivity (corr. 14)": mean_lsel_14,
+            "Lick selectivity (corr. 15)": mean_lsel_15,
+            "Lick selectivity (cross-corr)": float(self.lick_selectivity_cross_corridor),
+        }
+        self.behavior_score = sum(list(self.behavior_score_components.values()))
+
+    def show_behavior_score(self):
+        for component_name, component_value in self.behavior_score_components.items():
+            print(f"{component_name} = {component_value:.2f}")
+        print("----------")
+        print(f"behavior score = {self.behavior_score:.2f}")
 
     def plot_session(self, selected_laps=None, average=True, filename=None):
         ## plot the behavioral data during one session. 
@@ -2939,6 +2970,13 @@ class ImagingSessionData:
                             plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
                     else:
                         plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
+
+                    if self.corridors[row] in [14, 15]:  # TODO: selectivities and behavior score only work for corridor 14 and 15 yet
+                        mean_vsel = np.round(np.nanmean(self.speed_selectivity_laps[self.corridors[row]]) / self.VSEL_NORMALIZATION, 2)
+                        mean_lsel = np.round(np.nanmean(self.lick_selectivity_laps[self.corridors[row]]), 2)
+                        if row == 0:
+                            plot_title += f",\nBehavior score: {self.behavior_score:.2f}, V-sel(X-corr): {self.speed_selectivity_cross_corridor / self.VSEL_NORMALIZATION:.2f}, L-sel(X-corr): {self.lick_selectivity_cross_corridor:.2f},"
+                        plot_title += f"\nV-sel(in {self.corridors[row]}): {mean_vsel}, L-sel (in {self.corridors[row]}): {mean_lsel}"
 
                     ########################################
                     ## reward zones

@@ -1,6 +1,6 @@
 import numpy as np
 from utils import grow_df
-from PlaceField import PlaceField
+from BTSP.PlaceField import PlaceField
 
 
 class BtspAnalysisSingleCell:

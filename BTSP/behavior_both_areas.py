@@ -64,7 +64,7 @@ def plot_place_fields_by_score():
         pfs_df_animal = pd.read_pickle(f"{data_path}/place_fields/CA3/{animal}_place_fields_df.pickle")
         pfs_df = grow_df(pfs_df, pfs_df_animal)
 
-    scores_df_sorted = scores_df.reset_index().sort_values(by="behavior score")
+    scores_df_sorted = scores_df.reset_index()#.sort_values(by="behavior score")
     pfs_scores_df = None
     for i_row, row in scores_df_sorted.iterrows():
         pfs_sess = pfs_df[pfs_df["session id"] == row["sessionID"]]
@@ -86,7 +86,7 @@ def plot_place_fields_by_score():
         pfs_scores_df_sess = pd.DataFrame.from_dict([pfs_scores_df_dict])
         pfs_scores_df = grow_df(pfs_scores_df, pfs_scores_df_sess)
 
-    by_animal = False
+    by_animal = True
     cats = list(CATEGORIES.keys())
     cols = ["sessionID", "behavior score", "unreliable", "early", "transient", "non-btsp", "btsp"]
     colors = [cat.color for cat in CATEGORIES.values()]
