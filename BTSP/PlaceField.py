@@ -10,9 +10,12 @@ class PlaceField:
         self.sessionID = None
         self.cellid = -1
         self.cor_index = -1
+        self.history = "ALL"  # can be ALL, STAY or CHANGE depending on lap history
         self.i_laps = []
         self.rate_matrix = np.empty(0)
         self.N_pos_bins = -1
+        self.lap_histories = []
+        self.formation_lap_history = None
 
         # params
         self.params = {}
@@ -57,6 +60,8 @@ class PlaceField:
             "session id": self.sessionID,
             "cell id": self.cellid,
             "corridor": self.cor_index,
+            "history": self.history,
+            "formation lap history": self.formation_lap_history,
             "category": self.category,
             "lower bound": self.bounds[0],
             "upper bound": self.bounds[1],
@@ -79,6 +84,7 @@ class PlaceField:
             "shift scores": [self.com_diffs],
             "dF/F maxima": [self.dF_F_maxima],
             "dCOM (lap-by-lap)": [self.com_diffs_lap_by_lap],
+            "session length": self.rate_matrix.shape[1],
             "notes": self.notes
         }
         df = pd.DataFrame.from_dict([df_dict])
@@ -116,6 +122,11 @@ class PlaceField:
         self.formation_lap = formation_lap_uncorrected
         if correction == True:
             self.formation_lap = formation_lap
+
+        if self.formation_lap > -1:
+            self.formation_lap_history = self.lap_histories[self.formation_lap]
+        else:
+            self.formation_lap_history = "N/A"
 
         try:
             if formation_lap > -1:

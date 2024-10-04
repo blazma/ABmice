@@ -7,20 +7,17 @@ import pandas as pd
 
 
 class CellDepth:
-    def __init__(self, base_dir, output_dir, animal, session, imaging_logfile_name, show_rois=True, meanImg=True):
+    def __init__(self, base_dir, animal, session, imaging_logfile_name, show_rois=True):
         self.base_dir = base_dir
-        self.output_dir = output_dir
         self.animal = animal
         self.session = session
         self.imaging_logfile_name = imaging_logfile_name
+        #self.output_dir = output_dir
         self.show_rois = show_rois
         self.gui = None
+
+        #self.point_categories = ["deep", "superficial", "deep orient."]
         self.point_categories = ["deep", "superficial"]
-        self.meanImg = meanImg
-        if self.meanImg:
-            self.imgType = "meanImg"
-        else:
-            self.imgType = "max_proj"
 
         # session data
         self.ops = None
@@ -34,10 +31,6 @@ class CellDepth:
 
         # line vertices selected by user
         self.points = []
-
-        # figures to be saved
-        self.fig_select = None
-        self.fig_distances = None
 
         imaging_logfile_path = f"{self.base_dir}/{self.animal}_imaging/{self.session}/{imaging_logfile_name}"
         x, y, z = self.get_resolution(imaging_logfile_path)
@@ -85,11 +78,12 @@ class CellDepth:
     def __point_removed_cb(self, position: Tuple[float, float], klass: str, idx):
         x, y = position
         suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(idx, 'th')
+        # print("The {idx}{suffix} point of class {klass} with position {x=:.2f}, {y=:.2f}  was removed")
 
     def select_lines(self):
-        self.fig_select, ax = plt.subplots()
+        fig, ax = plt.subplots()
         ax.set_title(self.session)
-        ax.imshow(np.log(self.ops[self.imgType]), cmap='gray', origin='lower')
+        ax.imshow(np.log(self.ops['meanImg']), cmap='gray', origin='lower')
         if self.show_rois:
             plt.scatter(self.x_center, self.y_center, c='r', marker='D', s=10)
         self.gui = clicker(ax, self.point_categories, markers=["o", "*", "x"])
@@ -146,17 +140,27 @@ class CellDepth:
 
         return rot_line, rot_cells, rot_flag
 
-    def calculate_distances(self, show_percentages=True, show_masks=True):
+    def calculate_distances(self, show_percentages=True):
         self.positions = self.gui.get_positions()
         self.pos_deep = np.array(self.positions['deep'])
         self.pos_sup = np.array(self.positions['superficial'])
+        #self.flag_point = np.array(self.positions['deep orient.'])
 
         if  self.pos_deep.size == 0:
             print("please select points before running me!")
             return
 
+        #fig, ax = plt.subplots()
+        # ax.imshow(ops['meanImgE'], cmap='gray',origin='lower')
+        #ax.imshow(np.log(self.ops['meanImgE']), cmap='gray', origin='lower')
+        #ax.scatter(self.x_center, self.y_center, c='r', marker='D')
+        #ax.scatter(self.pos_deep[:, 0], self.pos_deep[:, 1], c='b')
+        #ax.plot(self.pos_deep[:, 0], self.pos_deep[:, 1], c='g')
         self.points_deep = self.calc_points(self.pos_deep)
         self.points_sup = self.calc_points(self.pos_sup)
+        #plt.scatter(self.points_deep[:, 0], self.points_deep[:, 1], marker='x', c='g')
+        #plt.scatter(self.points_sup[:, 0], self.points_sup[:, 1], marker='x', c='g')
+        #plt.show()
 
         data = np.transpose(self.points_deep)  # note: this means that everything will be rotated with respect to deep line
         cov = np.cov(data)
@@ -165,15 +169,18 @@ class CellDepth:
         cells = np.zeros((self.x_center.size, 2))
         cells[:, 0] = self.x_center
         cells[:, 1] = self.y_center
-        rot_line_deep = self.points_deep
-        rot_line_sup = self.points_sup
-        rot_cells = cells
+        rot_line_deep = self.points_deep #self.rotate_points(self.points_deep, eigenvectors)
+        rot_line_sup = self.points_sup #self.rotate_points(self.points_sup, eigenvectors)
+        rot_cells = cells #self.rotate_points(cells, eigenvectors)
+        #rot_flag = self.flag_point #self.rotate_points(self.flag_point[0, :], eigenvectors)
 
         scale = 1.2
-        self.fig_distances, ax = plt.subplots()
-        ax.imshow(np.log(self.ops[self.imgType]), cmap='gray', origin='lower')
-        ax.scatter(rot_line_deep[:, 0], rot_line_deep[:, 1], c='cyan')
-        ax.scatter(rot_line_sup[:, 0], rot_line_sup[:, 1], c='orange')
+        plt.figure(figsize=(12,6))
+        #plt.figure(figsize=(scale*40,scale*15))
+        #plt.scatter(rot_flag[:, 0], rot_flag[:, 1], c='b')
+        plt.imshow(np.log(self.ops['meanImg']), cmap='gray', origin='lower')
+        plt.scatter(rot_line_deep[:, 0], rot_line_deep[:, 1], c='cyan')
+        plt.scatter(rot_line_sup[:, 0], rot_line_sup[:, 1], c='orange')
 
         # distances
         self.distances_deep = np.ones((self.x_center.size)) * -1
@@ -191,6 +198,7 @@ class CellDepth:
             self.target_y[i] = target_y
             if rot_cells[i, 1] < rot_line_deep[index, 1]:
                 self.distances_deep[i] = self.distances_deep[i] * -1
+            #plt.plot([x, target_x], [y, target_y], c='y')
 
             dist_sup = np.power((np.power((rot_line_sup[:, 0] - x), 2) + np.power((rot_line_sup[:, 1] - y), 2)), 1 / 2)
             index = np.argmin(dist_sup)
@@ -200,37 +208,36 @@ class CellDepth:
             self.target_y[i] = target_y
             if rot_cells[i, 1] > rot_line_sup[index, 1]:
                 self.distances_sup[i] = self.distances_sup[i] * -1
+            #plt.plot([x, target_x], [y, target_y], c='cyan')
+        # check reference point
+
+        #dist_flag = np.power((np.power((rot_line_deep[:, 0] - rot_flag[0, 0]), 2) + np.power((rot_line_deep[:, 1] - rot_flag[0, 1]), 2)), 1 / 2)
+        #index = np.argmin(dist_flag)
+        #target_x, target_y = rot_line_deep[index, :]
+        #if target_y > rot_flag[0, 1]:
+        #    self.distances_deep = self.distances_deep * -1
+        #    self.distances_sup = self.distances_sup * -1
 
         distance_str = [f"{np.round(self.distances_deep[d], 1)}, {np.round(self.distances_sup[d], 1)}" for d in range(len(self.distances_deep))]
         self.norm_distances = [self.distances_sup[i_cell] / (self.distances_deep[i_cell] + self.distances_sup[i_cell]) for i_cell in range(len(self.distances_deep))]
-        ax.scatter(rot_cells[:, 0], rot_cells[:, 1], c=self.norm_distances, cmap="jet")
-
-        # colored masks
-        if show_masks:
-            im = np.ones((self.ops['Ly'], self.ops['Lx']))
-            im[:] = np.nan
-            for i in range(self.x_center.size):
-                roi = self.cell_index[i]
-                ypix = self.stat[roi]["ypix"]
-                xpix = self.stat[roi]["xpix"]
-                color = self.norm_distances[i]
-                im[ypix, xpix] = color
-            ax.imshow(im, cmap="jet", alpha=0.4, origin='lower')
-
+        plt.scatter(rot_cells[:, 0], rot_cells[:, 1], c=self.norm_distances, cmap="jet")
         offset = 1
         if show_percentages:
             for i in range(self.x_center.size):
-                ax.text(rot_cells[i, 0]+offset, rot_cells[i, 1]+offset, f"{100*self.norm_distances[i]:.2f}%", color="white")
+                #plt.text(rot_cells[i, 0], rot_cells[i, 1], distance_str[i])
+                plt.text(rot_cells[i, 0]+offset, rot_cells[i, 1]+offset, f"{100*self.norm_distances[i]:.2f}%", color="white")
                 pass
+        #plt.gca().set_aspect('equal')#, adjustable='box')
+        #plt.savefig(f"{self.output_dir}/deep_superficial.pdf")
         plt.show()
 
-    def save_results(self):
+    def save_results(self, output_path):
         pos_deep_labeled = [["deep", *coord] for coord in self.pos_deep]
         pos_sup_labeled = [["superficial", *coord] for coord in self.pos_deep]
         #pos_flag_labeled = [["flag", *coord] for coord in self.flag_point]
         join_labeled = pos_deep_labeled + pos_sup_labeled #+ pos_flag_labeled
         df_pos = pd.DataFrame(join_labeled)
-        df_pos.to_excel(f"{self.output_dir}/cellDepth_boundaries_{self.session}.xlsx", index=False)
+        df_pos.to_excel(f"{output_path}/cellDepth_boundaries_{self.session}.xlsx", index=False)
 
         roi_dict = {
             "ROI": self.cell_index,
@@ -239,7 +246,17 @@ class CellDepth:
             "depth": self.norm_distances
         }
         df_roi = pd.DataFrame.from_dict(roi_dict, orient="index").T
-        df_roi.to_excel(f"{self.output_dir}/cellDepth_depths_{self.session}_{self.imgType}.xlsx", index=False)
+        df_roi.to_excel(f"{output_path}/cellDepth_depths_{self.session}.xlsx", index=False)
 
-        self.fig_select.savefig(f"{self.output_dir}/cellDepth_selection_{self.session}_{self.imgType}.png")
-        self.fig_distances.savefig(f"{self.output_dir}/cellDepth_distances_{self.session}_{self.imgType}.png")
+if __name__ == "__main__":
+    base_dir = r'C:\Users\martin\home\phd\misc\ca3_FovToDraw\srb270_imaging'
+    session = 'srb270_230118'
+    imaging_logfile_name = r'srb270_TSeries-20230118-001.xml'
+    output_root = r"C:\Users\martin\home\phd\btsp_project\analyses\manual\statistics"
+
+    show_rois = False
+    show_percentages = True
+
+    cd = CellDepth(base_dir, session, imaging_logfile_name, show_rois)
+    cd.calculate_distances(show_percentages)
+    cd.save_results(output_root)

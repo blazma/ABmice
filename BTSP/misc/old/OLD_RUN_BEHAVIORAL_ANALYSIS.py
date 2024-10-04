@@ -120,22 +120,22 @@ class BehaviorAnalysis:
     def _find_speed_selectivities(self, ISD):
         # within corridor
         for corridor in CORRIDORS:
-            if corridor in ISD.speed_selectivity_laps:
-                self.behavior_dict_sess[f"Vsel({corridor})"] = np.round(np.nanmean(ISD.speed_selectivity_laps[corridor]), 2)
+            if corridor in ISD.speed_index:
+                self.behavior_dict_sess[f"Vsel({corridor})"] = np.round(np.nanmean(ISD.speed_index[corridor]), 2)
             else:
                 self.behavior_dict_sess[f"Vsel({corridor})"] = ""
 
         # across corridors
-        self.behavior_dict_sess[f"Vsel(X-corr)"] = np.round(ISD.speed_selectivity_cross_corridor, 2)
+        self.behavior_dict_sess[f"Vsel(X-corr)"] = np.round(ISD.speed_selectivity, 2)
 
     def _find_lick_selectivities(self, ISD):
         for corridor in CORRIDORS:
-            if corridor in ISD.lick_selectivity_laps:
-                self.behavior_dict_sess[f"Lsel({corridor})"] = np.round(np.nanmean(ISD.lick_selectivity_laps[corridor]), 2)
+            if corridor in ISD.lick_index:
+                self.behavior_dict_sess[f"Lsel({corridor})"] = np.round(np.nanmean(ISD.lick_index[corridor]), 2)
             else:
                 self.behavior_dict_sess[f"Lsel({corridor})"] = ""
 
-        self.behavior_dict_sess[f"Lsel(X-corr)"] = np.round(ISD.lick_selectivity_cross_corridor, 2)
+        self.behavior_dict_sess[f"Lsel(X-corr)"] = np.round(ISD.lick_selectivity, 2)
 
     def analyze_behavior(self):
         sessions_meta_df = None

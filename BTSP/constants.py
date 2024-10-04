@@ -4,40 +4,71 @@ ANIMALS = {
     "CA1": ["KS028",
             "KS029",
             "KS030",
-            "srb131"],
+            "srb131",
+            "srb231",
+            "srb251",
+            "srb402",
+            "srb410",
+            "srb410a"],
     "CA3": ["srb231",
             "srb251",
             "srb269",
             "srb270",
             "srb363",
-            "srb377"]
+            "srb377",
+            "srb402",
+            "srb410",
+            "srb410a"]
 }
-#ANIMALS_PALETTE = ["#796BF0", "#6EB50B", "#FF8E0F", "#FF6096"]
-#ANIMALS_PALETTE_CA3 = ["#73B7FF", "#E7FF0D", "#D57AFF", "#FFB0BA"]
+
 AREA_PALETTE = {
     "CA1": "#C0BAFF",
     "CA3": "#FFB0BA"
 }
 ANIMALS_PALETTE = {
-    "CA1": ["#00DB55", "#00C7DB", "#274FDB", "#B25ADB"],
-    "CA3": ["#D435FD", "#FF9733", "#E7FF33", "#FD3566", "#FFCD33", "#88FF4D"]
+    #"CA1": ["#00DB55", "#00C7DB", "#274FDB", "#B25ADB"],
+    #"CA1": ["#00FFFF", "#0000FF", "#4169E1", "#6A5ACD", "#800080", "#9932CC", "#00CED1", "#00FFFF", "#0000FF"],
+    "CA1": ["#0065ff", "#da4cda", "#ff51a1", "#ff876d", "#ffc355", "#f9f871", "#bfa975", "#847655", "#464555"],
+    #"CA3": ["#D435FD", "#FF9733", "#E7FF33", "#FD3566", "#FFCD33", "#88FF4D"],
+    #"CA3": ["#FFD700", "#FF69B4", "#FF7F00", "#32CD32", "#FFFA00", "#ADFF2F", "#FF0000", "#FFD700", "#FF69B4"]
+    "CA3": ["#ff3700", "#ff005f", "#ee00a8", "#a046e3", "#006cfe", "#007bf2", "#74b2df", "#d0f5ff", "#567b97"]
 }
 
 SESSIONS_TO_IGNORE = {
+    "CA1": ["KS029_110321",  # not part of old meta
+            "KS029_110521",  # too few cells
+            "KS028_110621",  # post
+            "KS028_110621",  # post
+            "KS028_110721",  # post
+            "KS028_110821",  # not part of old meta
+            "KS029_111321",  # post
+            "KS029_111421",  # post
+            "KS029_111521",  # post
+            "KS030_110521",  # post
+            "KS030_110621",  # post
+            "KS030_110721",  # post
+            "srb131_211021"],  # post
+    "CA3": ["srb410a_240607"]  # error
+}
+"""
+SESSIONS_TO_IGNORE = {
     "CA1": ['KS029_110321',   # no p95
-            'KS029_110721',   # error
-            'KS029_110821',   # error
-            'KS029_110521',   # error
+            #'KS029_110721',   # error
+            #'KS029_110821',   # error
+            #'KS029_110521',   # error
             'KS030_110721',   # error
             'srb131_211019'], # reshuffles
     "CA3": []
 }
+"""
 
 DISENGAGEMENT = {
     # FORMAT: "sessionID": [DE_startLap, DE_endLap]
     # IMPORTANT: disengagement cannot be "in the middle" of the session (i.e w/ good laps before and after too)
     "CA1": {
         "KS030_103021": [25, -1],  # -1 indicates last lap
+        "srb402_240319_CA1": [0, 6],
+        "srb410a_240529_CA1": [48, -1],
     },
     "CA3": {
         "srb231_220809_004": [25, -1],
@@ -68,4 +99,5 @@ CATEGORIES_DARK = {
     "btsp": Category(4, "#5E276B"),
 }
 
-
+VSEL_NORMALIZATION = -0.45  # normalization constant for speed selectivities which generally range 0 to about 0.45
+BEHAVIOR_SCORE_THRESHOLD = 4  # behavior score at which we cut off sessions (those below are discarded)

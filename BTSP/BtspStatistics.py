@@ -9,15 +9,16 @@ import os
 import pickle
 import argparse
 import json
-from constants import ANIMALS, CATEGORIES, CATEGORIES_DARK, ANIMALS_PALETTE, AREA_PALETTE
+import pingouin
+
+from BTSP.constants import ANIMALS, CATEGORIES, CATEGORIES_DARK, ANIMALS_PALETTE, AREA_PALETTE, BEHAVIOR_SCORE_THRESHOLD
 from utils import grow_df, makedir_if_needed
-from plotly import express as px
 import sklearn
 import scipy
-
+from BTSP.BehavioralStatistics import BehaviorStatistics
 
 class BtspStatistics:
-    def __init__(self, area, data_path, output_path, extra_info="", is_shift_criterion_on=True):
+    def __init__(self, area, data_path, output_path, extra_info="", is_shift_criterion_on=True, is_notebook=False, history="ALL"):
         self.area = area
         self.animals = ANIMALS[area]
         self.data_path = data_path
@@ -31,19 +32,29 @@ class BtspStatistics:
         self.bin_length = 2.13  # cm
         self._use_font()
         self.is_shift_criterion_on = is_shift_criterion_on
+        self.is_notebook = is_notebook
+        self.history = history
 
         # set output folder
         self.extra_info = "" if not extra_info else f"_{extra_info}"
         self.output_root = f"{output_path}/statistics/{self.area}{self.extra_info}"
         if not self.is_shift_criterion_on:
             self.output_root = f"{self.output_root}_withoutShiftCriterion"
+        if "historyDependent" in self.extra_info and history in ["CHANGE", "STAY"]:
+            self.output_root = f"{self.output_root}_{self.history}"
+            self.history_dependent = True
+        else:
+            self.history_dependent = False
         makedir_if_needed(f"{output_path}/statistics")
         makedir_if_needed(self.output_root)
 
         # dataframes for place fields and cell statistics
         self.pfs_df = None
+        self.pfs_laps_df = None
         self.cell_stats_df = None
         self.shift_gain_df = None
+        self.tc_df = None
+        self.tests_df = None
 
         # "debug"
         self.long_pf_only = True
@@ -89,6 +100,10 @@ class BtspStatistics:
         #    self.pfs_df = self.pfs_df[self.pfs_df["end lap"] - self.pfs_df["formation lap"] > 15].reset_index()
         #self.cell_stats_df = self.cell_stats_df.reset_index().drop("index", axis=1)
 
+        # filter by history
+        if self.history_dependent:
+            self.pfs_df = self.pfs_df[self.pfs_df["history"] == self.history].reset_index(drop=True)
+
         # assign category orders
         for category in CATEGORIES:
             cond = self.pfs_df["category"] == category
@@ -96,6 +111,44 @@ class BtspStatistics:
 
         # tag newly formed place fields
         self.pfs_df["newly formed"] = np.where(self.pfs_df["category"].isin(["transient", "non-btsp", "btsp"]), True, False)
+
+        # calculate cell count ratios
+        self.cell_stats_df["active / total"] = self.cell_stats_df["active cells"] / self.cell_stats_df["total cells"]
+        self.cell_stats_df["tuned / total"] = self.cell_stats_df["tuned cells"] / self.cell_stats_df["total cells"]
+        self.cell_stats_df["tuned / active"] = self.cell_stats_df["tuned cells"] / self.cell_stats_df["active cells"]
+
+    def filter_low_behavior_score(self):
+        # filter sessions where behavior score is lower than threshold -- to homogenize dataset
+        if len(self.extra_info) > 0:
+            extra_info = self.extra_info if self.extra_info[0] != "_" else self.extra_info[1:]
+        else:
+            extra_info = ""
+        behav_stats = BehaviorStatistics(self.area, self.data_path, self.output_root, extra_info=extra_info, makedir=False)
+        behav_stats.calc_behavior_score()
+        behavior_scores = behav_stats.behavior_df[["sessionID", "behavior score"]]
+        self.cell_stats_df = self.cell_stats_df.merge(behavior_scores, on="sessionID")
+        self.cell_stats_df =  self.cell_stats_df[self.cell_stats_df["behavior score"] > BEHAVIOR_SCORE_THRESHOLD].reset_index()
+
+        behavior_scores = behavior_scores.rename({"sessionID": "session id"}, axis=1)  # rename in order to do merge with pfs_df
+        self.pfs_df = self.pfs_df.merge(behavior_scores, on="session id")
+        self.pfs_df = self.pfs_df[self.pfs_df["behavior score"] > BEHAVIOR_SCORE_THRESHOLD].reset_index()
+
+    def load_cell_data(self):
+        def get_tc(session_id, cellid, corridor):
+            return [tc for tc in tcl_all_sessions if tc.sessionID == session_id and tc.cellid == cellid and tc.corridor == corridor][0]
+
+        sessions = np.unique(self.pfs_df["session id"].values)
+        tcl_all_sessions = []
+        for session in sessions:
+            print(session)
+            tcl_path = f"{self.data_path}/tuned_cells/{self.area}{self.extra_info}/tuned_cells_{session}.pickle"
+            with open(tcl_path, "rb") as tcl_file:
+                tcl = pickle.load(tcl_file)
+                tcl_all_sessions += tcl
+        if self.history_dependent:
+            self.tc_df = pd.DataFrame([{"sessionID": tc.sessionID, "cellid": tc.cellid, "corridor": tc.corridor, "history": tc.history, "tc": tc} for tc in tcl_all_sessions])
+        else:
+            self.tc_df = pd.DataFrame([{"sessionID": tc.sessionID, "cellid": tc.cellid, "corridor": tc.corridor, "tc": tc} for tc in tcl_all_sessions])
 
     def calc_place_field_proportions(self):
         pf_proportions_by_category_df = None
@@ -132,60 +185,124 @@ class BtspStatistics:
                     (pf_proportions_by_category_df, pd.DataFrame.from_dict([pf_proportions_dict])))
         self.pf_proportions_by_category_df = pf_proportions_by_category_df.reset_index().drop("index", axis=1)
 
-    def plot_cells(self):
-        scale = 0.5
-        fig, ax = plt.subplots(figsize=(scale*12, scale*8), dpi=200)
-        sns.boxplot(self.cell_stats_df, color=AREA_PALETTE[self.area], ax=ax, width=0.8, showfliers=False)
-        sns.swarmplot(data=self.cell_stats_df.melt(id_vars=["sessionID", "animalID"]), x="variable", y="value",
-                      hue="animalID", s=4, alpha=0.85, palette=ANIMALS_PALETTE[self.area], ax=ax, linewidth=1, dodge=True)  # 4 = number of animals (nr. of distinct hues
-        #plt.scatter(0, np.mean(self.cell_stats_df["total cells"]), marker="X", s=100, c="k")
-        #plt.scatter(1, np.mean(self.cell_stats_df["active cells"]), marker="X", s=100, c="k")
-        #plt.scatter(2, np.mean(self.cell_stats_df["tuned cells"]), marker="X", s=100, c="k")
+    def plot_cells(self, swarmplot=True):
+        if self.is_notebook:
+            scale = 0.5
+            dpi = 150
+        else:
+            scale = 0.5
+            dpi = 200
+
+        # various proportions
+        w, h = 16, 8
+        w_poster, h_poster = 10, 18
+        w_pres, h_pres = 10, 10
+
+        w, h = w_pres, h_pres
+        scale_poster = 0.275
+        scale = 0.4
+        fig, ax = plt.subplots(figsize=(scale*w, scale*h), dpi=dpi)
+        sns.boxplot(self.cell_stats_df[["total cells", "active cells", "tuned cells"]], color=AREA_PALETTE[self.area],
+                    ax=ax, width=0.85, showfliers=False)
+        if swarmplot:
+            sns.swarmplot(data=self.cell_stats_df[["sessionID", "animalID", "total cells", "active cells", "tuned cells"]].melt(id_vars=["sessionID", "animalID"]),
+                          x="variable", y="value", hue="animalID", s=5, alpha=0.85, palette=ANIMALS_PALETTE[self.area], ax=ax,
+                          linewidth=1, dodge=True)  # 4 = number of animals (nr. of distinct hues
+            ax.legend(loc='upper right', title="animals", bbox_to_anchor=(1.25, 1.35))
         ax.set_ylabel("# cells")
         ax.spines[['right', 'top']].set_visible(False)
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
-        #pos = ax.get_position()
-        #ax.set_position([pos.x0, pos.y0, pos.width, pos.height])
-        #ax.legend(loc='upper right', title="animals", bbox_to_anchor=(1, 1.25))
-        ax.legend(loc='upper right', title="animals", bbox_to_anchor=(1.25, 1))
         ax.set_xlabel("")
         if self.area == "CA1":
-            ax.set_ylim([0,1500])
-            ax.set_yticks(np.linspace(0,1500,6))
+            ax.set_ylim([0,2000])
+            ax.set_yticks(np.linspace(0,2000,9))
         else:
             ax.set_ylim([0,200])
             ax.set_yticks(np.linspace(0,200,9))
-        plt.title(f"Number of cells in {self.area}")
+        #plt.title(f"Number of cells in {self.area}")
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_cells.pdf")
         plt.savefig(f"{self.output_root}/plot_cells.svg")
         plt.close()
 
-        for cell_type in ["total cells", "active cells", "tuned cells"]:
-            print(f"sum {cell_type}: {self.cell_stats_df[cell_type].sum()}")
-            print(f"avg {cell_type}: {self.cell_stats_df[cell_type].sum()/len(self.cell_stats_df)}")
+        cmap = sns.color_palette('mako', as_cmap=True)
+        norm = plt.Normalize(vmin=0, vmax=8)
+        palette = {h: cmap(norm(h)) for h in self.cell_stats_df['behavior score']}
+
+        fig, ax = plt.subplots(figsize=(scale*14, scale*8), dpi=dpi)
+        sns.boxplot(self.cell_stats_df[["total cells", "active cells", "tuned cells"]], color=AREA_PALETTE[self.area],
+                    ax=ax, width=0.8, showfliers=False)
+        if swarmplot:
+            ax = sns.swarmplot(data=self.cell_stats_df[["sessionID", "total cells", "active cells", "tuned cells", "behavior score"]].melt(id_vars=["sessionID", "behavior score"]),
+                          x="variable", y="value", hue="behavior score", s=4, alpha=0.85, ax=ax, palette=palette,
+                          linewidth=1, legend=False)  # 4 = number of animals (nr. of distinct hues
+        ax.set_ylabel("# cells")
+        ax.spines[['right', 'top']].set_visible(False)
+        from matplotlib.cm import ScalarMappable
+        plt.colorbar(ScalarMappable(cmap=cmap, norm=norm), ax=ax)  # optionally add a colorbar
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
+        #ax.legend(loc='upper right', title="animals", bbox_to_anchor=(1.25, 1))
+        ax.set_xlabel("")
+        if self.area == "CA1":
+            ax.set_ylim([0,1750])
+            ax.set_yticks(np.linspace(0,1750,6))
+        else:
+            ax.set_ylim([0,200])
+            ax.set_yticks(np.linspace(0,200,9))
+        plt.title(f"Number of cells in {self.area}")
+        plt.tight_layout()
+        plt.savefig(f"{self.output_root}/plot_cells_behavior_score.pdf")
+        plt.savefig(f"{self.output_root}/plot_cells_behavior_score.svg")
+        plt.close()
+
+        fig, axs = plt.subplots(1, 3, figsize=(scale*18, scale*6), dpi=dpi)
+        sns.scatterplot(data=self.cell_stats_df, x="behavior score", y="active / total", hue="animalID", ax=axs[0],
+                        legend=False, palette=ANIMALS_PALETTE[self.area], edgecolor="black")
+        sns.scatterplot(data=self.cell_stats_df, x="behavior score", y="tuned / total", hue="animalID", ax=axs[1],
+                        legend=False, palette=ANIMALS_PALETTE[self.area], edgecolor="black")
+        ax = sns.scatterplot(data=self.cell_stats_df, x="behavior score", y="tuned / active", hue="animalID", ax=axs[2],
+                             palette=ANIMALS_PALETTE[self.area], edgecolor="black")
+        ax.legend(loc='upper right', title="animals", bbox_to_anchor=(1.75, 1))
+        axs[0].set_ylim([0,1])
+        axs[1].set_ylim([0, 1])
+        axs[2].set_ylim([0, 1])
+        plt.tight_layout()
+        plt.savefig(f"{self.output_root}/plot_cell_ratios.pdf")
+        plt.savefig(f"{self.output_root}/plot_cell_ratios.svg")
+        plt.close()
+
 
     def plot_place_fields(self):
-        scale_poster = 0.75
-        scale = 1
-        fig, ax = plt.subplots(figsize=(scale*3, scale*3), dpi=125)  # , gridspec_kw={"width_ratios": [1,3]}
+        if self.is_notebook:
+            scale = 1
+            dpi = 150
+        else:
+            scale = 0.75
+            #scale = 1
+            dpi=125
+        fig, ax = plt.subplots(figsize=(scale*3, scale*3), dpi=dpi, num=1, clear=True)  # , gridspec_kw={"width_ratios": [1,3]}
         pfs_by_category = self.pfs_df.groupby(["category", "category_order"]).count().sort_values(by="category_order")
         pfs_by_category = pfs_by_category.reset_index().set_index("category")  # so we can get rid of the category ordering from the label names
         pfs_by_category.plot(kind="bar", y="session id", ax=ax, color=self.categories_colors_RGB, legend=False)
         if self.area == "CA1":
-            ax.set_yticks(np.linspace(0,10000,6))
+            ax.set_yticks(np.linspace(0,8000,9))
         else:
-            ax.set_yticks(np.linspace(0,300,7))
-            ax.set_ylim(0,300)
+            ax.set_yticks(np.linspace(0,500,5))
+        ax.set_title(f"n = {len(self.pfs_df)}")
         ax.set_ylabel("# place fields")
         ax.set_xlabel("")
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
         ax.spines[['right', 'top']].set_visible(False)
-        plt.suptitle(f"Number of place fields in {self.area}")
+        #plt.suptitle(f"Number of place fields in {self.area}")
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_place_fields.pdf")
         plt.savefig(f"{self.output_root}/plot_place_fields.svg", transparent=True)
-        plt.close()
+        if self.is_notebook:
+            plt.show()
+        else:
+            plt.clf()
+            plt.cla()
+            plt.close()
 
         # pie chart with percentages
         fig, ax = plt.subplots(figsize=(scale*3, scale*3), dpi=125)  # , gridspec_kw={"width_ratios": [1,3]}
@@ -195,6 +312,8 @@ class BtspStatistics:
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_place_fields_pie.pdf")
         plt.savefig(f"{self.output_root}/plot_place_fields_pie.svg", transparent=True)
+        plt.clf()
+        plt.cla()
         plt.close()
 
         # pie chart without percentages
@@ -205,10 +324,13 @@ class BtspStatistics:
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_place_fields_pie_notext.pdf")
         plt.savefig(f"{self.output_root}/plot_place_fields_pie_notext.svg", transparent=True)
+        plt.clf()
+        plt.cla()
         plt.close()
 
     def plot_place_fields_by_session(self):
-        fig, ax = plt.subplots()
+        scale = 1
+        fig, ax = plt.subplots(figsize=(scale*5, scale*3), dpi=150, num=2, clear=True)
         pfs_by_category = self.pfs_df.groupby(["category", "session id", "category_order"]).count().sort_values(by="category_order")
         pf_counts = pfs_by_category.reset_index()[["category", "session id", "cell id"]]
         sns.boxplot(data=pf_counts, x="category", y="cell id", ax=ax, palette=self.categories_colors_RGB, showfliers=False)
@@ -217,12 +339,17 @@ class BtspStatistics:
         ax.set_ylabel("# place fields")
         ax.set_xlabel("")
         plt.savefig(f"{self.output_root}/plot_place_fields_by_session.pdf")
-        plt.close()
+        if self.is_notebook:
+            plt.show()
+        else:
+            plt.clf()
+            plt.cla()
+            plt.close()
 
     def plot_place_field_proportions(self):
-        scale_poster = 0.75
-        scale = 1
-        fig, ax = plt.subplots(figsize=(scale*3, scale*3), dpi=125)
+        scale = 0.75
+        #scale = 1
+        fig, ax = plt.subplots(figsize=(scale*3, scale*3), dpi=150, num=3, clear=True)
         #sns.boxplot(data=self.pf_proportions_by_category_df, ax=ax, palette=self.categories_colors_RGB,
         #            showfliers=False, width=0.7)
         #sns.swarmplot(data=self.pf_proportions_by_category_df, ax=ax, palette=self.categories_colors_RGB, alpha=0.75, size=4)
@@ -234,11 +361,16 @@ class BtspStatistics:
         ax.set_ylabel("proportion")
         ax.set_xlabel("")
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
-        plt.suptitle(f"Proportion of PFs by session in {self.area}")
+        #plt.suptitle(f"Proportion of PFs by session in {self.area}")
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_place_field_proportions.pdf")
         plt.savefig(f"{self.output_root}/plot_place_field_proportions.svg", transparent=True)
-        plt.close()
+        if self.is_notebook:
+            plt.show()
+        else:
+            plt.clf()
+            plt.cla()
+            plt.close()
 
     def plot_place_fields_criteria(self):
         fig, ax = plt.subplots()
@@ -247,7 +379,10 @@ class BtspStatistics:
         nonbtsp_pfs_w_criteria_df.plot(kind="bar", stacked=True, color=["r", "g"], ax=ax)
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
         plt.savefig(f"{self.output_root}/plot_place_fields_criteria.pdf")
-        plt.close()
+        if self.is_notebook:
+            plt.show()
+        else:
+            plt.close()
 
     def plot_place_field_properties(self):
         fig, ax = plt.subplots()
@@ -407,10 +542,14 @@ class BtspStatistics:
             filename = f"{self.output_root}/plot_place_fields_criteria_venn_diagram"
         plt.savefig(f"{filename}.pdf", transparent=True)
         plt.savefig(f"{filename}.svg", transparent=True)
-        plt.close()
+        if self.is_notebook:
+            plt.show()
+        else:
+            plt.close()
 
     def calc_shift_gain_distribution(self, unit="cm"):
-        shift_gain_df = self.pfs_df[["category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
+        #shift_gain_df = self.pfs_df[["category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
+        shift_gain_df = self.pfs_df[["animal id", "session id", "category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
         shift_gain_df = shift_gain_df[(shift_gain_df["initial shift"].notna()) & (shift_gain_df["formation gain"].notna())]
         shift_gain_df["log10(formation gain)"] = np.log10(shift_gain_df["formation gain"])
 
@@ -561,11 +700,12 @@ class BtspStatistics:
         plt.ylim([-4, 4])
         plt.xlim([-4, 4])
         plt.legend()
-        #plt.show()
-        plt.close()
+        if self.is_notebook:
+            plt.show()
+        else:
+            plt.close()
 
     def plot_shift_gain_distribution(self, unit="cm", without_transient=False):
-
         def take_same_sized_subsample(df):
             if self.area == "CA3":
                 return df
@@ -588,6 +728,13 @@ class BtspStatistics:
         def run_tests_and_plot_results(df, g, params=None, annotate=False):
             sh = "shuffledLaps" if "shuffledLaps" in self.extra_info else ""
             test_results = f"{self.area}\n\n{sh}\n\n"
+            test_dict = {
+                "population": [],
+                "feature": [],
+                "test": [],
+                "statistic": [],
+                "p-value": []
+            }
             for param in params:
                 test_results += f"{param}\n"
                 df_newlyF = df[df["newly formed"] == True]
@@ -596,26 +743,63 @@ class BtspStatistics:
                 # t-test: do the 2 samples have equal means?
                 test = scipy.stats.ttest_ind(df_newlyF[param].values, df_establ[param].values)
                 test_results += f"    p={test.pvalue:.3} (t-test) {stars(test.pvalue)}\n"
+                test_dict["population"].append("reliables")
+                test_dict["feature"].append(param)
+                test_dict["test"].append("t-test")
+                test_dict["statistic"].append(test.statistic)
+                test_dict["p-value"].append(test.pvalue)
 
                 # mann-whitney u: do the 2 samples come from same distribution?
                 test = scipy.stats.mannwhitneyu(df_newlyF[param].values, df_establ[param].values)
                 test_results += f"    p={test.pvalue:.3} (MW-U) {stars(test.pvalue)}\n"
+                test_dict["population"].append("reliables")
+                test_dict["feature"].append(param)
+                test_dict["test"].append("mann-whitney u")
+                test_dict["statistic"].append(test.statistic)
+                test_dict["p-value"].append(test.pvalue)
 
                 # kolmogorov-smirnov: do the 2 samples come from the same distribution?
                 test = scipy.stats.kstest(df_newlyF[param].values, cdf=df_establ[param].values)
                 test_results += f"    p={test.pvalue:.3} (KS) {stars(test.pvalue)}\n"
+                test_dict["population"].append("reliables")
+                test_dict["feature"].append(param)
+                test_dict["test"].append("kolmogorov-smirnov")
+                test_dict["statistic"].append(test.statistic)
+                test_dict["p-value"].append(test.pvalue)
 
                 # wilcoxon
                 test = scipy.stats.wilcoxon(df_newlyF[param].values)
                 test_results += f"    p={test.pvalue:.3} (WX-NF) {stars(test.pvalue)}\n"
+                test_dict["population"].append("newly formed")
+                test_dict["feature"].append(param)
+                test_dict["test"].append("wilcoxon")
+                test_dict["statistic"].append(test.statistic)
+                test_dict["p-value"].append(test.pvalue)
+
                 test = scipy.stats.wilcoxon(df_establ[param].values)
                 test_results += f"    p={test.pvalue:.3} (WX-ES) {stars(test.pvalue)}\n"
+                test_dict["population"].append("established")
+                test_dict["feature"].append(param)
+                test_dict["test"].append("wilcoxon")
+                test_dict["statistic"].append(test.statistic)
+                test_dict["p-value"].append(test.pvalue)
 
                 # t-test (1 sample)
                 test = scipy.stats.ttest_1samp(df_newlyF[param].values, popmean=0)
                 test_results += (f"    p={test.pvalue:.3} (TT1S-NF) {stars(test.pvalue)}\n")
+                test_dict["population"].append("newly formed")
+                test_dict["feature"].append(param)
+                test_dict["test"].append("1-sample t-test")
+                test_dict["statistic"].append(test.statistic)
+                test_dict["p-value"].append(test.pvalue)
+
                 test = scipy.stats.ttest_1samp(df_establ[param].values, popmean=0)
                 test_results += f"    p={test.pvalue:.3} (TT1S_ES) {stars(test.pvalue)}\n"
+                test_dict["population"].append("established")
+                test_dict["feature"].append(param)
+                test_dict["test"].append("1-sample t-test")
+                test_dict["statistic"].append(test.statistic)
+                test_dict["p-value"].append(test.pvalue)
 
                 # shapiro-wilk: does the 1 sample have normal distribution?
                 #_, pvalue = scipy.stats.shapiro(df_newlyF[param].values)
@@ -636,6 +820,7 @@ class BtspStatistics:
                 test_results += f"\n"
             with open(f"{self.output_root}/tests{suffix}.txt", "w") as test_results_file:
                 test_results_file.write(test_results)
+            self.tests_df = pd.DataFrame.from_dict(test_dict)
 
             if annotate:
                 ax = g.ax_joint
@@ -665,19 +850,22 @@ class BtspStatistics:
         else:
             alpha=0.8
 
+        is_legend = False
+        fig, ax = plt.subplots()
         g = sns.jointplot(data=ss_cc, x="initial shift", y="log10(formation gain)", palette=sns.color_palette(palette, 2),
-                      hue="newly formed", alpha=alpha, s=30, marginal_kws={"common_norm": False}, height=4, ratio=3)
+                      hue="newly formed", alpha=alpha, s=30, marginal_kws={"common_norm": False}, height=3.5, ratio=3, legend=is_legend)
 
         # change legend
-        g.ax_joint.legend_.set_title("")
-        labels = ["Established PFs", "Newly formed PFs"]
-        for i_label, label in enumerate(labels):
-            # remove opacity of dots in legend
-            g.ax_joint.legend_.legend_handles[i_label].set_alpha(1)
-            # set custom legend labels
-            text_obj = g.ax_joint.legend_.texts[i_label]
-            text_obj.set_text(label)
-        g.ax_joint.legend_.set_bbox_to_anchor((0.5, 0.85))
+        if is_legend:
+            g.ax_joint.legend_.set_title("")
+            labels = ["Established PFs", "Newly formed PFs"]
+            for i_label, label in enumerate(labels):
+                # remove opacity of dots in legend
+                g.ax_joint.legend_.legend_handles[i_label].set_alpha(1)
+                # set custom legend labels
+                text_obj = g.ax_joint.legend_.texts[i_label]
+                text_obj.set_text(label)
+            g.ax_joint.legend_.set_bbox_to_anchor((0.5, 0.85))
 
         # change labels
         g.set_axis_labels("initial shift [cm]", r"$log_{10}(formation\ gain)$")
@@ -705,37 +893,43 @@ class BtspStatistics:
         #plt.scatter(mean_estab_shift, mean_estab_gain, marker="X", c=palette[0], edgecolors="white", s=100)
         #plt.scatter(mean_newly_shift, mean_newly_gain, marker="X", c=palette[1], edgecolors="white", s=100)
 
-        scale = 2
-        height = 5.5
+        if self.is_notebook:
+            scale = 0.25
+        else:
+            scale = 1
+        height = 3.5
         annotate = False
 
         run_tests_and_plot_results(sg_df, g=g, params=["initial shift", "log10(formation gain)"], annotate=annotate)
-        g.fig.set_size_inches((height, height))
+        g.figure.set_size_inches((height, height))
 
         if annotate:
-            g.fig.set_size_inches((1.81*height, height))
+            g.figure.set_size_inches((scale*1.81*height, scale*height))
             plt.subplots_adjust(right=0.65)
 
         #else:
         #    #g.fig.set_size_inches((height, height))
         #    run_tests_and_plot_results(sg_df, g=g, params=["initial shift", "log10(formation gain)"])
         #    plt.tight_layout()
-        title_suffix = "without transient PFs" if without_transient else "transient PFs included"
-        g.fig.suptitle(f"Distribution of PFs by shift and gain ({title_suffix})")
+        #title_suffix = "without transient PFs" if without_transient else "transient PFs included"
+        #g.fig.suptitle(f"Distribution of PFs by shift and gain ({title_suffix})")
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_shift_gain_distributions{suffix}.pdf")
         plt.savefig(f"{self.output_root}/plot_shift_gain_distributions{suffix}.svg")
+        plt.clf()
+        plt.cla()
         plt.close()
-
-
 
         ###########################
         ####### VIOLINPLOTS #######
         ###########################
 
-        scale = 0.9
-        sns.set_context("poster")
-        fig, axs = plt.subplots(1,2, figsize=(scale*9,scale*9))
+        if self.is_notebook:
+            scale = 0.5
+        else:
+            scale = 0.9
+            sns.set_context("poster")
+        fig, axs = plt.subplots(1,2, figsize=(scale*9,scale*9), num=5, clear=True)
 
         q_lo = ss_cc["initial shift"].quantile(0.01)
         q_hi = ss_cc["initial shift"].quantile(0.99)
@@ -799,11 +993,16 @@ class BtspStatistics:
         axs[1].spines["right"].set_visible(False)
         axs[1].set_xlabel("")
         axs[1].set_ylabel("")
-        plt.suptitle(f"Distribution of PFs by shift and gain\n({title_suffix})")
+        #plt.suptitle(f"Distribution of PFs by shift and gain\n({title_suffix})")
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_shift_gain_violinplots{suffix}.pdf")
         plt.savefig(f"{self.output_root}/plot_shift_gain_violinplots{suffix}.svg", transparent=True)
-        plt.close()
+        if self.is_notebook:
+            plt.show()
+        else:
+            plt.clf()
+            plt.cla()
+            plt.close()
 
 
 
@@ -1372,6 +1571,8 @@ class BtspStatistics:
         #for animal, session, cellid, corridor in selection[self.area]:
         sessions = np.unique(self.pfs_df[["session id"]].values[:,0])
         for session in sessions:
+            if session != "KS029_110621":
+                continue
             tcl_path = f"{self.data_path}/tuned_cells/{self.area}{self.extra_info}/tuned_cells_{session}.pickle"
             with open(tcl_path, "rb") as tcl_file:
                 tcl = pickle.load(tcl_file)
@@ -1380,6 +1581,10 @@ class BtspStatistics:
                 cellid = cell.cellid
                 corridor = cell.corridor
                 n_laps = cell.rate_matrix.shape[1]
+                if self.history_dependent:
+                    history = cell.history
+                else:
+                    history = "ALL"
 
                 scale = 4.2
                 fig, ax = plt.subplots(figsize=(scale*2.4, scale*1.5))
@@ -1387,7 +1592,8 @@ class BtspStatistics:
 
                 pfs = self.pfs_df[(self.pfs_df["session id"] == session) &
                                   (self.pfs_df["cell id"] == cellid) &
-                                  (self.pfs_df["corridor"] == corridor)]
+                                  (self.pfs_df["corridor"] == corridor) &
+                                  (self.pfs_df["history"] == history)]
                 if pfs.empty:
                     plt.close()
                     continue
@@ -1404,16 +1610,16 @@ class BtspStatistics:
                         ax.axvspan(lb, ub, ymin=fl, ymax=el, color=CATEGORIES[category].color, alpha=0.3, linewidth=0)
 
                     # btsp inset
-                    if category == "btsp":
-                        # formation lap
-                        #frames_pf_mask = (cell.frames_pos_bins[pf["formation lap"]] >= pf["lower bound"]) & (cell.frames_pos_bins[pf["formation lap"]] <= pf["upper bound"]+1)
-                        frames_pf_dF_F = cell.frames_dF_F[pf["formation lap"]]#[frames_pf_mask]
-                        inset_data.append(frames_pf_dF_F)
+                    #if category == "btsp":
+                    #    # formation lap
+                    #    #frames_pf_mask = (cell.frames_pos_bins[pf["formation lap"]] >= pf["lower bound"]) & (cell.frames_pos_bins[pf["formation lap"]] <= pf["upper bound"]+1)
+                    #    frames_pf_dF_F = cell.frames_dF_F[pf["formation lap"]]#[frames_pf_mask]
+                    #    inset_data.append(frames_pf_dF_F)
 
-                        # first lap after formation lap
-                        #frames_pf_mask = (cell.frames_pos_bins[pf["formation lap"]+1] >= pf["lower bound"]) & (cell.frames_pos_bins[pf["formation lap"]+1] <= pf["upper bound"]+1)
-                        frames_pf_dF_F = cell.frames_dF_F[pf["formation lap"]+1]#[frames_pf_mask]
-                        inset_data.append(frames_pf_dF_F)
+                    #    # first lap after formation lap
+                    #    #frames_pf_mask = (cell.frames_pos_bins[pf["formation lap"]+1] >= pf["lower bound"]) & (cell.frames_pos_bins[pf["formation lap"]+1] <= pf["upper bound"]+1)
+                    #    frames_pf_dF_F = cell.frames_dF_F[pf["formation lap"]+1]#[frames_pf_mask]
+                    #    inset_data.append(frames_pf_dF_F)
 
                 plt.ylabel("laps")
                 plt.xlabel("spatial position")
@@ -1425,24 +1631,341 @@ class BtspStatistics:
                     category_folder = f"{ratemaps_folder}/{category}"
                     makedir_if_needed(category_folder)
 
-                    plt.savefig(f"{category_folder}/{session}_Cell{cellid}_Corr{corridor}.pdf")
+                    plt.savefig(f"{category_folder}/{session}_Cell{cellid}_Corr{corridor}_{history}.pdf")
                     #plt.savefig(f"{category_folder}/{session}_Cell{cellid}_Corr{corridor}.svg", transparent=True)
                     plt.close()
 
-                    if category == "btsp":
-                        fig, ax = plt.subplots(figsize=(2,1))
-                        offset = 1
-                        plt.plot(inset_data[1]+offset, color="k", linewidth=1.3)
-                        plt.plot(inset_data[0], color="r", linewidth=1.3)
-                        scalebar_x = max(len(inset_data[0]), len(inset_data[1])) + 10
-                        plt.plot([scalebar_x, scalebar_x+30], [0, 0], color="k")
-                        plt.plot([scalebar_x, scalebar_x], [0, 1], color="k")
-                        ax.set_axis_off()
-                        #plt.savefig(f"{category_folder}/{session}_Cell{cellid}_Corr{corridor}_INSET.pdf")
-                        #plt.savefig(f"{category_folder}/{session}_Cell{cellid}_Corr{corridor}_INSET.svg", transparent=True)
-                        plt.close()
+                    #if category == "btsp":
+                    #    fig, ax = plt.subplots(figsize=(2,1))
+                    #    offset = 1
+                    #    plt.plot(inset_data[1]+offset, color="k", linewidth=1.3)
+                    #    plt.plot(inset_data[0], color="r", linewidth=1.3)
+                    #    scalebar_x = max(len(inset_data[0]), len(inset_data[1])) + 10
+                    #    plt.plot([scalebar_x, scalebar_x+30], [0, 0], color="k")
+                    #    plt.plot([scalebar_x, scalebar_x], [0, 1], color="k")
+                    #    ax.set_axis_off()
+                    #    #plt.savefig(f"{category_folder}/{session}_Cell{cellid}_Corr{corridor}_INSET.pdf")
+                    #    #plt.savefig(f"{category_folder}/{session}_Cell{cellid}_Corr{corridor}_INSET.svg", transparent=True)
+                    #    plt.close()
 
     def calc_place_field_quality(self):
+        for i_pf, pf in self.pfs_df.iterrows():
+            if i_pf % 100 == 0:
+                print(f"{i_pf} / {len(self.pfs_df)}")
+            if self.history_dependent:
+                tc = self.tc_df[(self.tc_df["sessionID"] == pf["session id"]) &
+                                (self.tc_df["cellid"] == pf["cell id"]) &
+                                (self.tc_df["corridor"] == pf["corridor"]) &
+                                (self.tc_df["history"] == pf["history"])]["tc"].iloc[0]
+            else:
+                tc = self.tc_df[(self.tc_df["sessionID"] == pf["session id"]) &
+                                (self.tc_df["cellid"] == pf["cell id"]) &
+                                (self.tc_df["corridor"] == pf["corridor"])]["tc"].iloc[0]
+
+            #rate_matrix_pf = tc.rate_matrix[pf["lower bound"]:pf["upper bound"], pf["formation lap"]:pf["end lap"]]
+            lb, ub, fl, el = pf["lower bound"], pf["upper bound"], pf["formation lap"], pf["end lap"]
+            rates_normalized_within_bounds = np.nanmax(tc.rate_matrix[lb:ub, :], axis=0) / np.nanmax(tc.rate_matrix[lb:ub, :])
+
+            # ALR = active lap ratio: N(active laps within PF bounds)/N(total laps)
+            alr = np.sum(rates_normalized_within_bounds >= 0.1) / len(rates_normalized_within_bounds)
+            self.pfs_df.loc[i_pf, "ALR"] = alr
+
+            # PF width (in cm)
+            self.pfs_df.loc[i_pf, "PF width"] = (self.pfs_df.loc[i_pf, "upper bound"] - self.pfs_df.loc[i_pf, "lower bound"]) * self.bin_length
+
+            # COM standard deviance in active laps
+            act_laps_idxs = np.where(rates_normalized_within_bounds >= 0.1)[0]
+            RM_active_laps = tc.rate_matrix[lb:ub][:, act_laps_idxs]
+            COM = lambda arr: np.average(np.array(list(range(len(arr)))), weights=arr)  # weighted avg. of indices of input array, weights = input array itself
+            COMs_active_laps = np.apply_along_axis(COM, axis=0, arr=RM_active_laps)
+            COM_SD = COMs_active_laps.std()
+            self.pfs_df.loc[i_pf, "COM SD"] = COM_SD
+            #self.pfs_df.loc[i_pf, "dCOMs"] = [np.diff(COMs_active_laps)]
+
+            # PF width-normalized COM SD
+            self.pfs_df.loc[i_pf, "Norm. COM SD"] = COM_SD / self.pfs_df.loc[i_pf, "PF width"]
+
+            # PF mean COM: LB added so that it is no longer relative to LB, but relative to the beginning of track
+            self.pfs_df.loc[i_pf, "Mean COM"] = self.pfs_df.loc[i_pf, "lower bound"] + COMs_active_laps.mean()
+            self.pfs_df.loc[i_pf, "Mean rate"] = RM_active_laps.mean()
+            self.pfs_df.loc[i_pf, "Max rate"] = RM_active_laps.max()
+
+            # CALR = captured active lap ratio: N(active laps within PF bounds *and lifespan*)/N(total active laps)
+            if pf["category"] == "unreliable":
+                continue
+            calr = np.sum(rates_normalized_within_bounds[fl:el] >= 0.1) / np.sum(rates_normalized_within_bounds >= 0.1)
+            self.pfs_df.loc[i_pf, "CALR"] = calr
+
+    def plot_place_field_quality(self):
+        def sort_df(series):
+            return series.apply(lambda x: CATEGORIES[x].order)
+        pfs_sorted = self.pfs_df.sort_values(by="category", key=sort_df)
+        #cols = ['ALR', 'CALR', 'COM SD', 'PF width', 'Norm. COM SD']
+        cols = ['ALR', 'COM SD', 'PF width', 'Norm. COM SD']
+        #ylims = [[0,1], [0,1], [0,7], [0,40], [0, 0.5]]
+        ylims = [[0,1], [0,7], [0,100], [0,0.5]]
+
+        scale = 1.3
+        fig, axs = plt.subplots(1, len(cols), figsize=(scale * len(cols)*5,scale * 2.8))
+        palette = ["#00B0F0", "#F5B800"]
+        for i, col in enumerate(cols):
+            pfs_filtered = pfs_sorted[pfs_sorted["category"] != "unreliable"]
+            pf_quality_df = pfs_filtered[["newly formed", col]]
+            is_legend = False #if i < len(cols)-1 else True
+            sns.violinplot(pf_quality_df.melt(id_vars="newly formed"), x="variable", y="value", hue="newly formed",
+                        palette=palette, saturation=1, ax=axs[i], legend=is_legend, linewidth=2, cut=0)
+            axs[i].set_ylim(ylims[i])
+            axs[i].set_xlabel("")
+            axs[i].set_ylabel("")
+            axs[i].set_title(col)
+            axs[i].spines["top"].set_visible(False)
+            axs[i].spines["right"].set_visible(False)
+            axs[i].spines["bottom"].set_visible(False)
+            axs[i].set_xticks([], [])
+        plt.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
+        plt.tight_layout()
+        plt.savefig(f"{self.output_root}/plot_PFquality_NFvEst.pdf")
+        plt.savefig(f"{self.output_root}/plot_PFquality_NFvEst.svg")
+        plt.close()
+
+        fig, axs = plt.subplots(1, len(cols), figsize=(scale * len(cols)*5,scale * 2.8))
+        for i, col in enumerate(cols):
+            pf_quality_df = pfs_sorted[["category", col]]
+            is_legend = False #if i < len(cols)-1 else True
+            sns.violinplot(pf_quality_df.melt(id_vars="category"), x="variable", y="value", hue="category",
+                        palette=self.categories_colors_RGB, saturation=1, ax=axs[i], legend=is_legend,
+                        linewidth=2, cut=0)
+            axs[i].set_ylim(ylims[i])
+            axs[i].set_xlabel("")
+            axs[i].set_ylabel("")
+            axs[i].set_title(col)
+            axs[i].spines["top"].set_visible(False)
+            axs[i].spines["right"].set_visible(False)
+            axs[i].spines["bottom"].set_visible(False)
+            axs[i].set_xticks([], [])
+        plt.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
+        plt.tight_layout()
+        plt.savefig(f"{self.output_root}/plot_PFquality_categories.pdf")
+        plt.savefig(f"{self.output_root}/plot_PFquality_categories.svg")
+        plt.close()
+
+    def calc_lap_by_lap_metrics(self):
+        rng = np.random.default_rng(seed=1234)
+
+        self.pfs_df = self.pfs_df.sample(frac=1).reset_index(drop=True)  # shuffle place fields
+        pf_lap_dicts_all = []
+        for i_pf, pf in self.pfs_df.iterrows():
+            if pf["category"] == "unreliable":
+                continue
+            if i_pf % 100 == 0:
+                print(f"{i_pf} / {len(self.pfs_df)}")
+
+            tc = self.tc_df[(self.tc_df["sessionID"] == pf["session id"]) & (self.tc_df["cellid"] == pf["cell id"]) & (self.tc_df["corridor"] == pf["corridor"])]["tc"].iloc[0]
+
+            #rate_matrix_pf = tc.rate_matrix[pf["lower bound"]:pf["upper bound"], pf["formation lap"]:pf["end lap"]]
+            lb, ub, fl, el = pf["lower bound"], pf["upper bound"], pf["formation lap"], pf["end lap"]
+            rates_normalized_within_bounds = np.nanmax(tc.rate_matrix[lb:ub, :], axis=0) / np.nanmax(tc.rate_matrix[lb:ub, :])
+
+            # contains indices of active laps:
+            act_laps_idxs = np.where(rates_normalized_within_bounds >= 0.1)[0]
+
+            # filter active laps: remove formation lap and subsequent 2 active laps to allow initial shifting
+            #act_laps_idxs = act_laps_idxs[(act_laps_idxs >= fl + 3) | (act_laps_idxs < fl)]
+
+            # list of indices of consecutively active laps (list of lists)
+            list_cons_act_laps_idxs = np.array_split(act_laps_idxs, np.flatnonzero(np.diff(act_laps_idxs) > 1) + 1)
+
+            pf_lap_dicts = []
+            for cons_act_laps_idxs in list_cons_act_laps_idxs:
+                # this is where we filter non-consecutive active laps:
+                # chunks of len < 2 mean that an inactive lap came immediately after an active one
+                if len(cons_act_laps_idxs) < 2:
+                    continue
+
+                # RM = rate matrix
+                RM_all_active_laps = tc.rate_matrix[lb:ub][:,act_laps_idxs]
+                RM_cons_active_laps = tc.rate_matrix[lb:ub][:,cons_act_laps_idxs]  # skip first 3 active laps to allow for initial shift
+                RM_all_active_laps_z = (RM_all_active_laps - tc.rate_matrix.mean()) / tc.rate_matrix.std()  # z-scoring using the whole cell, not just PF spatio-temporal bounds
+                RM_cons_active_laps_z = (RM_cons_active_laps - tc.rate_matrix.mean()) / tc.rate_matrix.std()
+
+                COM = lambda arr: np.average(np.array(list(range(len(arr)))), weights=arr)  # weighted avg. of indices of input array, weights = input array itself
+                COMs_cons_active_laps = np.apply_along_axis(COM, axis=0, arr=RM_cons_active_laps)
+
+                max_activity_cons_active_laps = RM_cons_active_laps.max(axis=0)
+                max_activity_cons_active_laps_normalized = max_activity_cons_active_laps / RM_cons_active_laps.max()
+                max_activity_cons_active_laps_z = RM_cons_active_laps_z.max(axis=0)
+                max_activity_cons_active_laps_normalized_z = max_activity_cons_active_laps_z / RM_all_active_laps_z.max()
+
+                sum_activity_cons_active_laps = RM_cons_active_laps.sum(axis=0)
+                sum_activity_cons_active_laps_normalized = sum_activity_cons_active_laps / RM_cons_active_laps.sum()
+                sum_activity_cons_active_laps_z = RM_cons_active_laps_z.sum(axis=0)
+                sum_activity_cons_active_laps_normalized_z = sum_activity_cons_active_laps_z / RM_all_active_laps_z.sum()
+
+                dCOMs = list(np.diff(COMs_cons_active_laps))
+                for i_lap_idx, lap_idx in enumerate(cons_act_laps_idxs[1:-1]):  # [1:-1] so that we can check lap before and after and calc. ratio
+                    # i_lap_idx: lap location within consecutive list (so always starts at zero)
+                    # lap_idx: lap location among all laps (doesn't necessarily start at zero)
+                    if i_lap_idx < len(cons_act_laps_idxs):
+                        dCOM = dCOMs[i_lap_idx]
+                        next_lap_max_act = max_activity_cons_active_laps_normalized[i_lap_idx+1]
+                        next_lap_sum_act = sum_activity_cons_active_laps_normalized[i_lap_idx+1]
+                        next_lap_max_act_z = max_activity_cons_active_laps_normalized_z[i_lap_idx+1]
+                        next_lap_sum_act_z = sum_activity_cons_active_laps_normalized_z[i_lap_idx+1]
+                    else:
+                        dCOM = np.nan
+                        next_lap_max_act = np.nan
+                        next_lap_sum_act = np.nan
+                        next_lap_max_act_z = np.nan
+                        next_lap_sum_act_z = np.nan
+                    curr_lap_max_act = max_activity_cons_active_laps_normalized[i_lap_idx]
+                    curr_lap_sum_act = sum_activity_cons_active_laps_normalized[i_lap_idx]
+                    curr_lap_max_act_z = max_activity_cons_active_laps_normalized_z[i_lap_idx]
+                    curr_lap_sum_act_z = sum_activity_cons_active_laps_normalized_z[i_lap_idx]
+
+                    prev_lap_max_act_z = max_activity_cons_active_laps_normalized_z[i_lap_idx-1]
+                    prev_lap_sum_act_z = sum_activity_cons_active_laps_normalized_z[i_lap_idx-1]
+                    max_act_z_ratio = next_lap_max_act_z / prev_lap_max_act_z
+                    sum_act_z_ratio = next_lap_sum_act_z / prev_lap_sum_act_z
+                    pf_lap_dict = {
+                        "session id": pf["session id"],
+                        "cell id": pf["cell id"],
+                        "corridor": pf["corridor"],
+                        "category": pf["category"],
+                        "lap number": lap_idx,
+                        "dCOM": dCOM,
+                        "max activity[i] (norm.)": curr_lap_max_act,
+                        "max activity[i+1] (norm.)": next_lap_max_act,
+                        "sum activity[i] (norm.)": curr_lap_sum_act,
+                        "sum activity[i+1] (norm.)": next_lap_sum_act,
+                        "max activity[i] (norm., z-scored)": curr_lap_max_act_z,
+                        "max activity[i+1] (norm., z-scored)": next_lap_max_act_z,
+                        "sum activity[i] (norm., z-scored)": curr_lap_sum_act_z,
+                        "sum activity[i+1] (norm., z-scored)": next_lap_sum_act_z,
+                        "max activity ratio (z)": max_act_z_ratio,
+                        "sum activity ratio (z)": sum_act_z_ratio,
+                    }
+                    pf_lap_dicts.append(pf_lap_dict)
+            shuffled_laps_idxs = rng.permutation(len(pf_lap_dicts))
+            pf_lap_dicts_extended = []
+            for i_pf_lap_dict, pf_lap_dict in enumerate(pf_lap_dicts):
+                shuffled_idx = shuffled_laps_idxs[i_pf_lap_dict]  # select index from shuffled lap index list
+                if shuffled_idx+1 == i_pf_lap_dict:
+                    # these are the cases when the next activity would be the current lap's activity so we fill up the diagonal
+                    pf_lap_dict["sum activity[i+1] (norm., z-scored, shuffled)"] = np.nan
+                else:
+                    shuffled_lap_dict = pf_lap_dicts[shuffled_idx]  # select lap_dict belonging to said index
+                    pf_lap_dict["sum activity[i+1] (norm., z-scored, shuffled)"] = shuffled_lap_dict["sum activity[i+1] (norm., z-scored)"]
+                pf_lap_dicts_extended.append(pf_lap_dict)
+            pf_lap_dicts = pf_lap_dicts_extended
+            pf_lap_dicts_all += pf_lap_dicts
+
+        self.pfs_laps_df = pd.DataFrame.from_dict(pf_lap_dicts_all)
+        self.pfs_laps_df["log sum[i]"] = np.log10(self.pfs_laps_df["sum activity[i] (norm.)"])
+        self.pfs_laps_df["log sum[i+1]"] = np.log10(self.pfs_laps_df["sum activity[i+1] (norm.)"])
+        self.pfs_laps_df["log sum[i] (z)"] = np.log10(self.pfs_laps_df["sum activity[i] (norm., z-scored)"])
+        self.pfs_laps_df["log sum[i+1] (z)"] = np.log10(self.pfs_laps_df["sum activity[i+1] (norm., z-scored)"])
+
+    def plot_lap_by_lap_metrics(self):
+        # bin activities into a list of act.ranges, so we can plot distributions
+        step = 0.1
+        act_range = np.arange(0.1, 1+step, step)  # 1+step is necessary to include 1
+        max_find_nearest = lambda row: np.round(act_range[np.abs(act_range - row["max activity[i] (norm.)"]).argmin()],3)
+        sum_find_nearest = lambda row: np.round(act_range[np.abs(act_range - row["sum activity[i] (norm.)"]).argmin()],3)
+        self.pfs_laps_df["max activity range"] = self.pfs_laps_df.apply(max_find_nearest, axis=1)
+        self.pfs_laps_df["sum activity range"] = self.pfs_laps_df.apply(sum_find_nearest, axis=1)
+
+        """
+        # TODO: avokádó plot
+        plt.figure()
+        sns.histplot(data=self.pfs_laps_df.reset_index(), x="log sum[i]", y="log sum[i+1]", binrange=[-3, 0], binwidth=1 / 30, cmap="viridis")
+        plt.axline((0, 0), (1, 1), c="r")
+        plt.xlim([-3, 0])
+        plt.ylim([-3, 0])
+
+        # TODO: űrhajó
+        plt.figure()
+        sns.histplot(data=self.pfs_laps_df.reset_index(), x="log sum[i] (z)", y="log sum[i+1] (z)", binrange=[-5, 2], binwidth=1 / 30, cmap="viridis")
+        plt.axline((0, 0), (1, 1), c="r")
+        plt.axhline(0, c="r", linestyle="--")
+        plt.axvline(0, c="r", linestyle="--")
+
+        # TODO: shuffled űrhajó; nem biztos hogy jó így a shuffling mert lehet sejteken belül kéne (most össze vannak kutyulva sejteken át)
+        #self.pfs_laps_df["log sum[i+1] (z, shuff)"] = self.pfs_laps_df["log sum[i+1] (z)"].sample(frac=1).values
+        self.pfs_laps_df["log sum[i+1] (z, pf-shuff)"] = np.log10(self.pfs_laps_df["sum activity[i+1] (norm., z-scored, shuffled)"])
+        plt.figure()
+        sns.histplot(data=self.pfs_laps_df.reset_index(), x="log sum[i] (z)", y="log sum[i+1] (z, pf-shuff)", binrange=[-5, 2], binwidth=1 / 30, cmap="viridis")
+        plt.axline((0, 0), (1, 1), c="r")
+        plt.axhline(0, c="r", linestyle="--")
+        plt.axvline(0, c="r", linestyle="--")
+        """
+
+        # TODO: plot for next time (04/03/24)
+        #bin_size = 0.025
+        #bin_range = np.arange(0, 1+bin_size, bin_size)
+
+        #plt.figure()
+        #bin_data = lambda df: df.groupby(pd.cut(df["activity[i] (norm.)"], bin_range, labels=bin_range[1:], right=True))["dCOM"].median().reset_index()["dCOM"]
+        #plt.plot(bin_range[1:], bin_data(self.pfs_laps_df[self.pfs_laps_df["category"] == "early"]), color=self.categories_colors_RGB[1], label="established")
+        #plt.plot(bin_range[1:], bin_data(self.pfs_laps_df[self.pfs_laps_df["category"] == "transient"]), color=self.categories_colors_RGB[2], label="transient")
+        #plt.plot(bin_range[1:], bin_data(self.pfs_laps_df[self.pfs_laps_df["category"] == "non-btsp"]), color=self.categories_colors_RGB[3], label="non-BTSP")
+        #plt.plot(bin_range[1:], bin_data(self.pfs_laps_df[self.pfs_laps_df["category"] == "btsp"]), color=self.categories_colors_RGB[4], label="BTSP")
+        #plt.legend()
+
+        #plt.figure()
+        #sns.histplot(data=self.pfs_laps_df.reset_index(), x="activity[i] (norm.)", y="activity[i+1] (norm.)",
+        #             binrange=[0, 1], binwidth=1 / 30, cmap="viridis")
+        #plt.axline((0, 0), slope=1, c="red")
+        #plt.xlim([0.1, 1])
+        #plt.ylim([0.1, 1])
+        #plt.show()
+
+
+        #plt.close()
+
+        # TODO this is the shit
+        sns.catplot(data=self.pfs_laps_df, x="max activity range", y="dCOM", kind="box", showfliers=False, linewidth=2, fill=False)
+        plt.axhline(0, c="r", linestyle="--")
+
+        #plt.figure()
+        #sns.histplot(data=self.pfs_laps_df, x="max activity[i] (norm., z-scored)", y="max activity ratio (z)")
+        #plt.show()
+        #sns.jointplot(data=self.pfs_laps_df[(self.pfs_laps_df["max activity ratio (z)"] > 0) & (self.pfs_laps_df["max activity ratio (z)"] < 2)],
+        #              kind="hist", x="max activity[i] (norm., z-scored)", y="max activity ratio (z)")
+        #plt.show()
+        #sns.catplot(data=self.pfs_laps_df, x="max activity range", y="max activity ratio (z)", kind="box",
+        #            showfliers=False)
+        #plt.axhline(1, c="r", linestyle="--")
+
+        sns.catplot(data=self.pfs_laps_df, x="max activity range", y="max activity ratio (z)", kind="box", showfliers=False, linewidth=2, fill=False)
+        plt.axhline(1, c="r", linestyle="--")
+
+        # TODO subsample to CA3, n=4892 -- this number is old
+        #if self.area == "CA1":
+        #    subsamples = []
+        #    for i in range(1000):
+        #        subsample = self.pfs_laps_df.sample(n=4892).groupby(["max activity range"])["max activity ratio (z)"].median()
+        #        subsamples.append(subsample)
+        #    subsample_df = pd.DataFrame(subsamples)
+        #    sns.catplot(data=subsample_df, kind="violin", color="blue", fill=False)
+        #    plt.axhline(1, c="r", linestyle="--"); plt.ylim([0,4.5])
+        plt.show()
+
+
+        # (TODO) run this from debugger -- distribution of p-values under 100 sampling of all pfs where subsample is the size of the last (smallest) activity group
+        #plt.figure(); [plt.plot([scipy.stats.wilcoxon(self.pfs_laps_df.sample(6583)[self.pfs_laps_df["activity range"] == val]["dCOM"]).pvalue for val in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]], marker="o", c="k", alpha=0.05) for i in range(100)]; plt.axhline(0.05, c="r");
+
+        #df_all = pd.DataFrame(act_norm_act_all[1:], columns=["activity(i)", "activity(i+1)"])
+        #bin_data = lambda ddf: ddf.groupby(pd.cut(ddf["activity(i)"], bin_range, labels=bin_range[1:], right=True))["activity(i+1)"].median().reset_index()["activity(i+1)"]
+        #df_all_filt = df_all[(df_all["activity(i)"] != 1) & (df_all["activity(i+1)"] != 1)]
+        #plt.figure()
+        #plt.plot(bin_range, bin_data(df_all_filt), color="k")
+        #plt.plot(bin_range, bin_data(df_all), color="b")
+        #plt.axline((0, 0), slope=1, c="red")
+        #plt.xlim([0.1, 1])
+        #plt.ylim([0.1, 1])
+        #plt.show()
+
+    def calc_place_field_quality_all_laps(self):
 
         def get_tc(session_id, cellid, corridor):
             return [tc for tc in tcl_all_sessions if tc.sessionID == session_id and tc.cellid == cellid and tc.corridor == corridor][0]
@@ -1455,83 +1978,248 @@ class BtspStatistics:
             with open(tcl_path, "rb") as tcl_file:
                 tcl = pickle.load(tcl_file)
                 tcl_all_sessions += tcl
+        tc_df = pd.DataFrame([{"sessionID": tc.sessionID, "cellid": tc.cellid, "corridor": tc.corridor, "tc": tc} for tc in tcl_all_sessions])
 
+
+        self.pfs_df = self.pfs_df.sample(frac=1).reset_index(drop=True)  # shuffle place fields
+        pf_lap_dicts_all = []
         for i_pf, pf in self.pfs_df.iterrows():
             if i_pf % 100 == 0:
                 print(f"{i_pf} / {len(self.pfs_df)}")
-            #if pf["category"] == "unreliable":
-            #    continue
+            tc = tc_df[(tc_df["sessionID"] == pf["session id"]) & (tc_df["cellid"] == pf["cell id"]) & (tc_df["corridor"] == pf["corridor"])]["tc"].iloc[0]
 
-            tc = get_tc(pf["session id"], pf["cell id"], pf["corridor"])
             #rate_matrix_pf = tc.rate_matrix[pf["lower bound"]:pf["upper bound"], pf["formation lap"]:pf["end lap"]]
             lb, ub, fl, el = pf["lower bound"], pf["upper bound"], pf["formation lap"], pf["end lap"]
-            rates_normalized_within_bounds = np.nanmax(tc.rate_matrix[lb:ub, :], axis=0) / np.nanmax(tc.rate_matrix[lb:ub, :])
 
-            ## OLD ALR
-            ## alr = active lap ratio
-            ##alr_whole_session_until_EL = np.sum(rates_normalized_within_bounds[fl:el] >= 0.1) / np.sum(rates_normalized_within_bounds[:el] >= 0.1)  # TODO: if you divide only until EL, you introduce bias in established PFs (may not be a problem)
-            ##alr_whole_session = np.sum(rates_normalized_within_bounds[fl:el] >= 0.1) / np.sum(rates_normalized_within_bounds >= 0.1)
-            ##alr_within_PF = np.sum(rates_normalized_within_bounds[fl:el] >= 0.1) / (el-fl)  # TODO: this is qualitatively very different from the two metrics above: give it a new name
-            ##self.pfs_df.loc[i_pf, "ALR (whole session until EL)"] = alr_whole_session_until_EL
-            ##self.pfs_df.loc[i_pf, "ALR (whole session)"] = alr_whole_session
-            ##self.pfs_df.loc[i_pf, "ALR (within PF)"] = alr_within_PF
+            rate_sums_laps = tc.rate_matrix[lb:ub].sum(axis=0)
+            rate_sums_laps = rate_sums_laps / rate_sums_laps.max()
+            #rate_sums_laps = (rate_sums_laps - rate_sums_laps.mean())/rate_sums_laps.std()  # z-scoring
+            for i_lap, lap in enumerate(rate_sums_laps):
+                if i_lap == 0 or i_lap == len(rate_sums_laps)-1:
+                    continue  # first lap has no prev.lap, last lap has no subseq.lap
+                rate_sum_diff = rate_sums_laps[i_lap+1] - rate_sums_laps[i_lap-1]
+                pf_lap_dict = {
+                    "session id": pf["session id"],
+                    "cell id": pf["cell id"],
+                    "corridor": pf["corridor"],
+                    "category": pf["category"],
+                    "lap number": i_lap,
+                    "rate sum[i]": rate_sums_laps[i_lap],
+                    "rate sum diff": rate_sum_diff
+                }
+                pf_lap_dicts_all.append(pf_lap_dict)
+        self.pfs_laps_df = pd.DataFrame.from_dict(pf_lap_dicts_all)
+        cat_condition = (self.pfs_laps_df["category"] == "btsp") | (self.pfs_laps_df["category"] == "non-btsp") | (self.pfs_laps_df["category"] == "early")
+        sns.jointplot(data=self.pfs_laps_df, x="rate sum[i]", y="rate sum diff", kind="hist")
+        sns.jointplot(data=self.pfs_laps_df[(np.abs(self.pfs_laps_df["rate sum diff"])>0) & (self.pfs_laps_df["rate sum[i]"]>0)][cat_condition], x="rate sum[i]", y="rate sum diff", kind="hist")
+        plt.axhline(0, c="r")
 
-            # alr = active lap ratio
-            alr = np.sum(rates_normalized_within_bounds >= 0.1) / len(rates_normalized_within_bounds)
-            self.pfs_df.loc[i_pf, "ALR"] = alr
 
-            # COM SD
-            # RM = rate matrix
-            RM_active_laps = tc.rate_matrix[lb:ub][:,rates_normalized_within_bounds >= 0.1]
-            COM = lambda arr: np.average(np.array(list(range(len(arr)))), weights=arr)  # weighted avg. of indices of input array, weights = input array itself
-            COMs_active_laps = np.apply_along_axis(COM, axis=0, arr=RM_active_laps)
-            COM_SD = COMs_active_laps.std()
-            self.pfs_df.loc[i_pf, "COM SD"] = COM_SD
+        plt.figure()
+        # bin activities into a list of act.ranges, so we can plot distributions
+        step = 0.05
+        act_range = np.arange(0.1, 1+step, 0.05)  # 1+step is necessary to include 1
+        max_find_nearest = lambda row: np.round(act_range[np.abs(act_range - row["rate sum[i]"]).argmin()],3)
+        #sum_find_nearest = lambda row: np.round(act_range[np.abs(act_range - row["sum activity[i] (norm.)"]).argmin()],3)
+        self.pfs_laps_df["max activity range"] = self.pfs_laps_df.apply(max_find_nearest, axis=1)
+        #self.pfs_laps_df["sum activity range"] = self.pfs_laps_df.apply(sum_find_nearest, axis=1)
+        sns.catplot(data=self.pfs_laps_df[(np.abs(self.pfs_laps_df["rate sum diff"])>0) & (self.pfs_laps_df["rate sum[i]"]>0)][cat_condition], x="max activity range", y="rate sum diff", kind="box", showfliers=False)
+        plt.axhline(0, c="r")
+        plt.show()
 
-            # PF width
-            self.pfs_df.loc[i_pf, "PF width"] = self.pfs_df.loc[i_pf, "upper bound"] - self.pfs_df.loc[i_pf, "lower bound"]
+        #pfs_laps_df = self.pfs_laps_df[cat_condition]
+        #pfs_laps_df = pfs_laps_df[np.abs(self.pfs_laps_df["rate sum diff"]) > 0]
+        #sns.jointplot(data=pfs_laps_df.sample(30000), x="rate sum[i]", y="rate sum diff", hue="category", kind="kde", marginal_kws={"common_norm": False})
+        pass
 
-            # PF width-normalized COM SD
-            self.pfs_df.loc[i_pf, "Norm. COM SD"] = COM_SD / self.pfs_df.loc[i_pf, "PF width"]
-
-        def sort_df(series):
-            return series.apply(lambda x: CATEGORIES[x].order)
-        pfs_sorted = self.pfs_df.sort_values(by="category", key=sort_df)
-        cols = ['ALR', 'COM SD', 'PF width', 'Norm. COM SD']
-        ylims = [[0,1], [0,7], [0,40], [0, 0.5]]
-
-        scale = 2.5
-        fig, axs = plt.subplots(1, len(cols), figsize=(scale * 6.6,scale * 3))
+    def plot_lifespan(self):
         palette = ["#00B0F0", "#F5B800"]
-        for i, col in enumerate(cols):
-            pfs_filtered = pfs_sorted[pfs_sorted["category"] != "unreliable"]
-            pf_quality_df = pfs_filtered[["newly formed", col]]
-            is_legend = False if i < 3 else True
-            sns.boxplot(pf_quality_df.melt(id_vars="newly formed"), x="variable", y="value", hue="newly formed",
-                        palette=palette, saturation=1, ax=axs[i], legend=is_legend, showfliers=False, linewidth=3)
-            axs[i].set_ylim(ylims[i])
-            axs[i].set_xlabel("")
-            axs[i].set_ylabel("")
-        plt.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
-        plt.tight_layout()
-        plt.savefig(f"{self.output_root}/plot_PFquality_NFvEst.pdf")
+
+        # filter pfs
+        pfs = self.pfs_df[self.pfs_df["category"] != "unreliable"]
+        #pfs = pfs[pfs["category"] != "transient"]
+
+        # calculate lifespan
+        pfs["lifespan"] = pfs["end lap"] - pfs["formation lap"]
+        pfs["width"] = pfs["upper bound"] - pfs["lower bound"]
+        pfs_w_norm_all = None
+        for animal in self.animals:
+            sessions_animal = list(set(pfs[pfs["animal id"] == animal]["session id"]))
+            #fig, axs = plt.subplots(1,len(sessions_animal))
+            pfs_w_norm = None
+            for i_sess, session in enumerate(sessions_animal):
+                pfs_sess = pfs[pfs["session id"] == session]
+                pfs_sess["end lap (norm.)"] = pfs_sess["end lap"] / pfs_sess["end lap"].max()
+                pfs_sess["lifespan (norm.)"] = pfs_sess["lifespan"] / pfs_sess["end lap"].max()
+                pfs_sess["formation lap (norm.)"] = pfs_sess["formation lap"] / pfs_sess["end lap"].max()
+                #if pfs_sess["end lap"].max() < 50:
+                #    continue
+                if i_sess == len(sessions_animal)-1:
+                    legend = True
+                else:
+                    legend = False
+                pfs_w_norm = grow_df(pfs_w_norm, pfs_sess)
+                #sns.histplot(data=pfs_sess, x="end lap (norm.)", hue="newly formed", ax=axs[i_sess],
+                #             palette=sns.color_palette(palette, 2), legend=legend, kde=True)
+                #sns.jointplot(data=pfs_sess, x="formation lap", y="end lap", hue="newly formed")
+                #pfs_sess["lived until end"] = True if pfs_sess["end lap (norm.)"] == 1 else False
+            pfs_w_norm_all = grow_df(pfs_w_norm_all, pfs_w_norm)
+        palette_cats = self.categories_colors_RGB[1:] #[self.categories_colors_RGB[1]]+ self.categories_colors_RGB[3:]
+        thresh = 1.0
+        fig, axs = plt.subplots(3,2)
+        sns.histplot(data=pfs_w_norm_all, x="lifespan (norm.)", hue="newly formed", palette=palette, ax=axs[0,0])
+        sns.histplot(data=pfs_w_norm_all[pfs_w_norm_all["end lap (norm.)"] >= thresh], x="lifespan (norm.)", hue="newly formed", palette=palette, ax=axs[1,0])
+        sns.histplot(data=pfs_w_norm_all[pfs_w_norm_all["end lap (norm.)"] < thresh], x="lifespan (norm.)", hue="newly formed", palette=palette, ax=axs[1,1])
+        sns.histplot(data=pfs_w_norm_all[pfs_w_norm_all["end lap (norm.)"] >= thresh], x="lifespan", hue="newly formed", palette=palette, ax=axs[2,0])
+        sns.histplot(data=pfs_w_norm_all[pfs_w_norm_all["end lap (norm.)"] < thresh], x="lifespan", hue="newly formed", palette=palette, ax=axs[2,1])
+        plt.show()
+
+    def depth_analysis(self, depth_folder):
+        if self.area == "CA1":
+            print("this only works for CA3; aborting")
+            return
+        sessions = np.unique(self.pfs_df["session id"].values)
+        depths_df_all = None
+        for session in sessions:
+            try:
+                depths_df = pd.read_excel(f"{depth_folder}/cellDepth_depths_{session}.xlsx")
+            except FileNotFoundError:
+                print(f"failed to load depths for {session}; skippping")
+                continue
+            depths_df = depths_df.reset_index().rename(columns={"index": "cell id"})  # create cell ids from suite2p roi indices
+            animal = session.partition("_")[0]
+            depths_df["animal id"] = animal
+            depths_df["session id"] = session
+            depths_df_all = grow_df(depths_df_all, depths_df)
+        pfs_df = self.pfs_df.set_index(["animal id", "session id", "cell id"])
+        depths_df_all = depths_df_all.set_index(["animal id", "session id", "cell id"])
+        pfs_df = pfs_df.join(depths_df_all, on=["animal id", "session id", "cell id"]).reset_index()
+        depths_df_all = depths_df_all.reset_index()
+
+        tc_df = self.tc_df.rename(columns={"sessionID": "session id", "cellid": "cell id"})
+        tc_df["Ca2+ event rate"] = tc_df.apply(lambda row: 60 * row["tc"].n_events / row["tc"].total_time, axis=1)
+        tc_df = tc_df[tc_df["corridor"] == 14].set_index(["session id", "cell id"])  # we can select either corridor bc. event rate is a cell-level property
+
+        # load all cells (i.e not just tuned ones), calculate event rates for all of them
+        sessions = np.unique(self.pfs_df["session id"].values)
+        cells_all_sessions = []
+        for session in sessions:
+            print(session)
+            cell_list_path = f"{self.data_path}/tuned_cells/{self.area}{self.extra_info}/all_cells_{session}.pickle"
+            with open(cell_list_path, "rb") as cell_list_file:
+                cell_list = pickle.load(cell_list_file)
+                cells_all_sessions += cell_list
+        cells_df = pd.DataFrame([{"sessionID": c.sessionID, "cellid": c.cellid, "cell": c} for c in cells_all_sessions])
+        cells_df = cells_df.rename(columns={"sessionID": "session id", "cellid": "cell id"})
+        cells_df["Ca2+ event rate"] = cells_df.apply(lambda row: 60 * row["cell"].n_events / row["cell"].total_time, axis=1)
+        cells_df = cells_df.set_index(["session id", "cell id"])
+
+        # join cell tables with depth tables
+        depths_df_tuned = depths_df_all.set_index(["session id", "cell id"])
+        depths_df_tuned = depths_df_all.join(tc_df, on=["session id", "cell id"]).reset_index()
+        depths_df_all = depths_df_all.set_index(["session id", "cell id"])
+        depths_df_all = depths_df_all.join(cells_df, on=["session id", "cell id"]).reset_index()
+
+        plt.figure()
+        sns.histplot(data=depths_df_tuned, x="depth")
+
+        # discard ROIs that are clearly out of the SP
+        depths_df_tuned = depths_df_tuned[(depths_df_tuned["depth"] >= -1) & (depths_df_tuned["depth"] < 1.5)]
+        depths_df_all = depths_df_all[(depths_df_all["depth"] >= -1) & (depths_df_all["depth"] < 1.5)]
+        pass
+
+        def create_depth_bins(bounds, step):
+            lb, ub = bounds
+            depth_range = np.arange(lb, ub+step, step)  # 1+step is necessary to include 1
+            find_nearest = lambda row: np.round(depth_range[np.abs(depth_range - row["depth"]).argmin()],3)
+            depths_df_tuned["depth range"] = depths_df_tuned.apply(find_nearest, axis=1)
+
+        ######## PLOTS
+        # distribution of depths
+        sns.kdeplot(data=depths_df_tuned, x="depth")
+        sns.kdeplot(data=depths_df_tuned, x="depth", hue="animal id", common_norm=False)
+
+        # event rates
+        sns.jointplot(data=depths_df_all, x="depth", y="Ca2+ event rate", kind='hex', ylim=(0, 5))
+        sns.jointplot(data=depths_df_tuned, x="depth", y="Ca2+ event rate", kind="hist")
+
+        create_depth_bins(bounds=[-1,1.5], step=0.1)
+        g = sns.catplot(data=depths_df_tuned, x="depth range", y="Ca2+ event rate", kind="box", fill=False, showfliers=False)
+        g.map_dataframe(sns.stripplot, data=depths_df_tuned, x="depth range", y="Ca2+ event rate", alpha=0.5, dodge=True)
+
+        # TODO: expand this to all cells, not just tuned cells
+        #create_depth_bins(bounds=[-0.6, 1], step=0.2)
+        #g = sns.catplot(data=depths_df_tuned, x="depth range", y="Ca2+ event rate", kind="violin", fill=False, cut=0, density_norm="width", width=0.9)
+        #g.map_dataframe(sns.swarmplot, data=depths_df_tuned, x="depth range", y="Ca2+ event rate", alpha=0.5, dodge=True, color="black")
+
+        # place field distributions
+        plt.figure()
+        sns.histplot(data=pfs_df.sort_values(by="category_order"), x="depth", hue="category", multiple="stack",
+                     binrange=(-1, 1.5), binwidth=0.1, palette=self.categories_colors_RGB)
+        plt.figure()
+        sns.histplot(data=pfs_df.sort_values(by="category_order"), x="depth", hue="category", multiple="fill",
+                     binrange=(0, 1), binwidth=0.1, palette=self.categories_colors_RGB)
+        plt.figure()
+        sns.histplot(data=pfs_df.sort_values(by="category_order"), x="depth", hue="category", multiple="fill",
+                     binrange=(0, 1), binwidth=0.25, palette=self.categories_colors_RGB)
+        plt.show()
         plt.close()
 
-        fig, axs = plt.subplots(1, len(cols), figsize=(scale * 6.6,scale * 3))
-        for i, col in enumerate(cols):
-            pf_quality_df = pfs_sorted[["category", col]]
-            is_legend = False if i < 3 else True
-            sns.boxplot(pf_quality_df.melt(id_vars="category"), x="variable", y="value", hue="category",
-                        palette=self.categories_colors_RGB, saturation=1, ax=axs[i], legend=is_legend, showfliers=False,
-                        linewidth=3)
-            axs[i].set_ylim(ylims[i])
-            axs[i].set_xlabel("")
-            axs[i].set_ylabel("")
-        plt.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
-        plt.tight_layout()
-        plt.savefig(f"{self.output_root}/plot_PFquality_categories.pdf")
-        plt.close()
 
+
+    def plot_session_length_dependence(self):
+        pf_counts = self.pfs_df.groupby(["session length", "category"]).count().rename(columns={"animal id": "pf count"})
+        pf_counts = pf_counts.reset_index()[["session length", "category", "pf count"]]
+        pf_counts["pf prop"] = pf_counts["pf count"] / pf_counts.groupby(["session length"])["pf count"].transform("sum")
+
+        CATEGORIES_DICT = {
+            "unreliable": "#a2a1a1",
+            "early": "#00B0F0",
+            "transient": "#77D600",
+            "non-btsp": "#FF0000",
+            "btsp": "#AA5EFF",
+        }
+        pf_props_wide = pf_counts.pivot(index="session length", columns="category", values="pf prop")
+        cats = ["unreliable", "early", "transient", "non-btsp", "btsp"]  # so that they are in the desired order
+        pf_props_wide[cats].plot.bar(stacked=True, color=CATEGORIES_DICT, width=1)
+
+        ### effect of animal vs session length
+        pf_counts = self.pfs_df.groupby(["animal id", "session length"]).count().rename(columns={"cell id": "pf count"})
+        pf_counts = pf_counts.reset_index()[["animal id", "session length", "pf count"]]
+        pf_counts["animal idx"] = pf_counts["animal id"].factorize()[0]
+        parcorr = pingouin.partial_corr(data=pf_counts, x="session length", y="pf count", covar="animal idx", method="spearman")
+        print("partial correlation coeff. between session length, pf count and animal id")
+        print(parcorr)
+
+    def plot_formation_lap_history_dependence(self):
+        pfs_filt = self.pfs_df[(self.pfs_df["category"] != "early") & (self.pfs_df["category"] != "unreliable")]
+        pf_counts = pfs_filt.groupby(["formation lap history", "category"]).count().rename(columns={"animal id": "pf count"})
+        pf_counts = pf_counts.reset_index()[["formation lap history", "category", "pf count"]]
+        pf_counts["pf prop"] = pf_counts["pf count"] / pf_counts.groupby(["formation lap history"])["pf count"].transform("sum")
+
+        CATEGORIES_DICT = {
+            "transient": "#77D600",
+            "non-btsp": "#FF0000",
+            "btsp": "#AA5EFF",
+        }
+        pf_props_wide = pf_counts.pivot(index="formation lap history", columns="category", values="pf prop")
+        cats = ["transient", "non-btsp", "btsp"]  # so that they are in the desired order
+        pf_props_wide[cats].plot.bar(stacked=True, color=CATEGORIES_DICT, width=0.8)
+
+    def plot_formations(self):
+        makedir_if_needed(f"{self.output_root}/formations")
+        for session_id in np.unique(self.pfs_df["session id"]):
+            fig, axs = plt.subplots(1,2)
+            pfs = self.pfs_df[self.pfs_df["category"] != "unreliable"]
+            pfs_14 = pfs[(pfs["session id"] == session_id) & (pfs["corridor"] == 14)]
+            pfs_15 = pfs[(pfs["session id"] == session_id) & (pfs["corridor"] == 15)]
+            sns.histplot(ax=axs[0], data=pfs_14, x="formation lap", hue="category", multiple="stack", binwidth=1, palette=self.categories_colors_RGB[1:])
+            sns.histplot(ax=axs[1], data=pfs_15, x="formation lap", hue="category", multiple="stack", binwidth=1, palette=self.categories_colors_RGB[1:])
+            axs[0].set_title("corridor 14")
+            axs[1].set_title("corridor 15")
+            plt.suptitle(f"distribution of formation laps of PFs in session {session_id}")
+            plt.tight_layout()
+            plt.savefig(f"{self.output_root}/formations/{session_id}_formations.pdf")
 
     def export_results(self, export_path=""):
         path = f"{self.output_root}/results.json"
@@ -1571,6 +2259,7 @@ if __name__ == "__main__":
     parser.add_argument("-dp", "--data-path", required=True)
     parser.add_argument("-op", "--output-path")
     parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
+    parser.add_argument("-hi", "--history", choices=["ALL", "STAY", "CHANGE"])
     #parser.add_argument("-np", "--no-shift-path")
     args = parser.parse_args()
 
@@ -1578,16 +2267,30 @@ if __name__ == "__main__":
     data_path = args.data_path
     output_path = args.output_path
     extra_info = args.extra_info
+    history = args.history
     #noshift_path = args.no_shift_path
 
     #run analysis
     is_shift_criterion_on = True
-    btsp_statistics = BtspStatistics(area, data_path, output_path, extra_info, is_shift_criterion_on)
+    is_notebook = False
+    depth_folder = f"{data_path}/depths"
+
+    btsp_statistics = BtspStatistics(area, data_path, output_path, extra_info, is_shift_criterion_on, is_notebook, history)
     btsp_statistics.load_data()
+    btsp_statistics.load_cell_data()
+    #btsp_statistics.filter_low_behavior_score()
     btsp_statistics.calc_place_field_proportions()
     btsp_statistics.calc_shift_gain_distribution(unit="cm")
+    btsp_statistics.calc_place_field_quality()
+    #btsp_statistics.calc_lap_by_lap_metrics()
+    #btsp_statistics.calc_place_field_quality_all_laps()
 
-    btsp_statistics.plot_cells()
+    #btsp_statistics.plot_formations()
+    #btsp_statistics.plot_session_length_dependence()
+    #btsp_statistics.plot_formation_lap_history_dependence()
+    #plt.show()
+
+    #btsp_statistics.plot_cells(swarmplot=False)
     #btsp_statistics.plot_place_fields()
     #btsp_statistics.plot_place_fields_by_session()
     #btsp_statistics.plot_place_field_proportions()
@@ -1596,7 +2299,10 @@ if __name__ == "__main__":
     #btsp_statistics.plot_place_field_heatmap()
     #btsp_statistics.plot_place_field_distro()
     #btsp_statistics.plot_place_fields_criteria_venn_diagram(with_btsp=True)
-    #btsp_statistics.plot_shift_gain_distribution(without_transient=True)
+    #btsp_statistics.plot_shift_gain_distribution(without_transient=False)
+    #btsp_statistics.plot_place_field_quality()
+    #btsp_statistics.plot_lap_by_lap_metrics()
+    btsp_statistics.depth_analysis(depth_folder)
     #btsp_statistics.plot_shift_scores()
     #btsp_statistics.plot_slopes_like_Madar()
     #btsp_statistics.plot_highgain_vs_lowgain_shift_diffs()
@@ -1609,6 +2315,7 @@ if __name__ == "__main__":
     #btsp_statistics.plot_cv_com_distro()
     #btsp_statistics.plot_shift_gain_dependence()
     #btsp_statistics.plot_example_place_fields_by_cv_com()
+    #btsp_statistics.plot_lifespan()
     #btsp_statistics.export_results()
     #btsp_statistics.plot_formation_rate_sum()
     #btsp_statistics.plot_formation_rate_sum_hist_by_categories()

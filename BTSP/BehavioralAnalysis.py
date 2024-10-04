@@ -45,8 +45,8 @@ class BehaviorAnalysis:
         self.behavior_dict_sess = {}
 
     def _read_meta(self, animal):
-        logging.info(f"reading meta file at data/{self.meta_xlsx}")
-        wb = openpyxl.load_workbook(filename=f"{self.data_path}/data/{self.meta_xlsx}")
+        logging.info(f"reading meta file at {self.meta_xlsx}")
+        wb = openpyxl.load_workbook(filename=f"{self.data_path}/{self.meta_xlsx}")
         ws = wb.worksheets[0]
         sessions = {}
         for row in ws.rows:
@@ -117,29 +117,29 @@ class BehaviorAnalysis:
     def _find_Pcorrect(self, ISD):
         for corridor in CORRIDORS:
             if corridor in ISD.Ps_correct:
-                self.behavior_dict_sess[f"Pcorrect({corridor})"] = np.round(ISD.Ps_correct[corridor], 2)
+                self.behavior_dict_sess[f"P-correct ({corridor})"] = np.round(ISD.Ps_correct[corridor], 2)
             else:
-                self.behavior_dict_sess[f"Pcorrect({corridor})"] = ""
+                self.behavior_dict_sess[f"P-correct ({corridor})"] = ""
 
     def _find_speed_selectivities(self, ISD):
         # within corridor
         for corridor in CORRIDORS:
-            if corridor in ISD.speed_selectivity_laps:
-                self.behavior_dict_sess[f"Vsel({corridor})"] = np.round(np.nanmean(ISD.speed_selectivity_laps[corridor]), 2)
+            if corridor in ISD.speed_index:
+                self.behavior_dict_sess[f"Speed index ({corridor})"] = np.round(np.nanmean(ISD.speed_index[corridor]), 2)
             else:
-                self.behavior_dict_sess[f"Vsel({corridor})"] = ""
+                self.behavior_dict_sess[f"Speed index ({corridor})"] = ""
 
         # across corridors
-        self.behavior_dict_sess[f"Vsel(X-corr)"] = np.round(ISD.speed_selectivity_cross_corridor, 2)
+        self.behavior_dict_sess[f"Speed selectivity"] = np.round(ISD.speed_selectivity, 2)
 
     def _find_lick_selectivities(self, ISD):
         for corridor in CORRIDORS:
-            if corridor in ISD.lick_selectivity_laps:
-                self.behavior_dict_sess[f"Lsel({corridor})"] = np.round(np.nanmean(ISD.lick_selectivity_laps[corridor]), 2)
+            if corridor in ISD.lick_index:
+                self.behavior_dict_sess[f"Lick index ({corridor})"] = np.round(np.nanmean(ISD.lick_index[corridor]), 2)
             else:
-                self.behavior_dict_sess[f"Lsel({corridor})"] = ""
+                self.behavior_dict_sess[f"Lick index ({corridor})"] = ""
 
-        self.behavior_dict_sess[f"Lsel(X-corr)"] = np.round(ISD.lick_selectivity_cross_corridor, 2)
+        self.behavior_dict_sess[f"Lick selectivity"] = np.round(ISD.lick_selectivity, 2)
 
     def analyze_behavior(self):
         sessions_meta_df = None
@@ -147,7 +147,11 @@ class BehaviorAnalysis:
             logging.info(f"running analysis for animal {animal}")
             sessions_all = self._read_meta(animal)
             for current_session in sessions_all:
-                ISD = self._load_session(sessions_all, current_session)
+                try:
+                    ISD = self._load_session(sessions_all, current_session)
+                except Exception:
+                    logging.exception(f"loading session {current_session} failed; skipping")
+                    continue
 
                 # if failed to load ISD, skip
                 if ISD == None:
@@ -198,6 +202,11 @@ class BehaviorAnalysis:
                     makedir_if_needed(f"{self.output_root}/behavior_lap_by_lap")
                     save_path = f"{self.output_root}/behavior_lap_by_lap/{current_session}_lap_by_lap.pdf"
                     ISD.plot_session(average=False, filename=save_path, selected_laps=ISD.i_Laps_ImData)
+
+                    # plot correlation matrices
+                    makedir_if_needed(f"{self.output_root}/correlation_matrices")
+                    save_path = f"{self.output_root}/correlation_matrices/{current_session}_corr.pdf"
+                    ISD.lap_correlate(cellids=ISD.tuned_cells[1], filename=save_path)
 
                     # plot dF/F for problematic (high) tau sessions
                     #if current_session in ["srb251_221027_T1", "srb251_221027_T2"]:

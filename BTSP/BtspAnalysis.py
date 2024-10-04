@@ -3,8 +3,9 @@ import os
 import pickle
 import logging
 import argparse
+import numpy as np
 from configparser import ConfigParser
-from constants import ANIMALS
+from constants import ANIMALS, SESSIONS_TO_IGNORE
 from BtspAnalysisSingleCell import BtspAnalysisSingleCell
 from utils import makedir_if_needed, grow_df
 
@@ -15,7 +16,9 @@ class BtspAnalysis:
         self.animals = ANIMALS[area]
         self.data_path = data_path
         self.extra_info = "" if not extra_info else f"_{extra_info}"
-        self.output_root = f"{output_path}/place_fields/{self.area}{self.extra_info}_debug"
+        self.history_dependent = True if "historyDependent" in extra_info else False
+        self.output_root = f"{output_path}/place_fields/{self.area}{self.extra_info}"
+        self.reverse = True if "reverse" in self.extra_info else False
         makedir_if_needed(f"{output_path}/place_fields")
         makedir_if_needed(self.output_root)
 
@@ -67,12 +70,26 @@ class BtspAnalysis:
 
                 basc_all = None
                 for tuned_cell in tcl:
+                    if tuned_cell.sessionID in SESSIONS_TO_IGNORE[self.area]:
+                        continue
+
                     #tuned_cell.frames_pos_bins = []
                     #tuned_cell.frames_dF_F = []
-                    basc = BtspAnalysisSingleCell(tuned_cell.sessionID, tuned_cell.cellid, tuned_cell.rate_matrix,
-                                                  tuned_cell.frames_pos_bins, tuned_cell.frames_dF_F,
+                    rate_matrix = tuned_cell.rate_matrix
+                    if self.reverse:
+                        rate_matrix = np.flip(tuned_cell.rate_matrix, axis=1)
+
+                    # throw away cell if session has fewer than 10 laps (due to history split)
+                    if self.history_dependent and rate_matrix.shape[1] <= 15:
+                        continue
+
+                    basc = BtspAnalysisSingleCell(tuned_cell.sessionID, tuned_cell.cellid, rate_matrix,
+                                                  tuned_cell.frames_pos_bins, tuned_cell.frames_dF_F, tuned_cell.lap_histories,
                                                   params=self.params, bins_p95_geq_afr=tuned_cell.bins_p95_geq_afr)
-                    basc.categorize_place_fields(cor_index=tuned_cell.corridor)
+                    if self.history_dependent:
+                        basc.categorize_place_fields(cor_index=tuned_cell.corridor, history=tuned_cell.history)
+                    else:
+                        basc.categorize_place_fields(cor_index=tuned_cell.corridor)
 
                     # TODO: ezt az operator overloadingot dobd ki
                     if basc_all is None:
@@ -90,7 +107,11 @@ class BtspAnalysis:
             # save place field database and cell stats for a particular animal
             pfs_df_save_path_animal = f"{self.output_root}/{animal}_place_fields_df.pickle"
             logging.info(f"saving place field dataframe to {pfs_df_save_path_animal} for animal {animal}")
-            pfs_df_animal.to_pickle(pfs_df_save_path_animal)
+            try:
+                pfs_df_animal.to_pickle(pfs_df_save_path_animal)
+            except AttributeError:
+                # happens when pfs_df_animal is None, bc there were no place fields
+                logging.warning(f"no place field found for animal {animal}")
 
     def export_parameters(self, export_path=""):
         path = f"{self.output_root}/parameters.ini"

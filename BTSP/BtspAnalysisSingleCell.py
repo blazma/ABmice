@@ -4,8 +4,8 @@ from BTSP.PlaceField import PlaceField
 
 
 class BtspAnalysisSingleCell:
-    def __init__(self, sessionID, cellid, rate_matrix, frames_pos_bins, frames_dF_F, params=None, corridors=None,
-                 place_field_bounds=None, bins_p95_geq_afr=None, i_laps=None, shift_criterion=True):
+    def __init__(self, sessionID, cellid, rate_matrix, frames_pos_bins, frames_dF_F, lap_histories,
+                 params=None, corridors=None, place_field_bounds=None, bins_p95_geq_afr=None, i_laps=None, shift_criterion=True):
         """
         BTSP analysis for a single cell from a given session
 
@@ -28,6 +28,7 @@ class BtspAnalysisSingleCell:
             self.animalID, _, _ = self.sessionID.partition("_")
         self.cellid = cellid
         self.rate_matrix = rate_matrix
+        self.lap_histories = lap_histories
         self.params = params
 
         if corridors is None:
@@ -96,7 +97,7 @@ class BtspAnalysisSingleCell:
         place_field_bounds = [(cpf[0], cpf[-1]) for cpf in candidate_pfs_filtered]
         return place_field_bounds
 
-    def categorize_place_fields(self, cor_index=0):
+    def categorize_place_fields(self, cor_index=0, history="ALL"):
         """
         Run BTSP analysis, categorize place fields in a given corridor.
         Starting from first lap, it only finds the first place field and ignores later ones.
@@ -111,10 +112,12 @@ class BtspAnalysisSingleCell:
                 place_field.sessionID = self.sessionID
                 place_field.cellid = self.cellid
                 place_field.cor_index = cor_index
+                place_field.history = history
                 place_field.i_laps = self.i_laps
                 place_field.rate_matrix = self.rate_matrix
                 place_field.N_pos_bins = self.rate_matrix.shape[0]
                 place_field.params = self.params
+                place_field.lap_histories = self.lap_histories
 
                 place_field.set_bounds(self.place_field_bounds[i_cpf])
                 place_field.find_formation_lap(start_lap=0)

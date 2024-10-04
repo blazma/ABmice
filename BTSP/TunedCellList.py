@@ -18,13 +18,14 @@ class TunedCellList:
         self.sessions_to_ignore = SESSIONS_TO_IGNORE[area]
         self.meta_xlsx = f"{area}_meta.xlsx"
         self.data_path = data_path
+        self.shuffled_laps = shuffled_laps
+        self.history_dependent = "historyDependent" in extra_info
 
         # load json containing session-protocol pairs (to filter sessions by protocol later)
         with open("sessions.json") as session_protocol_file:
             self.session_protocol_dict = json.load(session_protocol_file)[self.area]
 
         # set output folder
-        self.shuffled_laps = shuffled_laps
         if self.shuffled_laps:
             self.extra_info = "_shuffled_laps" if not extra_info else f"_{extra_info}_shuffled_laps"
         else:
@@ -50,8 +51,8 @@ class TunedCellList:
                                   f"\t\t\t* extra_info={extra_info}\n\t\t\t*")
 
     def _read_meta(self, animal):
-        logging.info(f"reading meta file at data/{self.meta_xlsx}")
-        wb = openpyxl.load_workbook(filename=f"{self.data_path}/data/{self.meta_xlsx}")
+        logging.info(f"reading meta file at {self.meta_xlsx}")
+        wb = openpyxl.load_workbook(filename=f"{self.data_path}/{self.meta_xlsx}")
         ws = wb.worksheets[0]
         sessions = {}
         for row in ws.rows:
@@ -110,21 +111,38 @@ class TunedCellList:
 
             cell_stats_df = None
             for current_session in sessions_all:
-                ISD = self._load_session(sessions_all, current_session)
+                # TODO: debug only
+                #if current_session != "srb402_240307":
+                #    continue
+                #if "srb410" not in current_session and "srb410a" not in current_session:
+                #    continue
+                #if "srb410_240516a" != current_session:
+                #    continue
+                #if "srb410_240508" != current_session:
+                #    continue
+
+                try:
+                    ISD = self._load_session(sessions_all, current_session)
+                except Exception:
+                    logging.exception(f"loading session {current_session} failed; skipping")
+                    continue
                 if ISD == None:  # if failed to load ISD, skip
                     continue
 
                 # load shuffle data
                 try:
                     logging.info("loading/calculating shuffle data")
-                    ISD.calc_shuffle(ISD.active_cells, 1000, 'shift', batchsize=15)
+                    ISD.calc_shuffle(ISD.active_cells, 1000, 'shift', batchsize=12)
                 except Exception:
                     logging.exception(f"loading/calculating shuffle data failed for session {current_session}; skipping")
                     continue
 
-                tuned_cell_list, tuning_curves = ISD.prepare_btsp_analysis(shuffled_laps=self.shuffled_laps)
+                tuned_cell_list, tuning_curves, cells = ISD.prepare_btsp_analysis(shuffled_laps=self.shuffled_laps, history_dependent=self.history_dependent)
                 with open(f"{self.output_root}/tuned_cells_{current_session}.pickle", "wb") as tuned_cells_file:
                     pickle.dump(tuned_cell_list, tuned_cells_file)
+                if len(cells) > 0:
+                    with open(f"{self.output_root}/all_cells_{current_session}.pickle", "wb") as all_cells_file:
+                        pickle.dump(cells, all_cells_file)
 
                 tuning_curves_df = None
                 for corridor in [14, 15]:
@@ -146,8 +164,11 @@ class TunedCellList:
                 cell_stats_df_session = ISD.save_cell_counts()
                 cell_stats_df = grow_df(cell_stats_df, cell_stats_df_session)
 
-            cell_stats_df.to_pickle(f"{self.output_root}/cell_counts_{animal}.pickle")
-
+            try:
+                cell_stats_df.to_pickle(f"{self.output_root}/cell_counts_{animal}.pickle")
+            except AttributeError:
+                logging.exception(f"couldn't pickle cell counts for {animal} bc cell df is empty")
+                continue
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -158,9 +179,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     shuffled_laps = False
+    extra_info = ""
     if args.extra_info:
         if "shuffled_laps" in args.extra_info:
             shuffled_laps = True
+        extra_info = args.extra_info
 
-    tcl = TunedCellList(args.area, args.data_path, args.output_path, extra_info=args.extra_info, shuffled_laps=shuffled_laps)
+    tcl = TunedCellList(args.area, args.data_path, args.output_path, extra_info=extra_info,
+                        shuffled_laps=shuffled_laps)
     tcl.create_tuned_cell_list()

@@ -5,20 +5,22 @@ import pandas as pd
 import seaborn as sns
 from datetime import datetime
 from matplotlib import pyplot as plt
-from constants import ANIMALS, SESSIONS_TO_IGNORE, ANIMALS_PALETTE, AREA_PALETTE
+from BTSP.constants import (ANIMALS, SESSIONS_TO_IGNORE, ANIMALS_PALETTE, AREA_PALETTE,
+                       VSEL_NORMALIZATION, BEHAVIOR_SCORE_THRESHOLD)
 from utils import makedir_if_needed
 
 
 class BehaviorStatistics:
-    def __init__(self, area, data_path, output_path, extra_info):
+    def __init__(self, area, data_path, output_path, extra_info="", makedir=True):
         self.area = area
         self.animals = ANIMALS[area]
         self.data_path = data_path
 
         # set output folder
-        self.extra_info = "" if not extra_info else f"_{extra_info}"
+        self.extra_info = "" if len(extra_info) == 0 else f"_{extra_info}"
         self.output_root = f"{output_path}/statistics/behavior_{self.area}{self.extra_info}"
-        makedir_if_needed(self.output_root)
+        if makedir:
+            makedir_if_needed(self.output_root)
 
         # load sessions data
         self.behavior_df = pd.read_pickle(f"{self.data_path}/behavior/{self.area}{self.extra_info}/behavior_df_{self.area}.pickle")
@@ -36,18 +38,24 @@ class BehaviorStatistics:
         plt.rcParams['mathtext.it'] = 'Roboto'
 
     def calc_behavior_score(self):
-        y_cols = ['sessionID', 'Pcorrect(14)', 'Pcorrect(15)', 'Vsel(14)', 'Vsel(15)', 'Vsel(X-corr)', 'Lsel(14)', 'Lsel(15)', 'Lsel(X-corr)']
-        df = self.behavior_df[y_cols].set_index('sessionID')
-        df[["Vsel(14)", "Vsel(15)", "Vsel(X-corr)"]] = -1 * df[["Vsel(14)", "Vsel(15)", "Vsel(X-corr)"]]
-        df_norm = df/df.max()
-        self.scores_df = df_norm.sum(axis=1).to_frame().rename(columns={0: "behavior score"})
+        y_cols = ['area', 'animalID', 'sessionID', 'P-correct (14)', 'P-correct (15)', 'Speed index (14)', 'Speed index (15)',
+                  'Speed selectivity', 'Lick index (14)', 'Lick index (15)', 'Lick selectivity']
+        df = self.behavior_df[y_cols].set_index(["area", "animalID", "sessionID"])
+        df[["Speed index (14)", "Speed index (15)", "Speed selectivity"]] = df[["Speed index (14)", "Speed index (15)", "Speed selectivity"]] / VSEL_NORMALIZATION
+        df = df.sum(axis=1).to_frame().rename(columns={0: "behavior score"})
+
+        # append behavior score as new column to behavior dataframe
+        self.behavior_df = self.behavior_df.set_index(["area", "animalID", "sessionID"]).join(df).reset_index()
+
+    def filter_low_behavior_score(self):
+        self.behavior_df = self.behavior_df[self.behavior_df["behavior score"] > BEHAVIOR_SCORE_THRESHOLD]
 
     def plot_behavioral_metrics_for_each_animal(self):
         for animal in self.animals:
             beh_df_animal = self.behavior_df[self.behavior_df["animalID"] == animal]
             #palette = ["#000000",     "#9B9B9B",      "#00CEFF",  "#004EFF",  "#00D95F",      "#B5005B",  "#FF3D3D",  "#ED6FFF"]
             palette = ["#000000",     "#9B9B9B",      "#4A20FF",  "#5FA4FF",  "#00E874",      "#B5005B",  "#FF3D3D",  "#ED6FFF"]
-            y_cols = ["Pcorrect(14)", "Pcorrect(15)", "Vsel(14)", "Vsel(15)", "Vsel(X-corr)", "Lsel(14)", "Lsel(15)", "Lsel(X-corr)"]
+            y_cols = ["P-correct (14)", "P-correct (15)", "Speed index (14)", "Speed index (15)", "Speed selectivity", "Lick index (14)", "Lick index (15)", "Lick selectivity"]
             beh_df_animal_selcols = beh_df_animal[["sessionID", "protocol", *y_cols]]
             beh_df_animal_selcols_melted = beh_df_animal_selcols.melt(["sessionID", "protocol"], var_name="cols", value_name="vals")
 
@@ -71,13 +79,13 @@ class BehaviorStatistics:
         plt.figure()
 
         palette = ["#FFFFFF", "#9B9B9B", "#4A20FF", "#5FA4FF", "#00E874", "#B5005B", "#FF3D3D", "#ED6FFF"]
-        y_cols = ["sessionID", "Pcorrect(14)", "Pcorrect(15)", "Vsel(14)", "Vsel(15)", "Vsel(X-corr)", "Lsel(14)", "Lsel(15)", "Lsel(X-corr)"]
-        #y_cols = ["Pcorrect(14)", "Pcorrect(15)", "Vsel(14)", "Lsel(14)", "Vsel(15)", "Lsel(15)", "Vsel(X-corr)", "Lsel(X-corr)"]
+        y_cols = ["sessionID", "P-correct (14)", "P-correct (15)", "Speed index (14)", "Speed index (15)", "Speed selectivity", "Lick index (14)", "Lick index (15)", "Lick selectivity"]
+        #y_cols = ["Pcorrect(14)", "Pcorrect(15)", "Speed index (14)", "Lick index (14)", "Speed index (15)", "Lick index (15)", "Speed selectivity", "Lick selectivity"]
         disengaged_sessions = ["srb251_221027_T1", "srb251_221027_T2"]
 
         # plot all sessions
         behavior_df_selcols = self.behavior_df[y_cols].set_index("sessionID")
-        #behavior_df_selcols[["Vsel(14)", "Vsel(15)", "Vsel(X-corr)"]] = -1 * behavior_df_selcols[["Vsel(14)", "Vsel(15)", "Vsel(X-corr)"]]
+        #behavior_df_selcols[["Speed index (14)", "Speed index (15)", "Speed selectivity"]] = -1 * behavior_df_selcols[["Speed index (14)", "Speed index (15)", "Speed selectivity"]]
         #behavior_df_selcols = norm(behavior_df_selcols)
         fig, ax = plt.subplots(figsize=(9,6))
         #ax = sns.boxplot(data=behavior_df_selcols, palette=palette, showfliers=False)
@@ -129,7 +137,7 @@ class BehaviorStatistics:
         plt.close()
 
     def plot_correlation_matrix(self):
-        y_cols = ["Pcorrect(14)", "Pcorrect(15)", "Vsel(14)", "Vsel(15)", "Vsel(X-corr)", "Lsel(14)", "Lsel(15)", "Lsel(X-corr)"]
+        y_cols = ["P-correct (14)", "P-correct (15)", "Speed index (14)", "Speed index (15)", "Speed selectivity", "Lick index (14)", "Lick index (15)", "Lick selectivity"]
         behavior_df_selcols = self.behavior_df[y_cols].abs()  # we take absolute value, since selectivity in either direction is fine
         corr_matrix = behavior_df_selcols.corr()
         plt.figure()
@@ -142,13 +150,24 @@ class BehaviorStatistics:
         with pd.ExcelWriter(f"{self.output_root}/behavior_{self.area}{self.extra_info}.xlsx") as xlsx_writer:
             self.behavior_df.to_excel(xlsx_writer, index=False)
 
-    def plot_CA1_v_CA3(self):
-        behav_CA1 = pd.read_pickle(f"{self.data_path}/behavior/CA1{self.extra_info}/behavior_df_CA1.pickle").reset_index(drop=True)
-        behav_CA3 = pd.read_pickle(f"{self.data_path}/behavior/CA3{self.extra_info}/behavior_df_CA3.pickle").reset_index(drop=True)
+    def plot_CA1_v_CA3(self, extra_info_CA1, extra_info_CA3):
+        behav_CA1 = pd.read_pickle(f"{self.data_path}/behavior/CA1{extra_info_CA1}/behavior_df_CA1.pickle").reset_index(drop=True)
+        behav_CA3 = pd.read_pickle(f"{self.data_path}/behavior/CA3{extra_info_CA3}/behavior_df_CA3.pickle").reset_index(drop=True)
         behav = pd.concat([behav_CA1, behav_CA3])  # merge dataframes
-        behav = behav[["area", "animalID", "Vmax [cm/s]", "Vsel(X-corr)", "Lsel(X-corr)"]]  # select columns
         behav["area"] = pd.Categorical(behav["area"], ["CA1", "CA3"])
+
+        # filter low behavior score TODO: CODE DUPLICATION (see filter function above); FIX THIS
+        y_cols = ['area', 'animalID', 'sessionID', 'P-correct (14)', 'P-correct (15)', 'Speed index (14)', 'Speed index (15)',
+                  'Speed selectivity', 'Lick index (14)', 'Lick index (15)', 'Lick selectivity']
+        df = behav[y_cols].set_index(["area", "animalID", "sessionID"])
+        df[["Speed index (14)", "Speed index (15)", "Speed selectivity"]] = df[["Speed index (14)", "Speed index (15)", "Speed selectivity"]] / VSEL_NORMALIZATION
+        df = df.sum(axis=1).to_frame().rename(columns={0: "behavior score"})
+        behav = behav.set_index(["area", "animalID", "sessionID"]).join(df).reset_index()
+
+        behav = behav[behav["behavior score"] > BEHAVIOR_SCORE_THRESHOLD]
+        behav = behav[["area", "animalID", "Vmax [cm/s]", "Speed selectivity", "Lick selectivity"]]  # select columns
         behav = behav.melt(id_vars=["area", "animalID"])  # convert to long format
+
 
         #df = behav[behav["variable"] == "Vmax [cm/s]"]
         #g = sns.catplot(kind="box", data=df, x="area", y="value", showfliers=False)
@@ -159,8 +178,8 @@ class BehaviorStatistics:
         g = sns.catplot(kind="box", data=df, x="area", y="value", col="variable", palette=AREA_PALETTE, gap=0.2,
                         showfliers=False, sharey=False, width=1, legend=False, linewidth=3, height=6, aspect=0.7, linecolor="k")
         palette = ANIMALS_PALETTE["CA1"] + ANIMALS_PALETTE["CA3"]
-        g.map_dataframe(sns.swarmplot, x="area", y="value", hue="animalID", dodge=False, size=8.25,
-                        palette=palette, linewidth=2.5, alpha=0.8, legend=False)
+        #g.map_dataframe(sns.swarmplot, x="area", y="value", hue="animalID", dodge=False, size=8.25,
+        #                palette=palette, linewidth=1.5, alpha=0.8, legend=False)
         g.axes[0, 0].set_ylim([0, 70])
         g.axes[0, 1].set_ylim([-1, 1.05])
         g.axes[0, 2].set_ylim([-1, 1.05])
@@ -202,6 +221,10 @@ if __name__ == "__main__":
     behav_stats.calc_behavior_score()
     behav_stats.plot_behavioral_metrics_for_each_animal()
     behav_stats.plot_behavioral_metrics_for_all_sessions()
-    behav_stats.plot_correlation_matrix()
-    #behav_stats.plot_CA1_v_CA3()
-    behav_stats.export_to_excel()
+    #behav_stats.plot_correlation_matrix()
+    #behav_stats.export_to_excel()
+
+    extra_info_CA1 = ""
+    extra_info_CA3 = ""
+    behav_stats.plot_CA1_v_CA3(extra_info_CA1, extra_info_CA3)
+

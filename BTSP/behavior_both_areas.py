@@ -7,30 +7,27 @@ import os
 import shutil
 import scipy
 from sklearn.decomposition import PCA
-from utils import grow_df
-from constants import CATEGORIES, ANIMALS
-
-VSEL_NORMALIZATION = 0.45  # normalization constant for speed selectivities which generally range 0 to about 0.45
+from utils import grow_df, makedir_if_needed
+from constants import CATEGORIES, ANIMALS, VSEL_NORMALIZATION
 
 data_path = r"C:\Users\martin\home\phd\btsp_project\analyses\manual"
-output_path = r"C:\Users\martin\home\phd\btsp_project\analyses\manual"
+output_path = r"C:\Users\martin\home\phd\btsp_project\analyses\manual\misc"
 
-behav_stats_CA1 = BehaviorStatistics("CA1", data_path, output_path, extra_info="")
+behav_stats_CA1 = BehaviorStatistics("CA1", data_path, output_path, extra_info="reboot_withoutPost")
 behav_stats_CA1.calc_behavior_score()
-behav_stats_CA3 = BehaviorStatistics("CA3", data_path, output_path, extra_info="")
+behav_stats_CA3 = BehaviorStatistics("CA3", data_path, output_path, extra_info="reboot")
 behav_stats_CA3.calc_behavior_score()
 
 # calc behavior scores -- pool animals from both areas
-y_cols = ['area', 'sessionID', 'Pcorrect(14)', 'Pcorrect(15)', 'Vsel(14)', 'Vsel(15)', 'Vsel(X-corr)', 'Lsel(14)', 'Lsel(15)', 'Lsel(X-corr)']
-df_CA1 = behav_stats_CA1.behavior_df[y_cols].set_index(['area', 'sessionID'])
-df_CA3 = behav_stats_CA3.behavior_df[y_cols].set_index(['area', 'sessionID'])
-df = pd.concat([df_CA1, df_CA3])
-
-# normalize speed selectivities: multiply by -1 to (so that the more positive the better), and divide by norm constant
-df[["Vsel(14)", "Vsel(15)", "Vsel(X-corr)"]] = -1 * df[["Vsel(14)", "Vsel(15)", "Vsel(X-corr)"]] / VSEL_NORMALIZATION
-scores_df = df.sum(axis=1).to_frame().rename(columns={0: "behavior score"})
+y_cols = ['area', 'animalID', 'sessionID', 'Pcorrect(14)', 'Pcorrect(15)', 'Vsel(14)', 'Vsel(15)',
+          'Vsel(X-corr)', 'Lsel(14)', 'Lsel(15)', 'Lsel(X-corr)', 'behavior score']
+df_CA1 = behav_stats_CA1.behavior_df[y_cols].set_index(['area', 'animalID', 'sessionID'])
+df_CA3 = behav_stats_CA3.behavior_df[y_cols].set_index(['area', 'animalID', 'sessionID'])
+scores_df = pd.concat([df_CA1, df_CA3])
 
 def plot_behavior_scores():
+    makedir_if_needed(f"{output_path}/statistics/behavior_bothAreas")
+
     plt.figure()
     sns.histplot(data=scores_df.reset_index()[["area", "behavior score"]].melt(id_vars="area"), x="value", hue="area", bins=7, binrange=[1,8], element="step")
     plt.savefig(f"{output_path}/statistics/behavior_bothAreas/behavior_scores_by_area.pdf")
@@ -39,6 +36,20 @@ def plot_behavior_scores():
     plt.figure()
     sns.histplot(data=scores_df.reset_index()[["area", "behavior score"]].melt(id_vars="area"), x="value", bins=7, binrange=[1,8], element="step", color="k")
     plt.savefig(f"{output_path}/statistics/behavior_bothAreas/behavior_scores.pdf")
+    plt.close()
+
+    fig, axs = plt.subplots(2,1)
+    scores = scores_df.reset_index()
+    scores_CA1 = scores[scores["area"] == "CA1"]
+    axs[0] = sns.histplot(data=scores_CA1[["animalID", "behavior score"]].melt(id_vars="animalID"), x="value", bins=7,
+                 binrange=[1,8], element="step", color="k", ax=axs[0], hue="animalID", multiple="stack")
+    sns.move_legend(axs[0], "upper left", bbox_to_anchor=(1, 1))
+    scores_CA3 = scores[scores["area"] == "CA3"]
+    axs[1] = sns.histplot(data=scores_CA3[["animalID", "behavior score"]].melt(id_vars="animalID"), x="value", bins=7,
+                 binrange=[1,8], element="step", color="k", ax=axs[1], hue="animalID", multiple="stack")
+    sns.move_legend(axs[1], "upper left", bbox_to_anchor=(1, 1))
+    plt.tight_layout()
+    plt.savefig(f"{output_path}/statistics/behavior_bothAreas/behavior_scores_by_area_and_session.pdf")
     plt.close()
 
 def save_behavior_scores():
@@ -58,10 +69,10 @@ def plot_place_fields_by_score():
     # load place fields
     pfs_df = None
     for animal in behav_stats_CA1.animals:
-        pfs_df_animal = pd.read_pickle(f"{data_path}/place_fields/CA1/{animal}_place_fields_df.pickle")
+        pfs_df_animal = pd.read_pickle(f"{data_path}/place_fields/CA1{behav_stats_CA1.extra_info}/{animal}_place_fields_df.pickle")
         pfs_df = grow_df(pfs_df, pfs_df_animal)
     for animal in behav_stats_CA3.animals:
-        pfs_df_animal = pd.read_pickle(f"{data_path}/place_fields/CA3/{animal}_place_fields_df.pickle")
+        pfs_df_animal = pd.read_pickle(f"{data_path}/place_fields/CA3{behav_stats_CA3.extra_info}/{animal}_place_fields_df.pickle")
         pfs_df = grow_df(pfs_df, pfs_df_animal)
 
     scores_df_sorted = scores_df.reset_index()#.sort_values(by="behavior score")
@@ -92,11 +103,11 @@ def plot_place_fields_by_score():
     colors = [cat.color for cat in CATEGORIES.values()]
 
     if by_animal:
-        n_animals = [4, 6]  # CA1, CA3
+        n_animals = [7, 7]  # CA1, CA3
         for i_area, area in enumerate(["CA1", "CA3"]):
             fig, axs = plt.subplots(2, n_animals[i_area], figsize=(n_animals[i_area]*3,6))
             for i_animal, animal in enumerate(ANIMALS[area]):
-                dff = pfs_scores_df[pfs_scores_df["animalID"] == animal][cols]
+                dff = pfs_scores_df[(pfs_scores_df["area"] == area) & (pfs_scores_df["animalID"] == animal)][cols]
                 dff = dff.reset_index(drop=True).set_index("sessionID")
 
                 dff[cats].plot(kind="bar", ax=axs[0, i_animal], color=colors, legend=False, sharex=axs[1, i_animal], width=0.75)
@@ -188,4 +199,5 @@ def behavior_pca():
     plt.legend()
     plt.show()
 
-plot_place_fields_by_score()
+plot_behavior_scores()
+#plot_place_fields_by_score()

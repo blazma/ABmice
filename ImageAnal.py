@@ -36,7 +36,7 @@ from Stages import *
 from Corridors import *
 from ImShuffle import *
 
-from BTSP.TunedCell import TunedCell
+from BTSP.TunedCell import TunedCell, Cell
 import BTSP.PlaceField as PF
 from BTSP.BtspAnalysisSingleCell import BtspAnalysisSingleCell
 
@@ -71,6 +71,7 @@ class ImagingSessionData:
         self.substage_change_laps = [0]
         self.substage_change_time = [0]
         self.data_folder = data_folder
+        makedir_if_needed(f"{self.suite2p_folder}/{self.data_folder}")
 
         stagefilename = self.datapath + self.task + '_stages.pkl'
         input_file = open(stagefilename, 'rb')
@@ -287,16 +288,18 @@ class ImagingSessionData:
         self.btsp_analysis = None  # this will be a BtspAnalysisSingleCell object after calling run_btsp_analysis()
         self.disengaged_laps = disengaged_laps
 
+        # BAZSI_START
         # lick and speed selectivity
         self.VSEL_NORMALIZATION = -0.45  # speed selectivity normalization constant: negative so that speed selectivity is "good" if close to 1 instead of -1, just like lick
-        self.speed_selectivity_laps = {}
-        self.lick_selectivity_laps = {}
-        self.speed_selectivity_cross_corridor = np.nan
-        self.lick_selectivity_cross_corridor = np.nan
-        self.calc_speed_and_lick_selectivity()
+        self.speed_index = {}
+        self.lick_index = {}
+        self.speed_selectivity = np.nan
+        self.lick_selectivity = np.nan
+        self.calc_speed_and_lick_selectivity(14, 15)
         self.behavior_score = None
         self.behavior_score_components = {}
-        self.calculate_behavior_score()
+        self.calculate_behavior_score(14, 15)
+        # BAZSI_END
 
     def get_analysis_ID(self, s2p_ids):
         # map suite2p ids to analysis ids - writes results to console and returns them
@@ -2636,13 +2639,29 @@ class ImagingSessionData:
             else:
                 self.btsp_analysis += btsp_analysis_corridor
 
-    def prepare_btsp_analysis(self, shuffled_laps=False):
+    def prepare_btsp_analysis(self, shuffled_laps=False, history_dependent=False):
         tuned_cell_ids = np.union1d(self.tuned_cells[0], self.tuned_cells[1])
         tuned_cells = []
         tuning_curves = {
             14: [],
             15: []
         }
+        self.calc_previous_based_rates(14, 15)
+
+        # save Ca2+ event counts for all cells to calculate event rates -- mostly for depth analysis
+        cells = []
+        if not history_dependent:
+            for cellid in range(self.N_cells):
+                for i_cor, corridor in enumerate(self.corridors):
+                    #i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor)[0]
+                    n_events = self.N_events[cellid]
+                    total_time = self.ImLaps[self.i_Laps_ImData[-1]].raw_time.max() - self.ImLaps[self.i_Laps_ImData[0]].raw_time.min()
+                                # take last timestamp of last imaged lap and subtract first timestamp of first imaged lap
+                    history = "ALL"
+                    cell = Cell(self.sessionID, cellid, history, n_events, total_time)
+                    cells.append(cell)
+
+        # now only focus on tuned cells for the main analysis
         for cellid in tuned_cell_ids:
             for i_cor, corridor in enumerate(self.corridors):
                 i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor)[0]
@@ -2656,33 +2675,69 @@ class ImagingSessionData:
                         i_laps = i_laps[DE_end:]
 
                 # calculate rate matrix
-                total_spikes = self.activity_tensor[:, cellid, i_laps]
-                total_time = self.activity_tensor_time[:, i_laps]
-                rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
-                average_firing_rate = np.nansum(rate_matrix, axis=1) / i_laps.size
-                tuning_curves[corridor].append((cellid, average_firing_rate))
+                if not history_dependent:
+                    total_spikes = self.activity_tensor[:, cellid, i_laps]
+                    total_time = self.activity_tensor_time[:, i_laps]
+                    rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
 
-                i_cell = np.where(tuned_cell_ids == cellid)[0]
-                p95_cell = self.p95[i_cor][:, i_cell]
-                bins_p95_geq_afr = [i for i in range(self.N_pos_bins) if average_firing_rate[i] >= p95_cell[i]]
+                    average_firing_rate = np.nansum(rate_matrix, axis=1) / i_laps.size
+                    tuning_curves[corridor].append((cellid, average_firing_rate))
 
-                if shuffled_laps:
-                    rng = np.random.default_rng()
-                    rng.shuffle(rate_matrix, axis=1)
+                    i_cell = np.where(tuned_cell_ids == cellid)[0]
+                    p95_cell = self.p95[i_cor][:, i_cell]
+                    bins_p95_geq_afr = [i for i in range(self.N_pos_bins) if average_firing_rate[i] >= p95_cell[i]]
 
-                imaged_ImLaps = np.array(self.ImLaps)[self.i_Laps_ImData][i_laps]
-                frames_pos = [lap.frames_pos for lap in imaged_ImLaps]  # list, long as number of imaged laps in corridor, each element a list of positions (roxel)
-                frames_pos_bins = [np.floor(frames_pos_roxel / self.corridor_length_roxel * self.N_pos_bins) for frames_pos_roxel in frames_pos]  # change pos units from roxel to space bins
-                frames_dF_F = [lap.frames_dF_F[cellid,:] for lap in imaged_ImLaps]  # list, long as number of imaged laps in corridor, each element a list of dF/F for a particular cell
+                    if shuffled_laps:
+                        rng = np.random.default_rng()
+                        rng.shuffle(rate_matrix, axis=1)
 
-                n_events = self.N_events[cellid]
-                total_time = self.ImLaps[self.i_Laps_ImData[-1]].raw_time.max() - self.ImLaps[self.i_Laps_ImData[0]].raw_time.min()
-                             # take last timestamp of last imaged lap and subtract first timestamp of first imaged lap
+                    imaged_ImLaps = np.array(self.ImLaps)[self.i_Laps_ImData][i_laps]
+                    frames_pos = [lap.frames_pos for lap in imaged_ImLaps]  # list, long as number of imaged laps in corridor, each element a list of positions (roxel)
+                    frames_pos_bins = [np.floor(frames_pos_roxel / self.corridor_length_roxel * self.N_pos_bins) for frames_pos_roxel in frames_pos]  # change pos units from roxel to space bins
+                    frames_dF_F = [lap.frames_dF_F[cellid,:] for lap in imaged_ImLaps]  # list, long as number of imaged laps in corridor, each element a list of dF/F for a particular cell
 
-                tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, bins_p95_geq_afr,
-                                       frames_pos_bins, frames_dF_F, n_events, total_time)
-                tuned_cells.append(tuned_cell)
-        return tuned_cells, tuning_curves
+                    n_events = self.N_events[cellid]
+                    total_time = self.ImLaps[self.i_Laps_ImData[-1]].raw_time.max() - self.ImLaps[self.i_Laps_ImData[0]].raw_time.min()
+                                 # take last timestamp of last imaged lap and subtract first timestamp of first imaged lap
+
+                    history = "ALL"
+                    if corridor == 14:
+                        lap_histories = self.labels_a
+                    else:
+                        lap_histories = self.labels_b
+                    tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, history,
+                                           bins_p95_geq_afr, lap_histories, frames_pos_bins, frames_dF_F, n_events, total_time)
+                    tuned_cells.append(tuned_cell)
+
+                if history_dependent:
+                    history = "STAY"
+                    if corridor == 14:
+                        rate_matrix = self.ratemap_a_a[:,cellid,:]
+                    else:
+                        rate_matrix = self.ratemap_b_b[:,cellid,:]
+                    average_firing_rate = np.nansum(rate_matrix, axis=1) / rate_matrix.shape[1]
+                    i_cell = np.where(tuned_cell_ids == cellid)[0]
+                    p95_cell = self.p95[i_cor][:, i_cell]
+                    bins_p95_geq_afr = [i for i in range(self.N_pos_bins) if average_firing_rate[i] >= p95_cell[i]]
+                    tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, history, bins_p95_geq_afr, lap_histories=[],
+                                           frames_pos_bins=[], frames_dF_F=[], n_events=[], total_time=[])  # TODO: these are left intentionally empty for now
+                    tuned_cells.append(tuned_cell)
+
+                    ################
+                    history = "CHANGE"
+                    if corridor == 14:
+                        rate_matrix = self.ratemap_b_a[:,cellid,:]
+                    else:
+                        rate_matrix = self.ratemap_a_b[:,cellid,:]
+                    average_firing_rate = np.nansum(rate_matrix, axis=1) / rate_matrix.shape[1]
+                    i_cell = np.where(tuned_cell_ids == cellid)[0]
+                    p95_cell = self.p95[i_cor][:, i_cell]
+                    bins_p95_geq_afr = [i for i in range(self.N_pos_bins) if average_firing_rate[i] >= p95_cell[i]]
+                    tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, history, bins_p95_geq_afr,
+                                           frames_pos_bins=[], frames_dF_F=[], n_events=[], total_time=[])  # TODO: these are left intentionally empty for now
+                    tuned_cells.append(tuned_cell)
+
+        return tuned_cells, tuning_curves, cells
 
     def plot_popact(self, cellids, corridor=-1, name_string='selected_cells', bylaps=False, set_ymax=None):
         ## plot the total population activity in all trials in a given corridor
@@ -2766,14 +2821,13 @@ class ImagingSessionData:
 
         plt.show(block=False)
 
+    # BAZSI_START
     def calc_correct_lap_proportions(self):
         selected_laps = self.i_Laps_ImData
         if (self.n_laps > 0):
-            corridor_types = np.unique(self.i_corridors[selected_laps])
-            nrow = len(corridor_types)
-
+            nrow = len(self.corridors)
             for row in range(nrow): # for each corridor...
-                ids_all = np.where(self.i_corridors == corridor_types[row])
+                ids_all = np.where(self.i_corridors == self.corridors[row])
                 ids = np.intersect1d(ids_all, selected_laps)
                 if (len(ids) > 2):
                     n_correct = 0
@@ -2784,7 +2838,7 @@ class ImagingSessionData:
                     P_correct = np.round(nan_divide(float(n_correct), float(n_valid)),3)
                     self.Ps_correct[self.corridors[row]] = P_correct
 
-    def calc_speed_and_lick_selectivity(self):
+    def calc_speed_and_lick_selectivity(self, corrA, corrB):
         print("calculating speed and lick selectivities, behavior score...")
         selected_laps = self.i_Laps_ImData
         if (self.n_laps > 0):
@@ -2834,45 +2888,45 @@ class ImagingSessionData:
                         avg_speed_ctrl = np.nanmean(speed_matrix[:,ctrl_lb:ctrl_ub], axis=1)
                         speed_selectivity_laps = nan_divide(avg_speed_preRZ - avg_speed_ctrl,
                                                             avg_speed_preRZ + avg_speed_ctrl)
-                        self.speed_selectivity_laps[self.corridors[row]] = speed_selectivity_laps
+                        self.speed_index[self.corridors[row]] = speed_selectivity_laps
 
                         avg_lick_preRZ = np.nanmean(lick_matrix[:, preRZ_lb:preRZ_ub], axis=1)
                         avg_lick_ctrl = np.nanmean(lick_matrix[:, ctrl_lb:ctrl_ub], axis=1)
                         lick_selectivity_laps = nan_divide(avg_lick_preRZ - avg_lick_ctrl,
                                                             avg_lick_preRZ + avg_lick_ctrl)
-                        self.lick_selectivity_laps[self.corridors[row]] = lick_selectivity_laps
+                        self.lick_index[self.corridors[row]] = lick_selectivity_laps
 
                     # cross-corridor selectivities
                     current_corr_id = self.corridors[row]
-                    if current_corr_id in [14, 15]:  # we ignore block and new env for now
-                        RZ_corr14_start_bin = np.round(self.corridor_list.corridors[14].reward_zone_starts * self.N_pos_bins)
-                        corr14_preRZ_ub = int(RZ_corr14_start_bin - 1)
-                        corr14_preRZ_lb = int(RZ_corr14_start_bin - 5)
+                    if current_corr_id in [corrA, corrB]:  # we ignore block and new env for now
+                        RZ_corrA_start_bin = np.round(self.corridor_list.corridors[corrA].reward_zone_starts * self.N_pos_bins)
+                        corrA_preRZ_ub = int(RZ_corrA_start_bin - 1)
+                        corrA_preRZ_lb = int(RZ_corrA_start_bin - 5)
 
-                        avg_speed_corr14_preRZ = np.nanmean(speed_matrix[:, corr14_preRZ_lb:corr14_preRZ_ub])
-                        avg_speeds_by_corridor[current_corr_id] = avg_speed_corr14_preRZ
-                        avg_lick_corr14_preRZ = np.nanmean(lick_matrix[:, corr14_preRZ_lb:corr14_preRZ_ub])
-                        avg_licks_by_corridor[current_corr_id] = avg_lick_corr14_preRZ
+                        avg_speed_corrA_preRZ = np.nanmean(speed_matrix[:, corrA_preRZ_lb:corrA_preRZ_ub])
+                        avg_speeds_by_corridor[current_corr_id] = avg_speed_corrA_preRZ
+                        avg_lick_corrA_preRZ = np.nanmean(lick_matrix[:, corrA_preRZ_lb:corrA_preRZ_ub])
+                        avg_licks_by_corridor[current_corr_id] = avg_lick_corrA_preRZ
             with warnings.catch_warnings(action="ignore"):  # nan_divide throws RuntimeWarning but it works as intended
-                self.speed_selectivity_cross_corridor = nan_divide(avg_speeds_by_corridor[14] - avg_speeds_by_corridor[15],
-                                                                   avg_speeds_by_corridor[14] + avg_speeds_by_corridor[15])
-                self.lick_selectivity_cross_corridor = nan_divide(avg_licks_by_corridor[14] - avg_licks_by_corridor[15],
-                                                                  avg_licks_by_corridor[14] + avg_licks_by_corridor[15])
+                self.speed_selectivity = nan_divide(avg_speeds_by_corridor[corrA] - avg_speeds_by_corridor[corrB],
+                                                    avg_speeds_by_corridor[corrA] + avg_speeds_by_corridor[corrB])
+                self.lick_selectivity = nan_divide(avg_licks_by_corridor[corrA] - avg_licks_by_corridor[corrB],
+                                                   avg_licks_by_corridor[corrA] + avg_licks_by_corridor[corrB])
 
-    def calculate_behavior_score(self):
-        mean_vsel_14 = np.round(np.nanmean(self.speed_selectivity_laps[14]), 2)
-        mean_vsel_15 = np.round(np.nanmean(self.speed_selectivity_laps[15]), 2)
-        mean_lsel_14 = np.round(np.nanmean(self.lick_selectivity_laps[14]), 2)
-        mean_lsel_15 = np.round(np.nanmean(self.lick_selectivity_laps[15]), 2)
+    def calculate_behavior_score(self, corrA, corrB):
+        mean_vidx_A = np.round(np.nanmean(self.speed_index[corrA]), 2)
+        mean_vidx_B = np.round(np.nanmean(self.speed_index[corrB]), 2)
+        mean_lidx_A = np.round(np.nanmean(self.lick_index[corrA]), 2)
+        mean_lidx_B = np.round(np.nanmean(self.lick_index[corrB]), 2)
         self.behavior_score_components = {
-            "Pcorrect (corr. 14)": self.Ps_correct[14],
-            "Pcorrect (corr. 15)": self.Ps_correct[15],
-            "Norm. speed selectivity (corr. 14)": mean_vsel_14 / self.VSEL_NORMALIZATION,
-            "Norm. speed selectivity (corr. 15)": mean_vsel_15 / self.VSEL_NORMALIZATION,
-            "Norm. speed selectivity (cross-corr)": float(self.speed_selectivity_cross_corridor / self.VSEL_NORMALIZATION),
-            "Lick selectivity (corr. 14)": mean_lsel_14,
-            "Lick selectivity (corr. 15)": mean_lsel_15,
-            "Lick selectivity (cross-corr)": float(self.lick_selectivity_cross_corridor),
+            f"P correct ({corrA})": self.Ps_correct[corrA],
+            f"P correct ({corrB})": self.Ps_correct[corrB],
+            f"Speed index ({corrA})": mean_vidx_A / self.VSEL_NORMALIZATION,
+            f"Speed index ({corrB})": mean_vidx_B / self.VSEL_NORMALIZATION,
+            "Speed selectivity": float(self.speed_selectivity / self.VSEL_NORMALIZATION),
+            f"Lick index ({corrA})": mean_lidx_A,
+            f"Lick index ({corrB})": mean_lidx_B,
+            "Lick selectivity": float(self.lick_selectivity),
         }
         self.behavior_score = sum(list(self.behavior_score_components.values()))
 
@@ -2881,6 +2935,7 @@ class ImagingSessionData:
             print(f"{component_name} = {component_value:.2f}")
         print("----------")
         print(f"behavior score = {self.behavior_score:.2f}")
+    # BAZSI_END
 
     def plot_session(self, selected_laps=None, average=True, filename=None):
         ## plot the behavioral data during one session. 
@@ -2971,12 +3026,14 @@ class ImagingSessionData:
                     else:
                         plot_title = str(int(n_laps)) + ' (' + str(int(n_correct)) + ')' + ' laps in corridor ' + str(int(corridor_types[row])) + ', P-correct: ' + str(P_correct)
 
+                    # BAZSI_START
                     if self.corridors[row] in [14, 15]:  # TODO: selectivities and behavior score only work for corridor 14 and 15 yet
-                        mean_vsel = np.round(np.nanmean(self.speed_selectivity_laps[self.corridors[row]]) / self.VSEL_NORMALIZATION, 2)
-                        mean_lsel = np.round(np.nanmean(self.lick_selectivity_laps[self.corridors[row]]), 2)
+                        mean_vsel = np.round(np.nanmean(self.speed_index[self.corridors[row]]) / self.VSEL_NORMALIZATION, 2)
+                        mean_lsel = np.round(np.nanmean(self.lick_index[self.corridors[row]]), 2)
                         if row == 0:
-                            plot_title += f",\nBehavior score: {self.behavior_score:.2f}, V-sel(X-corr): {self.speed_selectivity_cross_corridor / self.VSEL_NORMALIZATION:.2f}, L-sel(X-corr): {self.lick_selectivity_cross_corridor:.2f},"
+                            plot_title += f",\nBehavior score: {self.behavior_score:.2f}, V-sel(X-corr): {self.speed_selectivity / self.VSEL_NORMALIZATION:.2f}, L-sel(X-corr): {self.lick_selectivity:.2f},"
                         plot_title += f"\nV-sel(in {self.corridors[row]}): {mean_vsel}, L-sel (in {self.corridors[row]}): {mean_lsel}"
+                    # BAZSI_END
 
                     ########################################
                     ## reward zones
@@ -3084,28 +3141,30 @@ class ImagingSessionData:
             plt.title('No data to show')
             plt.show(block=False)
 
+    # BAZSI_START
     def plot_speed_and_lick_selectivity(self, filename):
-        n_corridors = len(self.speed_selectivity_laps)
+        n_corridors = len(self.speed_index)
         fig, axs = plt.subplots(2, n_corridors, sharey=True)
-        for i_cor, cor in enumerate(self.speed_selectivity_laps):
-            axs[0,i_cor].hist(self.speed_selectivity_laps[cor], color="blue")
+        for i_cor, cor in enumerate(self.speed_index):
+            axs[0,i_cor].hist(self.speed_index[cor], color="blue")
             axs[0,i_cor].set_title(f"corridor {cor}")
             axs[0,i_cor].set_xlim([-1,1])
             axs[0,i_cor].set_xlabel("speed selectivity")
             axs[0,i_cor].set_ylabel("laps")
             axs[0,i_cor].axvline(0, color="black", linestyle="--")
-            axs[0,i_cor].axvline(np.nanmean(self.speed_selectivity_laps[cor]), color="red")
+            axs[0,i_cor].axvline(np.nanmean(self.speed_index[cor]), color="red")
 
-            axs[1,i_cor].hist(self.lick_selectivity_laps[cor], color="orange")
+            axs[1,i_cor].hist(self.lick_index[cor], color="orange")
             axs[1,i_cor].set_title(f"corridor {cor}")
             axs[1,i_cor].set_xlim([-1, 1])
             axs[1,i_cor].set_xlabel("lick selectivity")
             axs[1,i_cor].set_ylabel("laps")
             axs[1,i_cor].axvline(0, color="black", linestyle="--")
-            axs[1,i_cor].axvline(np.nanmean(self.lick_selectivity_laps[cor]), color="red")
+            axs[1,i_cor].axvline(np.nanmean(self.lick_index[cor]), color="red")
         plt.tight_layout()
         plt.savefig(filename)
         plt.close()
+    # BAZSI_END
 
     def plot_masks(self, cellids, cell_property=np.array([np.nan]), title_string=''):
         if (version_info.major == 2):
@@ -3419,9 +3478,24 @@ class ImagingSessionData:
             rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
             av_rate = np.nanmean(rate_matrix, axis=1)
             ratemap[i,:] = av_rate
-            
+
         return np.transpose(ratemap)
 
+    # for bw-compatibility reasons: this function does almost the same as above but returns the
+    # whole ratemap, not just the average firing rates at each spatial bin
+    def calc_ratemap(self, i_laps, cellids=None):
+        # calculate ratemaps for the given laps
+        if (cellids is None):
+            cellids = np.arange(self.N_cells)
+        N_cells = len(cellids)
+        ratemap = np.zeros((self.N_pos_bins, N_cells, len(i_laps)))
+
+        total_time = self.activity_tensor_time[:, i_laps]
+        for cellid in range(N_cells):
+            total_spikes = self.activity_tensor[:, cellid, i_laps]
+            rate_matrix = nan_divide(total_spikes, total_time, where=total_time > 0.025)
+            ratemap[:, cellid, :] = rate_matrix
+        return ratemap
     
     def calc_even_odd_rates(self):
         #calculate ratemaps for even and ott laps for every corridor with enough laps
@@ -3486,24 +3560,33 @@ class ImagingSessionData:
             i_stay_b = []
             i_changeto_a = []
             i_changeto_b = []
-            
+
+            self.labels_a = []
+            self.labels_b = []
             imaged_laps = self.i_corridors[self.i_Laps_ImData]
+            if imaged_laps[0] == corr_a:
+                self.labels_a.append("FIRST")
+            else:
+                self.labels_b.append("FIRST")
             for i in np.arange(1,imaged_laps.size):
                 if imaged_laps[i] == corr_a:
                     if imaged_laps[i-1] == corr_a:
                         i_stay_a.append(i)
+                        self.labels_a.append("STAY")
                     else:
-                        #TODO
                         i_changeto_a.append(i)
+                        self.labels_a.append("CHANGE")
                 if imaged_laps[i] == corr_b:
                     if imaged_laps[i-1] == corr_b:
                         i_stay_b.append(i)
+                        self.labels_b.append("STAY")
                     else:
                         i_changeto_b.append(i)
-            self.ratemap_a_a = self.calc_rate(i_stay_a)
-            self.ratemap_b_b = self.calc_rate(i_stay_b)
-            self.ratemap_a_b = self.calc_rate(i_changeto_b)
-            self.ratemap_b_a = self.calc_rate(i_changeto_a)
+                        self.labels_b.append("CHANGE")
+            self.ratemap_a_a = self.calc_ratemap(i_stay_a)
+            self.ratemap_b_b = self.calc_ratemap(i_stay_b)
+            self.ratemap_a_b = self.calc_ratemap(i_changeto_b)
+            self.ratemap_b_a = self.calc_ratemap(i_changeto_a)
             
             print('previous-based ratemaps calculated - !Previous overwritten!')
 
@@ -4286,5 +4369,6 @@ def LocateImaging(trigger_log_file_string, TRIGGER_VOLTAGE_FILENAME):
         if match_found==True:
             imstart_time = lap_time_of_first_frame
         else:
-            sys.exit('no precise trigger mach found: need to refine code or check device')
+            #sys.exit('no precise trigger mach found: need to refine code or check device')
+            raise Exception('no precise trigger mach found: need to refine code or check device')
     return imstart_time

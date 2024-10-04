@@ -29,8 +29,8 @@ class View_Mouse:
     
     def __init__(self):
         self.root = Tk()
-        self.name = 'rn011'
-        self.task = 'contingency_learning'
+        self.name = 'KS028'
+        self.task = 'NearFarLong'
 
         ####################################################
         # first column
@@ -74,6 +74,7 @@ if __name__ == '__main__':
 
     datapath = os.getcwd() #current working directory - look for data and strings here!
     # datapath = '/Users/ubi/Projects/KOKI/VR/MiceData'
+    datapath = "D:\\CA1\\"
     m1 = Read_Mouse(name_task.name, name_task.task, datapath, False).mm
     m1.datapath = datapath
     cm = Close_Mouse(m1)

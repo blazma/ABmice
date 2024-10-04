@@ -20,6 +20,7 @@ import sys
 import numpy as np
 import os
 import sys
+import traceback
 from Mice import *
 from LogAnal import *
 
@@ -33,6 +34,8 @@ class Close_Mouse:
         self.new_data_found = self.mouse.update()
 
         self.root = Tk()
+        self.is_behavior_score = BooleanVar()
+        self.selected_corridors = []
 
         ####################################################
         # first column
@@ -49,8 +52,16 @@ class Close_Mouse:
         Label(self.root, text="N reward: ").grid(row=9)
         Label(self.root, text="Session to plot: ").grid(row=10)
 
-        Label(self.root, text="Analyse session/trial: ").grid(row=12)
-        Button(self.root, text='Apply', command=self.apply_mouse_data).grid(row=13, column=0, sticky=W, pady=4)
+        Label(self.root, text="Analyse session/trial: ").grid(row=15)
+        Button(self.root, text='Apply', command=self.apply_mouse_data).grid(row=16, column=0, sticky=W, pady=4)
+
+        bs_button = Checkbutton(self.root, text="Show behavior score?", variable=self.is_behavior_score, command=self.on_behavior_score_checkbox)
+        bs_button.grid(row=13)
+        self.corr1_field = Entry(self.root, state=DISABLED, width=10)
+        self.corr1_field.grid(row=13, column=1, sticky="w")
+
+        self.corr2_field = Entry(self.root, state=DISABLED, width=10)
+        self.corr2_field.grid(row=13, column=1, sticky="e")
 
         ####################################################
         # 2nd column
@@ -78,15 +89,15 @@ class Close_Mouse:
         Button(self.root, text='Plot mouse data', command=self.plot).grid(row=11, column=2, sticky=W, pady=4)
 
         self.e12a = Entry(self.root)
-        self.e12a.grid(row=12, column=1)
-        self.e12a.insert(12,i_last_session)
+        self.e12a.grid(row=15, column=1)
+        self.e12a.insert(15,i_last_session)
 
         self.e12b = Entry(self.root)
-        self.e12b.grid(row=12, column=2)
-        self.e12b.insert(12,0)
+        self.e12b.grid(row=15, column=2)
+        self.e12b.insert(15,0)
 
-        Button(self.root, text='Analyse selected session', command=self.analyse_session).grid(row=13, column=1, sticky=W, pady=4)
-        Button(self.root, text='Analyse lap', command=self.analyse_lap).grid(row=13, column=2, sticky=W, pady=4)
+        Button(self.root, text='Analyse selected session', command=self.analyse_session).grid(row=16, column=1, sticky=W, pady=4)
+        Button(self.root, text='Analyse lap', command=self.analyse_lap).grid(row=16, column=2, sticky=W, pady=4)
 
         mainloop( )
 
@@ -101,7 +112,9 @@ class Close_Mouse:
 # sessiondata = Session(datapath, date_time, name, task)
 
         self.newsession = False
-        datadir = './data/' + self.mouse.name + '_' + self.mouse.task
+
+        datapath = "D:\\CA1\\"
+        datadir = datapath + '/data/' + self.mouse.name + '_' + self.mouse.task
         sessiondirs = sorted(os.listdir(datadir), )
 
         save_date = datetime.datetime.strptime(self.mouse.sessions[i_session_load].start_Time, '%Y-%m-%d %H:%M')
@@ -122,13 +135,37 @@ class Close_Mouse:
                 i_date = np.nan
         if (folder_index >= 0):
             date_time = sessiondirs[folder_index] # the first directory is 
-            # sessiondir = datadir + '/' + date_time
-            self.sessiondata = Session('./', date_time, self.mouse.name, self.mouse.task, i_session_load)
+            # sessiondir = datadir + '/' + date_tim7
+            self.sessiondata = Session(datapath, date_time, self.mouse.name, self.mouse.task, i_session_load)
+            if self.is_behavior_score.get():
+                try:
+                    corrA = int(self.corr1_field.get())
+                    if len(self.corr2_field.get()) == 0:
+                        corrB = None
+                    else:
+                        corrB = int(self.corr2_field.get())
+                    self.sessiondata.calc_behavior_score(corrA, corrB)
+                    self.selected_corridors = [corrA, corrB]
+                except Exception:
+                    print(traceback.format_exc())
+                    print("ERROR in behavior score calculation")
             self.loaded_session = i_session_load
             self.newsession = True
         else:
             print('no data found for the session selected')
-           
+
+    def on_behavior_score_checkbox(self):
+        if not self.is_behavior_score.get():
+            self.corr1_field.configure(state=DISABLED)
+            self.corr2_field.configure(state=DISABLED)
+        else:
+            self.corr1_field.configure(state=NORMAL)
+            self.corr2_field.configure(state=NORMAL)
+
+            if not self.corr1_field.get():
+                self.corr1_field.insert(13, "corr. A")
+            if not self.corr2_field.get():
+                self.corr2_field.insert(13, "corr. B")
 
     def analyse_session(self):
         i_session_anal = int(self.e12a.get())
@@ -148,9 +185,24 @@ class Close_Mouse:
             else :
                 self.load_session(i_session_anal)
                 print('session loaded successfully')
-        
+
+        if self.selected_corridors != [self.corr1_field.get(), self.corr2_field.get()]:
+            self.load_session(i_session_anal)
+
         if (self.newsession):
-            self.sessiondata.plot_session()
+            if self.is_behavior_score.get():
+                try:
+                    corrA = int(self.corr1_field.get())
+                    if len(self.corr2_field.get()) == 0:
+                        corrB = None
+                    else:
+                        corrB = int(self.corr2_field.get())
+                    self.sessiondata.plot_session(corrA, corrB)
+                except ValueError:
+                    print(traceback.format_exc())
+                    print("ERROR: invalid corridor indices -- are they integers?")
+            else:
+                self.sessiondata.plot_session()
         print('\n')
 
     def analyse_lap(self):

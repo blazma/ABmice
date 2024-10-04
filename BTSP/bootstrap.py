@@ -19,16 +19,18 @@ def calc_diff(sg_df, param, median=False):
         diff = mean_newlyf - mean_stable
     return diff
 
-def bootstrapping(data_path, output_path, median=False, extra_info="", take_diff=True, without_transient=False):
-    CA1_stats = BtspStatistics("CA1", data_path, output_path, extra_info=extra_info)
+def bootstrapping(data_path, output_path, median=False, extra_info_CA1="", extra_info_CA3="", take_diff=True, without_transient=False):
+    CA1_stats = BtspStatistics("CA1", data_path, output_path, extra_info=extra_info_CA1)
     CA1_stats.load_data()
+    CA1_stats.filter_low_behavior_score()
     CA1_stats.calc_shift_gain_distribution()
     CA1_sg_df = CA1_stats.shift_gain_df
     if without_transient:
         CA1_sg_df = CA1_sg_df[CA1_sg_df["category"] != "transient"]
 
-    CA3_stats = BtspStatistics("CA3", data_path, output_path, extra_info=extra_info)
+    CA3_stats = BtspStatistics("CA3", data_path, output_path, extra_info=extra_info_CA3)
     CA3_stats.load_data()
+    CA3_stats.filter_low_behavior_score()
     CA3_stats.calc_shift_gain_distribution()
     CA3_sg_df = CA3_stats.shift_gain_df
     if without_transient:
@@ -66,7 +68,7 @@ def bootstrapping(data_path, output_path, median=False, extra_info="", take_diff
         pos = np.linspace(min(diffs), max(diffs), 100)
         #plt.plot(pos, kde_shift(pos), color="k", linewidth=3)
         ax.fill_between(pos, kde(pos), alpha=0.15, color="b")
-        ax.set_ylim([0,max(kde(pos))])
+        ax.set_ylim([0,1.1*max(kde(pos))])
 
         # 95% confidence interval
         lb = np.percentile(diffs, q=2.5)
@@ -92,41 +94,45 @@ def bootstrapping(data_path, output_path, median=False, extra_info="", take_diff
 
     if take_diff:
         CA3_shifts = calc_diff(CA3_sg_df, param='initial shift', median=median)
-        ax.set_xlabel("$\Delta\ mean\ initial\ shift$")
+        label = "median" if median else "mean"
+        ax.set_xlabel(f"$\Delta\ {label}\ initial\ shift$")
     else:
         CA3_shifts = CA3_sg_df[CA3_sg_df["newly formed"] == True]["initial shift"].mean()
         ax.set_xlabel("mean initial shift; newly formed PFs")
     ax.axvline(CA3_shifts, c="r", linewidth=2, label="CA3")
     ax.axvline(0, c="k", linestyle="--")
-    ax.set_xlim([-6,6])
+    ax.set_xlim([-5,5])
     ax.spines[["right", "top"]].set_visible(False)
     plt.tight_layout()
     save_path = f"{CA1_stats.output_root}/BOOTSTRAP_SHIFT"
     save_path = f"{save_path}_median" if median else f"{save_path}"
     save_path = f"{save_path}_diffs" if take_diff else f"{save_path}_NF"
-    save_path = f"{save_path}_withoutTransients" if without_transient else f"f{save_path}"
+    save_path = f"{save_path}_withoutTransients" if without_transient else f"{save_path}"
     plt.savefig(f"{save_path}.pdf")
     plt.savefig(f"{save_path}.svg")
 
     scale = 0.8
     fig, ax = plt.subplots(figsize=(scale*5, scale*3))
     plot_kde(CA1_gains, ax=ax, color="b")
-    ax.set_xlabel("$\Delta\ mean\ formation\ gain$")
+    #ax.set_xlabel("$\Delta\ mean\ formation\ gain$")
     if take_diff:
         CA3_gains = calc_diff(CA3_stats.shift_gain_df, param='log10(formation gain)', median=median)
-        ax.set_xlabel("$\Delta\ mean\ log_{10}(formation\ gain)$")
+        if median:
+            ax.set_xlabel("$\Delta\ median\ log_{10}(formation\ gain)$")
+        else:
+            ax.set_xlabel("$\Delta\ mean\ log_{10}(formation\ gain)$")
     else:
         CA3_gains = CA3_sg_df[CA3_sg_df["newly formed"] == True]["log10(formation gain)"].mean()
         ax.set_xlabel("$mean\ log_{10}(formation gain);\quad newly\ formed\ PFs$")
     ax.axvline(CA3_gains, c="r", linewidth=2, label="CA3")
     ax.axvline(0, c="k", linestyle="--")
-    ax.set_xlim([-0.2,0.2])
+    ax.set_xlim([-0.25,0.25])
     ax.spines[["right", "top"]].set_visible(False)
     plt.tight_layout()
     save_path = f"{CA1_stats.output_root}/BOOTSTRAP_GAIN"
     save_path = f"{save_path}_median" if median else f"{save_path}"
     save_path = f"{save_path}_diffs" if take_diff else f"{save_path}_NF"
-    save_path = f"{save_path}_withoutTransients" if without_transient else f"f{save_path}"
+    save_path = f"{save_path}_withoutTransients" if without_transient else f"{save_path}"
     plt.savefig(f"{save_path}.pdf")
     plt.savefig(f"{save_path}.svg")
 
@@ -136,9 +142,9 @@ def bootstrapping(data_path, output_path, median=False, extra_info="", take_diff
     def pvalue(sample, mu):
         one_tailed_p = sample[sample >= mu].size / sample.size
         if one_tailed_p > 0.5:
-            return np.round(2*(1-one_tailed_p), 3)
+            return 2*(1-one_tailed_p)
         else:
-            return np.round(2*one_tailed_p, 3)
+            return 2*one_tailed_p
 
     if take_diff:
         tests = f"n={n}\n" +\
@@ -260,8 +266,10 @@ if __name__ == "__main__":
     data_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
     output_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
 
-    extra_info = ""
-    bootstrapping(data_root, output_root, extra_info=extra_info, take_diff=True, without_transient=False)
+    extra_info_CA1 = "without410"
+    extra_info_CA3 = "without410"
+    bootstrapping(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+                  take_diff=True, without_transient=False, median=True)
     #bootstrapping(data_root, output_root, extra_info=extra_info, median=True)
     #bootstrapping(data_root, output_root, extra_info=f"{extra_info}_shuffled_laps")
     #bootstrapping(data_root, output_root, extra_info=f"{extra_info}_shuffled_laps", median=True)
