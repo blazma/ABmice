@@ -13,14 +13,16 @@ from constants import CATEGORIES, ANIMALS, VSEL_NORMALIZATION
 data_path = r"C:\Users\martin\home\phd\btsp_project\analyses\manual"
 output_path = r"C:\Users\martin\home\phd\btsp_project\analyses\manual\misc"
 
-behav_stats_CA1 = BehaviorStatistics("CA1", data_path, output_path, extra_info="reboot_withoutPost")
+behav_stats_CA1 = BehaviorStatistics("CA1", data_path, output_path, extra_info="")
 behav_stats_CA1.calc_behavior_score()
-behav_stats_CA3 = BehaviorStatistics("CA3", data_path, output_path, extra_info="reboot")
+behav_stats_CA3 = BehaviorStatistics("CA3", data_path, output_path, extra_info="")
 behav_stats_CA3.calc_behavior_score()
 
 # calc behavior scores -- pool animals from both areas
-y_cols = ['area', 'animalID', 'sessionID', 'Pcorrect(14)', 'Pcorrect(15)', 'Vsel(14)', 'Vsel(15)',
-          'Vsel(X-corr)', 'Lsel(14)', 'Lsel(15)', 'Lsel(X-corr)', 'behavior score']
+y_cols = ['area', 'animalID', 'sessionID', 'P-correct (14)', 'P-correct (15)', 'Speed index (14)', 'Speed index (15)',
+          'Speed selectivity', 'Lick index (14)', 'Lick index (15)', 'Lick selectivity', 'behavior score']
+#y_cols = ['area', 'animalID', 'sessionID', 'Pcorrect(14)', 'Pcorrect(15)', 'Vsel(14)', 'Vsel(15)',
+#          'Vsel(X-corr)', 'Lsel(14)', 'Lsel(15)', 'Lsel(X-corr)', 'behavior score']
 df_CA1 = behav_stats_CA1.behavior_df[y_cols].set_index(['area', 'animalID', 'sessionID'])
 df_CA3 = behav_stats_CA3.behavior_df[y_cols].set_index(['area', 'animalID', 'sessionID'])
 scores_df = pd.concat([df_CA1, df_CA3])

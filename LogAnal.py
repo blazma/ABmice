@@ -706,10 +706,10 @@ class Session:
         corridor_types = np.unique(self.i_corridors[selected_laps])
         if corrB is not None:
             if corrA not in corridor_types and corrB not in corridor_types:
-                raise Exception("corridors"+str(corrA)+" and/ or"+str(corrB)+" not found in session, abortin behavior score calc.")
+                raise Exception("corridors"+str(corrA)+" and/ or"+str(corrB)+" not found in session, aborting behavior score calc.")
         else:
             if corrA not in corridor_types:
-                raise Exception("corridor"+str(corrA)+" not found in session, abortin behavior score calc.")
+                raise Exception("corridor"+str(corrA)+" not found in session, aborting behavior score calc.")
 
         self.calc_correct_lap_proportions(corrA, corrB, selected_laps)
         self.calc_speed_and_lick_selectivity(corrA, corrB, selected_laps)
@@ -719,13 +719,13 @@ class Session:
         mean_lidx_A = np.round(np.nanmean(self.lick_index[corrA]), 2)
         mean_lidx_B = np.round(np.nanmean(self.lick_index[corrB]), 2)
         self.behavior_score_components = {
-            "P correct ("+str({corrA})+")": self.Ps_correct[corrA],
-            "P correct ("+str({corrB})+")": self.Ps_correct[corrB],
-            "Speed index ("+str({corrA})+")": mean_vidx_A / self.VSEL_NORMALIZATION,
-            "Speed index ("+str({corrB})+")": mean_vidx_B / self.VSEL_NORMALIZATION,
+            "P correct ("+str(corrA)+")": self.Ps_correct[corrA],
+            "P correct ("+str(corrB)+")": self.Ps_correct[corrB],
+            "Speed index ("+str(corrA)+")": mean_vidx_A / self.VSEL_NORMALIZATION,
+            "Speed index ("+str(corrB)+")": mean_vidx_B / self.VSEL_NORMALIZATION,
             "Speed selectivity": float(self.speed_selectivity / self.VSEL_NORMALIZATION),
-            "Lick index ("+str({corrA})+")": mean_lidx_A,
-            "Lick index ("+str({corrB})+")": mean_lidx_B,
+            "Lick index ("+str(corrA)+")": mean_lidx_A,
+            "Lick index ("+str(corrB)+")": mean_lidx_B,
             "Lick selectivity": float(self.lick_selectivity),
         }
         self.behavior_score = sum(list(self.behavior_score_components.values()))
@@ -823,9 +823,9 @@ class Session:
 
                     if self.behavior_score is not None and average == True:
                         if corridor_types[row] == corrA:
-                            cells = [["P correct ("+str({corrA})+")", np.round(self.behavior_score_components[f'P correct ('+str({corrA})+")"],2),],
-                                     ["Speed index ("+str({corrA})+")", np.round(self.behavior_score_components[f'Speed index ('+str({corrA})+")"],2),],
-                                     ["Lick index ("+str({corrA})+")", np.round(self.behavior_score_components[f'Lick index ('+str({corrA})+")"],2)]]
+                            cells = [["P correct ("+str(corrA)+")", np.round(self.behavior_score_components[f'P correct ('+str(corrA)+")"],2),],
+                                     ["Speed index ("+str(corrA)+")", np.round(self.behavior_score_components[f'Speed index ('+str(corrA)+")"],2),],
+                                     ["Lick index ("+str(corrA)+")", np.round(self.behavior_score_components[f'Lick index ('+str(corrA)+")"],2)]]
                             cell_colors = [["white", "white"],
                                            ["white", "white"],
                                            ["white", "white"],]
@@ -843,9 +843,9 @@ class Session:
                             axs[row, 0].plot(self.ctrlZ[corrA], [ymax - ymax * 0.05, ymax - ymax * 0.05], linewidth=3, color="red")
                             axs[row, 0].plot(self.crossZ, [ymax - ymax * 0.10, ymax - ymax * 0.10], linewidth=3, color="green")
                         elif corrB is not None and corridor_types[row] == corrB:
-                            cells = [["P correct ("+str({corrB})+")", np.round(self.behavior_score_components[f'P correct ('+str({corrB})+")"],2),],
-                                     ["Speed index ("+str({corrB})+")", np.round(self.behavior_score_components[f'Speed index ('+str({corrB})+")"],2),],
-                                     ["Lick index ("+str({corrB})+")", np.round(self.behavior_score_components[f'Lick index ('+str({corrB})+")"],2)],
+                            cells = [["P correct ("+str(corrB)+")", np.round(self.behavior_score_components[f'P correct ('+str(corrB)+")"],2),],
+                                     ["Speed index ("+str(corrB)+")", np.round(self.behavior_score_components[f'Speed index ('+str(corrB)+")"],2),],
+                                     ["Lick index ("+str(corrB)+")", np.round(self.behavior_score_components[f'Lick index ('+str(corrB)+")"],2)],
                                      ["Speed selectivity", np.round(self.behavior_score_components['Speed selectivity'],2)],
                                      ["Lick selectivity", np.round(self.behavior_score_components['Lick selectivity'],2)],
                                      ["BEHAVIOR SCORE", np.round(self.behavior_score,2)]]

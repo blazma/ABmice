@@ -132,7 +132,11 @@ class TunedCellList:
                 # load shuffle data
                 try:
                     logging.info("loading/calculating shuffle data")
-                    ISD.calc_shuffle(ISD.active_cells, 1000, 'shift', batchsize=12)
+                    if "noCaThreshold" in self.extra_info:
+                        cells_to_shuffle = np.arange(ISD.N_cells)
+                    else:
+                        cells_to_shuffle = ISD.active_cells
+                    ISD.calc_shuffle(cells_to_shuffle, 1000, 'shift', batchsize=12)
                 except Exception:
                     logging.exception(f"loading/calculating shuffle data failed for session {current_session}; skipping")
                     continue

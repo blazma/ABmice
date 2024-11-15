@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import tqdm
 from matplotlib import pyplot as plt
 from matplotlib_venn import venn3, venn3_unweighted
 import matplotlib
@@ -198,7 +199,7 @@ class BtspStatistics:
         w_poster, h_poster = 10, 18
         w_pres, h_pres = 10, 10
 
-        w, h = w_pres, h_pres
+        #w, h = w_pres, h_pres
         scale_poster = 0.275
         scale = 0.4
         fig, ax = plt.subplots(figsize=(scale*w, scale*h), dpi=dpi)
@@ -288,6 +289,8 @@ class BtspStatistics:
             ax.set_yticks(np.linspace(0,8000,9))
         else:
             ax.set_yticks(np.linspace(0,500,5))
+            if "noCaThreshold" in self.extra_info:
+                ax.set_yticks(np.linspace(0, 800, 9))
         ax.set_title(f"n = {len(self.pfs_df)}")
         ax.set_ylabel("# place fields")
         ax.set_xlabel("")
@@ -549,7 +552,7 @@ class BtspStatistics:
 
     def calc_shift_gain_distribution(self, unit="cm"):
         #shift_gain_df = self.pfs_df[["category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
-        shift_gain_df = self.pfs_df[["animal id", "session id", "category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
+        shift_gain_df = self.pfs_df[["animal id", "session id", "cell id", "corridor", "category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
         shift_gain_df = shift_gain_df[(shift_gain_df["initial shift"].notna()) & (shift_gain_df["formation gain"].notna())]
         shift_gain_df["log10(formation gain)"] = np.log10(shift_gain_df["formation gain"])
 
@@ -705,15 +708,7 @@ class BtspStatistics:
         else:
             plt.close()
 
-    def plot_shift_gain_distribution(self, unit="cm", without_transient=False):
-        def take_same_sized_subsample(df):
-            if self.area == "CA3":
-                return df
-            n = min(df[df["newly formed"] == True].shape[0], df[df["newly formed"] == False].shape[0])
-            ss1 = df[df["newly formed"] == True].sample(n=n)
-            ss2 = df[df["newly formed"] == False].sample(n=n)
-            ss_cc = sklearn.utils.shuffle(pd.concat((ss1, ss2)))
-            return ss_cc
+    def run_tests(self, df, params=None, suffix=""):
 
         def stars(pvalue):
             if pvalue < 0.001:
@@ -725,107 +720,119 @@ class BtspStatistics:
             else:
                 return ""
 
-        def run_tests_and_plot_results(df, g, params=None, annotate=False):
-            sh = "shuffledLaps" if "shuffledLaps" in self.extra_info else ""
-            test_results = f"{self.area}\n\n{sh}\n\n"
-            test_dict = {
-                "population": [],
-                "feature": [],
-                "test": [],
-                "statistic": [],
-                "p-value": []
-            }
-            for param in params:
-                test_results += f"{param}\n"
-                df_newlyF = df[df["newly formed"] == True]
-                df_establ = df[df["newly formed"] == False]
+        sh = "shuffledLaps" if "shuffledLaps" in self.extra_info else ""
+        test_results = f"{self.area}\n\n{sh}\n\n"
+        test_dict = {
+            "population": [],
+            "feature": [],
+            "test": [],
+            "statistic": [],
+            "p-value": [],
+            "log p-value": []
+        }
+        for param in params:
+            test_results += f"{param}\n"
+            df_newlyF = df[df["newly formed"] == True]
+            df_establ = df[df["newly formed"] == False]
 
-                # t-test: do the 2 samples have equal means?
-                test = scipy.stats.ttest_ind(df_newlyF[param].values, df_establ[param].values)
-                test_results += f"    p={test.pvalue:.3} (t-test) {stars(test.pvalue)}\n"
-                test_dict["population"].append("reliables")
-                test_dict["feature"].append(param)
-                test_dict["test"].append("t-test")
-                test_dict["statistic"].append(test.statistic)
-                test_dict["p-value"].append(test.pvalue)
+            # t-test: do the 2 samples have equal means?
+            test = scipy.stats.ttest_ind(df_newlyF[param].values, df_establ[param].values)
+            test_results += f"    p={test.pvalue:.3} (t-test) {stars(test.pvalue)}\n"
+            test_dict["population"].append("reliables")
+            test_dict["feature"].append(param)
+            test_dict["test"].append("t-test")
+            test_dict["statistic"].append(test.statistic)
+            test_dict["p-value"].append(test.pvalue)
+            test_dict["log p-value"].append(np.log10(test.pvalue))
 
-                # mann-whitney u: do the 2 samples come from same distribution?
-                test = scipy.stats.mannwhitneyu(df_newlyF[param].values, df_establ[param].values)
-                test_results += f"    p={test.pvalue:.3} (MW-U) {stars(test.pvalue)}\n"
-                test_dict["population"].append("reliables")
-                test_dict["feature"].append(param)
-                test_dict["test"].append("mann-whitney u")
-                test_dict["statistic"].append(test.statistic)
-                test_dict["p-value"].append(test.pvalue)
+            # mann-whitney u: do the 2 samples come from same distribution?
+            test = scipy.stats.mannwhitneyu(df_newlyF[param].values, df_establ[param].values)
+            test_results += f"    p={test.pvalue:.3} (MW-U) {stars(test.pvalue)}\n"
+            test_dict["population"].append("reliables")
+            test_dict["feature"].append(param)
+            test_dict["test"].append("mann-whitney u")
+            test_dict["statistic"].append(test.statistic)
+            test_dict["p-value"].append(test.pvalue)
+            test_dict["log p-value"].append(np.log10(test.pvalue))
 
-                # kolmogorov-smirnov: do the 2 samples come from the same distribution?
-                test = scipy.stats.kstest(df_newlyF[param].values, cdf=df_establ[param].values)
-                test_results += f"    p={test.pvalue:.3} (KS) {stars(test.pvalue)}\n"
-                test_dict["population"].append("reliables")
-                test_dict["feature"].append(param)
-                test_dict["test"].append("kolmogorov-smirnov")
-                test_dict["statistic"].append(test.statistic)
-                test_dict["p-value"].append(test.pvalue)
+            # kolmogorov-smirnov: do the 2 samples come from the same distribution?
+            test = scipy.stats.kstest(df_newlyF[param].values, cdf=df_establ[param].values)
+            test_results += f"    p={test.pvalue:.3} (KS) {stars(test.pvalue)}\n"
+            test_dict["population"].append("reliables")
+            test_dict["feature"].append(param)
+            test_dict["test"].append("kolmogorov-smirnov")
+            test_dict["statistic"].append(test.statistic)
+            test_dict["p-value"].append(test.pvalue)
+            test_dict["log p-value"].append(np.log10(test.pvalue))
 
-                # wilcoxon
-                test = scipy.stats.wilcoxon(df_newlyF[param].values)
-                test_results += f"    p={test.pvalue:.3} (WX-NF) {stars(test.pvalue)}\n"
-                test_dict["population"].append("newly formed")
-                test_dict["feature"].append(param)
-                test_dict["test"].append("wilcoxon")
-                test_dict["statistic"].append(test.statistic)
-                test_dict["p-value"].append(test.pvalue)
+            # wilcoxon
+            test = scipy.stats.wilcoxon(df_newlyF[param].values)
+            test_results += f"    p={test.pvalue:.3} (WX-NF) {stars(test.pvalue)}\n"
+            test_dict["population"].append("newly formed")
+            test_dict["feature"].append(param)
+            test_dict["test"].append("wilcoxon")
+            test_dict["statistic"].append(test.statistic)
+            test_dict["p-value"].append(test.pvalue)
+            test_dict["log p-value"].append(np.log10(test.pvalue))
 
-                test = scipy.stats.wilcoxon(df_establ[param].values)
-                test_results += f"    p={test.pvalue:.3} (WX-ES) {stars(test.pvalue)}\n"
-                test_dict["population"].append("established")
-                test_dict["feature"].append(param)
-                test_dict["test"].append("wilcoxon")
-                test_dict["statistic"].append(test.statistic)
-                test_dict["p-value"].append(test.pvalue)
+            test = scipy.stats.wilcoxon(df_establ[param].values)
+            test_results += f"    p={test.pvalue:.3} (WX-ES) {stars(test.pvalue)}\n"
+            test_dict["population"].append("established")
+            test_dict["feature"].append(param)
+            test_dict["test"].append("wilcoxon")
+            test_dict["statistic"].append(test.statistic)
+            test_dict["p-value"].append(test.pvalue)
+            test_dict["log p-value"].append(np.log10(test.pvalue))
 
-                # t-test (1 sample)
-                test = scipy.stats.ttest_1samp(df_newlyF[param].values, popmean=0)
-                test_results += (f"    p={test.pvalue:.3} (TT1S-NF) {stars(test.pvalue)}\n")
-                test_dict["population"].append("newly formed")
-                test_dict["feature"].append(param)
-                test_dict["test"].append("1-sample t-test")
-                test_dict["statistic"].append(test.statistic)
-                test_dict["p-value"].append(test.pvalue)
+            # t-test (1 sample)
+            test = scipy.stats.ttest_1samp(df_newlyF[param].values, popmean=0)
+            test_results += (f"    p={test.pvalue:.3} (TT1S-NF) {stars(test.pvalue)}\n")
+            test_dict["population"].append("newly formed")
+            test_dict["feature"].append(param)
+            test_dict["test"].append("1-sample t-test")
+            test_dict["statistic"].append(test.statistic)
+            test_dict["p-value"].append(test.pvalue)
+            test_dict["log p-value"].append(np.log10(test.pvalue))
 
-                test = scipy.stats.ttest_1samp(df_establ[param].values, popmean=0)
-                test_results += f"    p={test.pvalue:.3} (TT1S_ES) {stars(test.pvalue)}\n"
-                test_dict["population"].append("established")
-                test_dict["feature"].append(param)
-                test_dict["test"].append("1-sample t-test")
-                test_dict["statistic"].append(test.statistic)
-                test_dict["p-value"].append(test.pvalue)
+            test = scipy.stats.ttest_1samp(df_establ[param].values, popmean=0)
+            test_results += f"    p={test.pvalue:.3} (TT1S_ES) {stars(test.pvalue)}\n"
+            test_dict["population"].append("established")
+            test_dict["feature"].append(param)
+            test_dict["test"].append("1-sample t-test")
+            test_dict["statistic"].append(test.statistic)
+            test_dict["p-value"].append(test.pvalue)
+            test_dict["log p-value"].append(np.log10(test.pvalue))
 
-                # shapiro-wilk: does the 1 sample have normal distribution?
-                #_, pvalue = scipy.stats.shapiro(df_newlyF[param].values)
-                #test_results += f"    p={np.round(pvalue, 2):.2f} (SW; newly formed) {stars(pvalue)}\n"
-                #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
-                #_, pvalue = scipy.stats.shapiro(df_establ[param].values)
-                #test_results += f"    p={np.round(pvalue, 2):.2f} (SW; established) {stars(pvalue)}\n"
-                #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
+            # shapiro-wilk: does the 1 sample have normal distribution?
+            #_, pvalue = scipy.stats.shapiro(df_newlyF[param].values)
+            #test_results += f"    p={np.round(pvalue, 2):.2f} (SW; newly formed) {stars(pvalue)}\n"
+            #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
+            #_, pvalue = scipy.stats.shapiro(df_establ[param].values)
+            #test_results += f"    p={np.round(pvalue, 2):.2f} (SW; established) {stars(pvalue)}\n"
+            #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
 
-                # kolmogorov-smirnov: does the 1 sample have the same distribution as the given distribution?
-                #test = scipy.stats.kstest(df_newlyF[param].values, cdf=scipy.stats.norm.cdf)
-                #test_results += f"    p={np.round(test.pvalue, 2):.2f} (KS; newly formed) {stars(test.pvalue)}\n"
-                #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
-                #test = scipy.stats.kstest(df_establ[param].values, cdf=scipy.stats.norm.cdf)
-                #test_results += f"    p={np.round(test.pvalue, 2):.2f} (KS; established) {stars(test.pvalue)}\n"
-                #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
+            # kolmogorov-smirnov: does the 1 sample have the same distribution as the given distribution?
+            #test = scipy.stats.kstest(df_newlyF[param].values, cdf=scipy.stats.norm.cdf)
+            #test_results += f"    p={np.round(test.pvalue, 2):.2f} (KS; newly formed) {stars(test.pvalue)}\n"
+            #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
+            #test = scipy.stats.kstest(df_establ[param].values, cdf=scipy.stats.norm.cdf)
+            #test_results += f"    p={np.round(test.pvalue, 2):.2f} (KS; established) {stars(test.pvalue)}\n"
+            #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
 
-                test_results += f"\n"
-            with open(f"{self.output_root}/tests{suffix}.txt", "w") as test_results_file:
-                test_results_file.write(test_results)
-            self.tests_df = pd.DataFrame.from_dict(test_dict)
+            test_results += f"\n"
+        with open(f"{self.output_root}/tests{suffix}.txt", "w") as test_results_file:
+            test_results_file.write(test_results)
+        self.tests_df = pd.DataFrame.from_dict(test_dict)
 
-            if annotate:
-                ax = g.ax_joint
-                #ax.set_aspect(1)
-                ax.annotate(test_results, (1.25, 0.25), xycoords="axes fraction")
+    def plot_shift_gain_distribution(self, unit="cm", without_transient=False):
+        def take_same_sized_subsample(df):
+            if self.area == "CA3":
+                return df
+            n = min(df[df["newly formed"] == True].shape[0], df[df["newly formed"] == False].shape[0])
+            ss1 = df[df["newly formed"] == True].sample(n=n)
+            ss2 = df[df["newly formed"] == False].sample(n=n)
+            ss_cc = sklearn.utils.shuffle(pd.concat((ss1, ss2)))
+            return ss_cc
 
         def convert_to_z_score(df):
             # centering
@@ -841,7 +848,10 @@ class BtspStatistics:
         if without_transient:
             sg_df = sg_df[sg_df["category"] != "transient"]
             suffix = "_withoutTransient"
+
         ss_cc = take_same_sized_subsample(sg_df)
+        ss_cc.to_excel(f"{self.output_root}/data_shift_gain.xlsx")
+        self.pfs_df.to_excel(f"{self.output_root}/data_pfs_df.xlsx")
         #ss_cc = convert_to_z_score(ss_cc)
 
         palette = ["#00B0F0", "#F5B800"]
@@ -900,7 +910,7 @@ class BtspStatistics:
         height = 3.5
         annotate = False
 
-        run_tests_and_plot_results(sg_df, g=g, params=["initial shift", "log10(formation gain)"], annotate=annotate)
+        self.run_tests(sg_df, params=["initial shift", "log10(formation gain)"], suffix=suffix)
         g.figure.set_size_inches((height, height))
 
         if annotate:
@@ -1570,16 +1580,22 @@ class BtspStatistics:
         }
         #for animal, session, cellid, corridor in selection[self.area]:
         sessions = np.unique(self.pfs_df[["session id"]].values[:,0])
-        for session in sessions:
-            if session != "KS029_110621":
-                continue
+        corridors = [14, 15]
+        for session in tqdm.tqdm(sessions):
+            #if session != "KS029_110621":
+            #    continue
             tcl_path = f"{self.data_path}/tuned_cells/{self.area}{self.extra_info}/tuned_cells_{session}.pickle"
+            animal, _, _ = session.partition("_")
+            p95_path = f"D:\\{self.area}\\data\\{animal}_imaging\\{session}\\analysed_data\\p95.npy"
+            p95 = np.load(p95_path)  # (corridor x spacebin x cellid)
             with open(tcl_path, "rb") as tcl_file:
                 tcl = pickle.load(tcl_file)
-            for i_cell, cell in enumerate(tcl):
-                print(f"cell {i_cell} out of {len(tcl)} in session {session}")
+            for i_cell in tqdm.tqdm(range(len(tcl))):
+                cell = tcl[i_cell]
+                #print(f"cell {i_cell} out of {len(tcl)} in session {session}")
                 cellid = cell.cellid
                 corridor = cell.corridor
+                corridor_idx = corridors.index(corridor)
                 n_laps = cell.rate_matrix.shape[1]
                 if self.history_dependent:
                     history = cell.history
@@ -1587,8 +1603,11 @@ class BtspStatistics:
                     history = "ALL"
 
                 scale = 4.2
-                fig, ax = plt.subplots(figsize=(scale*2.4, scale*1.5))
-                im = ax.imshow(np.transpose(cell.rate_matrix), aspect='auto', origin='lower', cmap='binary', interpolation="none")
+                fig, axs = plt.subplots(2,1,figsize=(scale*2.4, scale*3.5), sharex=True, height_ratios=[3,2])
+                im = axs[0].imshow(np.transpose(cell.rate_matrix), aspect='auto', origin='lower', cmap='binary', interpolation="none")
+                axs[1].plot(np.mean(cell.rate_matrix,axis=1), marker="o")
+                p95_cell = p95[corridor_idx,:,cellid]
+                axs[1].plot(p95_cell, color="red")
 
                 pfs = self.pfs_df[(self.pfs_df["session id"] == session) &
                                   (self.pfs_df["cell id"] == cellid) &
@@ -1605,9 +1624,9 @@ class BtspStatistics:
                     fl, el = pf["formation lap"] / n_laps, (pf["end lap"] + 1) / n_laps
 
                     if category == "unreliable":
-                        ax.axvspan(lb, ub, color="black", alpha=0.3, linewidth=0)
+                        axs[0].axvspan(lb, ub, color="black", alpha=0.3, linewidth=0)
                     else:
-                        ax.axvspan(lb, ub, ymin=fl, ymax=el, color=CATEGORIES[category].color, alpha=0.3, linewidth=0)
+                        axs[0].axvspan(lb, ub, ymin=fl, ymax=el, color=CATEGORIES[category].color, alpha=0.3, linewidth=0)
 
                     # btsp inset
                     #if category == "btsp":
@@ -1623,7 +1642,7 @@ class BtspStatistics:
 
                 plt.ylabel("laps")
                 plt.xlabel("spatial position")
-                plt.colorbar(im, orientation='vertical', ax=ax)
+                plt.colorbar(im, orientation='horizontal', ax=axs[0])
                 plt.tight_layout()
 
                 categories = np.unique(pfs["category"].values)
@@ -1700,10 +1719,10 @@ class BtspStatistics:
         def sort_df(series):
             return series.apply(lambda x: CATEGORIES[x].order)
         pfs_sorted = self.pfs_df.sort_values(by="category", key=sort_df)
-        #cols = ['ALR', 'CALR', 'COM SD', 'PF width', 'Norm. COM SD']
-        cols = ['ALR', 'COM SD', 'PF width', 'Norm. COM SD']
-        #ylims = [[0,1], [0,1], [0,7], [0,40], [0, 0.5]]
-        ylims = [[0,1], [0,7], [0,100], [0,0.5]]
+        cols = ['ALR', 'CALR', 'COM SD', 'PF width', 'Norm. COM SD']
+        #cols = ['ALR', 'COM SD', 'PF width', 'Norm. COM SD']
+        ylims = [[0,1], [0,1], [0,7], [0,100], [0, 0.2]]
+        #ylims = [[0,1], [0,7], [0,100], [0,0.5]]
 
         scale = 1.3
         fig, axs = plt.subplots(1, len(cols), figsize=(scale * len(cols)*5,scale * 2.8))
@@ -2136,8 +2155,10 @@ class BtspStatistics:
 
         ######## PLOTS
         # distribution of depths
-        sns.kdeplot(data=depths_df_tuned, x="depth")
+        plt.figure()
+        #sns.kdeplot(data=depths_df_tuned, x="depth")
         sns.kdeplot(data=depths_df_tuned, x="depth", hue="animal id", common_norm=False)
+        plt.show()
 
         # event rates
         sns.jointplot(data=depths_df_all, x="depth", y="Ca2+ event rate", kind='hex', ylim=(0, 5))
@@ -2278,7 +2299,7 @@ if __name__ == "__main__":
     btsp_statistics = BtspStatistics(area, data_path, output_path, extra_info, is_shift_criterion_on, is_notebook, history)
     btsp_statistics.load_data()
     btsp_statistics.load_cell_data()
-    #btsp_statistics.filter_low_behavior_score()
+    btsp_statistics.filter_low_behavior_score()
     btsp_statistics.calc_place_field_proportions()
     btsp_statistics.calc_shift_gain_distribution(unit="cm")
     btsp_statistics.calc_place_field_quality()
