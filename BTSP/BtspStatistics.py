@@ -708,7 +708,7 @@ class BtspStatistics:
         else:
             plt.close()
 
-    def run_tests(self, df, params=None, suffix=""):
+    def run_tests(self, df, params=None, export_results=True, suffix=""):
 
         def stars(pvalue):
             if pvalue < 0.001:
@@ -723,6 +723,7 @@ class BtspStatistics:
         sh = "shuffledLaps" if "shuffledLaps" in self.extra_info else ""
         test_results = f"{self.area}\n\n{sh}\n\n"
         test_dict = {
+            "area": [],
             "population": [],
             "feature": [],
             "test": [],
@@ -738,6 +739,7 @@ class BtspStatistics:
             # t-test: do the 2 samples have equal means?
             test = scipy.stats.ttest_ind(df_newlyF[param].values, df_establ[param].values)
             test_results += f"    p={test.pvalue:.3} (t-test) {stars(test.pvalue)}\n"
+            test_dict["area"].append(self.area)
             test_dict["population"].append("reliables")
             test_dict["feature"].append(param)
             test_dict["test"].append("t-test")
@@ -748,6 +750,7 @@ class BtspStatistics:
             # mann-whitney u: do the 2 samples come from same distribution?
             test = scipy.stats.mannwhitneyu(df_newlyF[param].values, df_establ[param].values)
             test_results += f"    p={test.pvalue:.3} (MW-U) {stars(test.pvalue)}\n"
+            test_dict["area"].append(self.area)
             test_dict["population"].append("reliables")
             test_dict["feature"].append(param)
             test_dict["test"].append("mann-whitney u")
@@ -758,6 +761,7 @@ class BtspStatistics:
             # kolmogorov-smirnov: do the 2 samples come from the same distribution?
             test = scipy.stats.kstest(df_newlyF[param].values, cdf=df_establ[param].values)
             test_results += f"    p={test.pvalue:.3} (KS) {stars(test.pvalue)}\n"
+            test_dict["area"].append(self.area)
             test_dict["population"].append("reliables")
             test_dict["feature"].append(param)
             test_dict["test"].append("kolmogorov-smirnov")
@@ -768,6 +772,7 @@ class BtspStatistics:
             # wilcoxon
             test = scipy.stats.wilcoxon(df_newlyF[param].values)
             test_results += f"    p={test.pvalue:.3} (WX-NF) {stars(test.pvalue)}\n"
+            test_dict["area"].append(self.area)
             test_dict["population"].append("newly formed")
             test_dict["feature"].append(param)
             test_dict["test"].append("wilcoxon")
@@ -777,6 +782,7 @@ class BtspStatistics:
 
             test = scipy.stats.wilcoxon(df_establ[param].values)
             test_results += f"    p={test.pvalue:.3} (WX-ES) {stars(test.pvalue)}\n"
+            test_dict["area"].append(self.area)
             test_dict["population"].append("established")
             test_dict["feature"].append(param)
             test_dict["test"].append("wilcoxon")
@@ -787,6 +793,7 @@ class BtspStatistics:
             # t-test (1 sample)
             test = scipy.stats.ttest_1samp(df_newlyF[param].values, popmean=0)
             test_results += (f"    p={test.pvalue:.3} (TT1S-NF) {stars(test.pvalue)}\n")
+            test_dict["area"].append(self.area)
             test_dict["population"].append("newly formed")
             test_dict["feature"].append(param)
             test_dict["test"].append("1-sample t-test")
@@ -796,6 +803,7 @@ class BtspStatistics:
 
             test = scipy.stats.ttest_1samp(df_establ[param].values, popmean=0)
             test_results += f"    p={test.pvalue:.3} (TT1S_ES) {stars(test.pvalue)}\n"
+            test_dict["area"].append(self.area)
             test_dict["population"].append("established")
             test_dict["feature"].append(param)
             test_dict["test"].append("1-sample t-test")
@@ -820,8 +828,9 @@ class BtspStatistics:
             #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
 
             test_results += f"\n"
-        with open(f"{self.output_root}/tests{suffix}.txt", "w") as test_results_file:
-            test_results_file.write(test_results)
+        if export_results:  # TODO: make this an excel using dataframe
+            with open(f"{self.output_root}/tests{suffix}.txt", "w") as test_results_file:
+                test_results_file.write(test_results)
         self.tests_df = pd.DataFrame.from_dict(test_dict)
 
     def plot_shift_gain_distribution(self, unit="cm", without_transient=False):
