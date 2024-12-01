@@ -1,0 +1,656 @@
+<!--
+ * Copyright (c) 2015 Mountainstorm
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ *
+ * Original from https://github.com/mountainstorm/jquery.graphviz.svg/blob/master/demo.html
+ -->
+<html>
+	<head>
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.4/css/bootstrap.min.css">
+		<!-- <link rel="stylesheet" href="css/graphviz.svg.css"> -->
+	</head>
+
+	<style>
+        #instructions {
+            color: #000000;
+            position: absolute;
+            z-index: 100;
+            bottom: 0px;
+            left: 0px;
+        }
+    </style>
+	<body>
+		<h4 id="instructions">Click node to highlight; Shift-scroll to zoom; Esc to unhighlight</h4>
+		<div id="graph" style="width: 100%; height: 100%; overflow: scroll;"></div>
+
+		<script type="text/javascript" src="https://code.jquery.com/jquery-2.1.3.min.js"></script>
+		<script type="text/javascript" src="https://cdn.rawgit.com/jquery/jquery-mousewheel/master/jquery.mousewheel.min.js"></script>
+		<script type="text/javascript" src="https://cdn.rawgit.com/jquery/jquery-color/master/jquery.color.js"></script>
+		<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.4/js/bootstrap.min.js"></script>
+		<script type="text/javascript">!function(t){"use strict";String.prototype.startsWith=function(t){return 0==this.indexOf(t)},String.prototype.endsWith=function(t){return-1!==this.indexOf(t,this.length-t.length)};var e=function(t,e){this.type=null,this.options=null,this.enabled=null,this.$element=null,this.init("graphviz.svg",t,e)};e.VERSION="1.0.1",e.GVPT_2_PX=32.5,e.DEFAULTS={url:null,svg:null,shrink:"0.125pt",tooltips:{init:function(e){var i=t(this);i.tooltip({container:e,placement:"auto left",animation:!1,viewport:null}).on("hide.bs.tooltip",function(){if(i.attr("data-tooltip-keepvisible"))return!1})},show:function(){var e=t(this);e.attr("data-tooltip-keepvisible",!0),e.tooltip("show")},hide:function(){var e=t(this);e.removeAttr("data-tooltip-keepvisible"),e.tooltip("hide")},update:function(){var e=t(this);e.attr("data-tooltip-keepvisible")&&e.tooltip("show")}},zoom:!0,highlight:{selected:function(t,e){return t},unselected:function(t,e){return jQuery.Color(t).transition(e,.9)}},ready:null},e.prototype.init=function(e,i,n){if(this.enabled=!0,this.type=e,this.$element=t(i),this.options=this.getOptions(n),n.url){var o=this;t.get(n.url,null,function(e){var i=t("svg",e);o.$element.html(document.adoptNode(i[0])),o.setup()},"xml")}else n.svg&&this.$element.html(n.svg),this.setup()},e.prototype.getDefaults=function(){return e.DEFAULTS},e.prototype.getOptions=function(e){return(e=t.extend({},this.getDefaults(),this.$element.data(),e)).shrink&&("object"!=typeof e.shrink&&(e.shrink={x:e.shrink,y:e.shrink}),e.shrink.x=this.convertToPx(e.shrink.x),e.shrink.y=this.convertToPx(e.shrink.y)),e},e.prototype.setup=function(){var e=this.options,i=t(this.$element.children("svg")),n=i.children("g:first");this.$svg=i,this.$graph=n,this.$background=n.children("polygon:first"),this.$nodes=n.children(".node"),this.$edges=n.children(".edge"),this._nodesByName={},this._edgesByName={},this.$element.addClass("graphviz-svg"),this.$background.length&&this.$element.css("background",this.$background.attr("fill"));var o=this;this.$nodes.each(function(){o.setupNodesEdges(t(this),!0)}),this.$edges.each(function(){o.setupNodesEdges(t(this),!1)});var r=this.$graph.children("title");this.$graph.attr("data-name",r.text()),r.remove(),e.zoom&&this.setupZoom(),e.ready&&e.ready.call(this)},e.prototype.setupNodesEdges=function(e,i){var n=this,o=this.options;e.find("polygon, ellipse, path").each(function(){var e=t(this);e.data("graphviz.svg.color",{fill:e.attr("fill"),stroke:e.attr("stroke")}),i&&o.shrink&&n.scaleNode(e)});var r,s,h=e.children("title");if(h[0]){var a=h.text().replace(/:[snew][ew]?/g,"");e.attr("data-name",a),h.remove(),i?this._nodesByName[a]=e[0]:this._edgesByName[a]=e[0];for(var l=e[0].previousSibling;l&&8!=l.nodeType;)l=l.previousSibling;if(null!=l&&8==l.nodeType){var p=(r=l.nodeValue.trim(),(s=document.createElement("div")).innerHTML=r,s.childNodes[0].nodeValue);p!=a&&e.attr("data-comment",p)}}e.children("a").filter(function(){return t(this).attr("xlink:title")}).each(function(){var e=t(this);e.attr("title",e.attr("xlink:title")),e.removeAttr("xlink:title"),o.tooltips&&o.tooltips.init.call(this,n.$element)})},e.prototype.setupZoom=function(){var t=this,e=this.$element,i=this.$svg;this.zoom={width:i.attr("width"),height:i.attr("height"),percentage:null},this.scaleView(100),e.mousewheel(function(n){if(n.shiftKey){var o=t.zoom.percentage;(o-=n.deltaY*n.deltaFactor)<100&&(o=100);var r=n.pageX-i.offset().left,s=n.pageY-i.offset().top,h=r/i.width(),a=s/i.height(),l=n.pageX-e.offset().left,p=n.pageY-e.offset().top;return t.scaleView(o),e.scrollLeft(h*i.width()+.5-l),e.scrollTop(a*i.height()+.5-p),!1}})},e.prototype.scaleView=function(t){var e=this,i=this.$svg;i.attr("width",t+"%"),i.attr("height",t+"%"),this.zoom.percentage=t,this.$nodes.add(this.$edges).children("a[title]").each(function(){e.options.tooltips.update.call(this)})},e.prototype.scaleNode=function(t){var e=this.options.shrink.x,i=this.options.shrink.y,n=t.prop("tagName");if("ellipse"==n)t.attr("rx",parseFloat(t.attr("rx"))-e),t.attr("ry",parseFloat(t.attr("ry"))-i);else if("polygon"==n){var o=t[0].getBBox(),r=o.x+o.width/2,s=o.y+o.height/2,h=t.attr("points").split(" "),a="";for(var l in h){var p=h[l].split(","),d=parseFloat(p[0]),u=parseFloat(p[1]);a+=(r-d)/(o.width/2)*e+d+","+((s-u)/(o.height/2)*i+u)+" "}t.attr("points",a)}},e.prototype.convertToPx=function(t){var i=t;if("string"==typeof t){var n=t.length,o=1;t.endsWith("px")?n-=2:t.endsWith("pt")&&(n-=2,o=e.GVPT_2_PX),i=parseFloat(t.substring(0,n))*o}return i},e.prototype.findEdge=function(t,e,i){var n=[];for(var o in this._edgesByName){var r=e(t,o);r&&(i&&i.push(this._edgesByName[o]),n.push(r))}return n},e.prototype.findLinked=function(e,i,n,o){var r=t(e),s=null;i&&(s=o);var h=this.findEdge(r.attr("data-name"),n,s);for(var a in h){var l=this._nodesByName[h[a]];o.is(l)||(o.push(l),this.findLinked(l,i,n,o))}},e.prototype.colorElement=function(e,i){var n=this.$element.css("background");e.find("polygon, ellipse, path").each(function(){var e=t(this),o=e.data("graphviz.svg.color");o.fill&&"path"!=e.prop("tagName")&&e.attr("fill",i(o.fill,n)),o.stroke&&e.attr("stroke",i(o.stroke,n))})},e.prototype.restoreElement=function(e){e.find("polygon, ellipse, path").each(function(){var e=t(this),i=e.data("graphviz.svg.color");i.fill&&e.attr("fill",i.fill),i.stroke&&e.attr("stroke",i.stroke)})},e.prototype.nodes=function(){return this.$nodes},e.prototype.edges=function(){return this.$edges},e.prototype.nodesByName=function(){return this._nodesByName},e.prototype.edgesByName=function(){return this._edgesByName},e.prototype.linkedTo=function(e,i){var n=t();return this.findLinked(e,i,function(t,e){var i=null,n="->"+t;return e.endsWith(n)&&(i=e.substring(0,e.length-n.length)),i},n),n},e.prototype.linkedFrom=function(e,i){var n=t();return this.findLinked(e,i,function(t,e){var i=null,n=t+"->";return e.startsWith(n)&&(i=e.substring(n.length)),i},n),n},e.prototype.linked=function(e,i){var n=t();return this.findLinked(e,i,function(t,e){return"^"+name+"--(.*)$"},n),this.findLinked(e,i,function(t,e){return"^(.*)--"+name+"$"},n),n},e.prototype.tooltip=function(e,i){var n=this.options;e.each(function(){t(this).children("a[title]").each(function(){i?n.tooltips.show.call(this):n.tooltips.hide.call(this)})})},e.prototype.bringToFront=function(t){t.detach().appendTo(this.$graph)},e.prototype.sendToBack=function(t){this.$background.length?$element.insertAfter(this.$background):t.detach().prependTo(this.$graph)},e.prototype.highlight=function(e,i){var n=this,o=this.options,r=this.$nodes.add(this.$edges);e&&e.length>0?(r.not(e).each(function(){n.colorElement(t(this),o.highlight.unselected),n.tooltip(t(this))}),e.each(function(){n.colorElement(t(this),o.highlight.selected)}),i&&this.tooltip(e,!0)):(r.each(function(){n.restoreElement(t(this))}),this.tooltip(r))},e.prototype.destroy=function(){var t=this;this.hide(function(){t.$element.off("."+t.type).removeData(t.type)})};var i=t.fn.graphviz;t.fn.graphviz=function(i){return this.each(function(){var n=t(this),o=n.data("graphviz.svg"),r="object"==typeof i&&i;!o&&/destroy/.test(i)||(o||n.data("graphviz.svg",o=new e(this,r)),"string"==typeof i&&o[i]())})},t.fn.graphviz.Constructor=e,t.fn.graphviz.noConflict=function(){return t.fn.graphviz=i,this}}(jQuery);</script>
+		<script type="text/javascript">
+ 			$(document).ready(function(){
+                $("#graph").graphviz({
+                    svg: `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 12.2.0 (20241103.1931)
+ -->
+<!-- Title: G Pages: 1 -->
+<svg width="1821pt" height="964pt"
+ viewBox="0.00 0.00 1820.62 963.57" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 959.57)">
+<title>G</title>
+<polygon fill="white" stroke="none" points="-4,4 -4,-959.57 1816.62,-959.57 1816.62,4 -4,4"/>
+<g id="clust1" class="cluster">
+<title>cluster_G</title>
+<path fill="#808080" fill-opacity="0.094118" stroke="black" d="M20,-11.99C20,-11.99 1792.62,-11.99 1792.62,-11.99 1798.62,-11.99 1804.62,-17.99 1804.62,-23.99 1804.62,-23.99 1804.62,-933.99 1804.62,-933.99 1804.62,-939.99 1798.62,-945.99 1792.62,-945.99 1792.62,-945.99 20,-945.99 20,-945.99 14,-945.99 8,-939.99 8,-933.99 8,-933.99 8,-23.99 8,-23.99 8,-17.99 14,-11.99 20,-11.99"/>
+</g>
+<g id="clust2" class="cluster">
+<title>cluster_ABmice__BTSP__Statistics_Robustness</title>
+<path fill="#808080" fill-opacity="0.094118" stroke="black" d="M352.17,-19.99C352.17,-19.99 1784.62,-19.99 1784.62,-19.99 1790.62,-19.99 1796.62,-25.99 1796.62,-31.99 1796.62,-31.99 1796.62,-925.99 1796.62,-925.99 1796.62,-931.99 1790.62,-937.99 1784.62,-937.99 1784.62,-937.99 352.17,-937.99 352.17,-937.99 346.17,-937.99 340.17,-931.99 340.17,-925.99 340.17,-925.99 340.17,-31.99 340.17,-31.99 340.17,-25.99 346.17,-19.99 352.17,-19.99"/>
+<text text-anchor="middle" x="1068.39" y="-920.69" font-family="Times New Roman,serif" font-size="14.00">ABmice.BTSP.Statistics_Robustness</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_ABmice__BTSP__Statistics_Robustness__Statistics_Robustness</title>
+<path fill="#808080" fill-opacity="0.094118" stroke="black" d="M401.3,-179.99C401.3,-179.99 1776.62,-179.99 1776.62,-179.99 1782.62,-179.99 1788.62,-185.99 1788.62,-191.99 1788.62,-191.99 1788.62,-892.99 1788.62,-892.99 1788.62,-898.99 1782.62,-904.99 1776.62,-904.99 1776.62,-904.99 401.3,-904.99 401.3,-904.99 395.3,-904.99 389.3,-898.99 389.3,-892.99 389.3,-892.99 389.3,-191.99 389.3,-191.99 389.3,-185.99 395.3,-179.99 401.3,-179.99"/>
+<text text-anchor="middle" x="1088.96" y="-887.69" font-family="Times New Roman,serif" font-size="14.00">ABmice.BTSP.Statistics_Robustness.Statistics_Robustness</text>
+</g>
+<g id="clust4" class="cluster">
+<title>cluster_ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results</title>
+<path fill="#808080" fill-opacity="0.094118" stroke="black" d="M1013.7,-187.99C1013.7,-187.99 1433.95,-187.99 1433.95,-187.99 1439.95,-187.99 1445.95,-193.99 1445.95,-199.99 1445.95,-199.99 1445.95,-252.99 1445.95,-252.99 1445.95,-258.99 1439.95,-264.99 1433.95,-264.99 1433.95,-264.99 1013.7,-264.99 1013.7,-264.99 1007.7,-264.99 1001.7,-258.99 1001.7,-252.99 1001.7,-252.99 1001.7,-199.99 1001.7,-199.99 1001.7,-193.99 1007.7,-187.99 1013.7,-187.99"/>
+<text text-anchor="middle" x="1223.82" y="-247.69" font-family="Times New Roman,serif" font-size="14.00">ABmice.BTSP.Statistics_Robustness.Statistics_Robustness.summarize_results</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness -->
+<g id="node1" class="node">
+<title>ABmice__BTSP__Statistics_Robustness</title>
+<ellipse fill="#ffffff" fill-opacity="0.698039" stroke="black" cx="164.08" cy="-391.99" rx="148.08" ry="18"/>
+<text text-anchor="middle" x="164.08" y="-386.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">ABmice.BTSP.Statistics_Robustness</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness -->
+<g id="node2" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness</title>
+<ellipse fill="#ff6565" fill-opacity="0.698039" stroke="black" cx="438.93" cy="-153.99" rx="90.76" ry="18"/>
+<text text-anchor="middle" x="438.93" y="-148.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">Statistics_Robustness</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness -->
+<g id="edge1" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M172.1,-373.78C192.29,-329.97 254.65,-220.07 340.17,-166.99 341.2,-166.35 342.25,-165.72 343.32,-165.12"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="344.53,-168.43 351.91,-160.83 341.4,-162.16 344.53,-168.43"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness -->
+<g id="edge26" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness</title>
+<path fill="none" stroke="#000000" d="M177.1,-373.57C201.39,-332.45 260.8,-234.25 340.17,-184.99 349.64,-179.11 360.51,-174.79 371.47,-171.48"/>
+<polygon fill="#000000" stroke="#000000" points="372.23,-174.9 380.95,-168.89 370.39,-168.15 372.23,-174.9"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="node7" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="1643.28" cy="-458.99" rx="41.63" ry="18"/>
+<text text-anchor="middle" x="1643.28" y="-453.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">__init__</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="edge27" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<path fill="none" stroke="#000000" d="M172.88,-410.29C206.3,-486.1 345.93,-776.43 565.69,-880.99 742.33,-965.04 1281.25,-991.54 1445.95,-885.99 1589.05,-794.28 1629.26,-569.1 1639.28,-488.38"/>
+<polygon fill="#000000" stroke="#000000" points="1642.73,-488.97 1640.42,-478.63 1635.78,-488.16 1642.73,-488.97"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_across_areas -->
+<g id="node22" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_across_areas</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-691.99" rx="97.41" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-686.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">plot_tests_across_areas</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_across_areas -->
+<g id="edge25" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_across_areas</title>
+<path fill="none" stroke="#000000" d="M180.94,-410.29C209.98,-442.96 274.72,-512.1 340.17,-556.99 431.81,-619.85 459.36,-632.68 565.69,-664.99 593.4,-673.41 624.23,-679.23 652.74,-683.25"/>
+<polygon fill="#000000" stroke="#000000" points="652.09,-686.69 662.46,-684.55 653.02,-679.75 652.09,-686.69"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____combine_sessions -->
+<g id="node3" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____combine_sessions</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="1643.28" cy="-240.99" rx="87.18" ry="18"/>
+<text text-anchor="middle" x="1643.28" y="-235.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">__combine_sessions</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____combine_sessions -->
+<g id="edge12" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____combine_sessions</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M451.94,-135.75C471.72,-107.6 514.14,-54.64 565.69,-33.99 720.82,28.15 776.3,-10.07 941.7,-33.99 1192.19,-70.22 1477.88,-175.76 1591.67,-220.53"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="1590.14,-223.69 1600.73,-224.11 1592.72,-217.18 1590.14,-223.69"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells -->
+<g id="node4" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="1223.32" cy="-421.99" rx="86.15" ry="18"/>
+<text text-anchor="middle" x="1223.32" y="-416.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">__equalize_by_cells</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells -->
+<g id="edge10" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M462.94,-136.4C487.05,-119.18 526.75,-94.1 565.69,-83.99 646.57,-63 876.1,-32.23 941.7,-83.99 1031.74,-155.04 926.51,-248.37 1001.7,-334.99 1036.93,-375.58 1093.59,-397.39 1140.67,-409.03"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="1139.79,-412.41 1150.32,-411.29 1141.38,-405.6 1139.79,-412.41"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs -->
+<g id="node5" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="1223.32" cy="-549.99" rx="80.52" ry="18"/>
+<text text-anchor="middle" x="1223.32" y="-544.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">__equalize_by_pfs</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs -->
+<g id="edge17" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M491.14,-138.9C513.77,-132.98 540.83,-126.91 565.69,-123.99 648.67,-114.23 878.37,-69.47 941.7,-123.99 1077.6,-240.99 873.16,-397.94 1001.7,-522.99 1039.27,-559.55 1099.1,-564.91 1146.98,-561.89"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="1147.04,-565.39 1156.74,-561.13 1146.5,-558.41 1147.04,-565.39"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions -->
+<g id="node6" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="1223.32" cy="-307.99" rx="99.46" ry="18"/>
+<text text-anchor="middle" x="1223.32" y="-302.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">__equalize_by_sessions</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions -->
+<g id="edge13" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M457.07,-136.22C479.58,-114.29 521.46,-78.18 565.69,-63.99 645.25,-38.45 874.83,-13.89 941.7,-63.99 1017.67,-120.91 930.99,-205.64 1001.7,-268.99 1032.42,-296.51 1075.54,-307.92 1115.52,-311.85"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="1115.21,-315.34 1125.46,-312.66 1115.78,-308.36 1115.21,-315.34"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="edge14" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M528.24,-157.68C671.23,-163.76 937.94,-175.53 941.7,-178.99 1091.37,-316.92 848.64,-498.83 1001.7,-632.99 1075.94,-698.06 1353.64,-668 1445.95,-632.99 1524.4,-603.23 1591.62,-526.19 1623.14,-485.33"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="1625.86,-487.54 1629.1,-477.45 1620.28,-483.31 1625.86,-487.54"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____permutate_combinations -->
+<g id="node8" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____permutate_combinations</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="1643.28" cy="-318.99" rx="112.26" ry="18"/>
+<text text-anchor="middle" x="1643.28" y="-313.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">__permutate_combinations</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____permutate_combinations -->
+<g id="edge15" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____permutate_combinations</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M522.13,-146.44C656.38,-134.97 910.92,-117.18 941.7,-143.99 1088.2,-271.59 855.19,-449.39 1001.7,-576.99 1076.14,-641.83 1367.49,-636.91 1445.95,-576.99 1526.49,-515.47 1434.48,-428.85 1505.95,-356.99 1516.09,-346.78 1528.73,-339.26 1542.2,-333.72"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="1543.04,-337.14 1551.2,-330.39 1540.61,-330.58 1543.04,-337.14"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____run_tests_equalize_by_sessions -->
+<g id="node9" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____run_tests_equalize_by_sessions</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="1643.28" cy="-383.99" rx="137.34" ry="18"/>
+<text text-anchor="middle" x="1643.28" y="-378.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">__run_tests_equalize_by_sessions</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____run_tests_equalize_by_sessions -->
+<g id="edge18" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____run_tests_equalize_by_sessions</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M527.64,-149.67C663.3,-143.89 911.63,-137.2 941.7,-163.99 1089.39,-295.57 852.7,-474.89 1001.7,-604.99 1076.06,-669.92 1365.51,-662.23 1445.95,-604.99 1512.25,-557.8 1448.54,-489.67 1505.95,-431.99 1518.7,-419.18 1535.07,-409.77 1552.02,-402.88"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="1553.07,-406.22 1561.2,-399.43 1550.61,-399.67 1553.07,-406.22"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells -->
+<g id="node10" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-475.99" rx="130.17" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-470.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_animals_by_cells</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells -->
+<g id="edge2" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M514.23,-164.11C520.01,-167.2 525.3,-171.09 529.69,-175.99 611.37,-267.12 479.68,-361.92 565.69,-448.99 579.27,-462.74 596.51,-471.59 615.01,-477.07"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="614,-480.43 624.56,-479.54 615.75,-473.65 614,-480.43"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas -->
+<g id="node11" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-529.99" rx="174.7" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-524.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_animals_by_cells_both_areas</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas -->
+<g id="edge6" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M514.76,-164.24C520.35,-167.31 525.46,-171.16 529.69,-175.99 626.1,-285.91 464.06,-397.87 565.69,-502.99 571.05,-508.53 577,-513.29 583.4,-517.35"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="581.32,-520.2 591.74,-522.07 584.76,-514.1 581.32,-520.2"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs -->
+<g id="node12" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-799.99" rx="124.54" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-794.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_animals_by_pfs</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs -->
+<g id="edge23" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M515.02,-164.02C520.56,-167.14 525.58,-171.06 529.69,-175.99 614.83,-278.04 475.7,-675.18 565.69,-772.99 582.08,-790.81 604.57,-800.59 628.27,-805.5"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="627.66,-808.95 638.11,-807.22 628.86,-802.05 627.66,-808.95"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas -->
+<g id="node13" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-637.99" rx="169.07" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-632.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_animals_by_pfs_both_areas</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas -->
+<g id="edge7" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M514.9,-164.12C520.47,-167.21 525.52,-171.11 529.69,-175.99 592.66,-249.77 499.22,-540.35 565.69,-610.99 571.41,-617.07 577.83,-622.2 584.77,-626.52"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="582.77,-629.41 593.21,-631.19 586.16,-623.29 582.77,-629.41"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions -->
+<g id="node14" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-313.99" rx="143.48" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-308.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_animals_by_sessions</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions -->
+<g id="edge21" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M512.88,-164.79C519.02,-167.73 524.75,-171.4 529.69,-175.99 567.68,-211.29 526.03,-253.57 565.69,-286.99 576.07,-295.74 587.99,-302.37 600.68,-307.33"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="599.47,-310.62 610.06,-310.62 601.78,-304.01 599.47,-310.62"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas -->
+<g id="node15" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-367.99" rx="188" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-362.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_animals_by_sessions_both_areas</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas -->
+<g id="edge5" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M513.8,-164.51C519.67,-167.51 525.1,-171.28 529.69,-175.99 582.08,-229.74 510.75,-289.84 565.69,-340.99 570.69,-345.64 576.11,-349.72 581.85,-353.28"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="580.04,-356.27 590.48,-358.06 583.43,-350.15 580.04,-356.27"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells -->
+<g id="node16" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-421.99" rx="131.19" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-416.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_sessions_by_cells</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells -->
+<g id="edge22" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M514.06,-164.26C519.88,-167.32 525.22,-171.16 529.69,-175.99 596.68,-248.39 495.26,-325.93 565.69,-394.99 578.88,-407.92 595.31,-416.47 612.93,-421.94"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="612,-425.32 622.57,-424.56 613.84,-418.56 612,-425.32"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas -->
+<g id="node17" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-583.99" rx="175.72" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-578.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_sessions_by_cells_both_areas</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas -->
+<g id="edge8" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M514.84,-164.17C520.42,-167.26 525.49,-171.13 529.69,-175.99 585.27,-240.35 507.05,-495.39 565.69,-556.99 570.81,-562.37 576.49,-567.01 582.58,-570.99"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="580.77,-573.99 591.18,-575.98 584.28,-567.93 580.77,-573.99"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs -->
+<g id="node18" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-853.99" rx="125.56" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-848.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_sessions_by_pfs</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs -->
+<g id="edge4" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M515.04,-164C520.58,-167.12 525.59,-171.05 529.69,-175.99 622.23,-287.47 467.85,-720.12 565.69,-826.99 581.75,-844.53 603.72,-854.31 626.96,-859.3"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="626.12,-862.71 636.59,-861.05 627.37,-855.82 626.12,-862.71"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas -->
+<g id="node19" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-745.99" rx="170.09" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-740.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">calc_equalize_sessions_by_pfs_both_areas</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas -->
+<g id="edge9" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M514.99,-164.05C520.53,-167.16 525.56,-171.07 529.69,-175.99 607.44,-268.61 483.54,-630.24 565.69,-718.99 571.08,-724.81 577.12,-729.78 583.64,-733.99"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="581.78,-736.96 592.2,-738.89 585.26,-730.89 581.78,-736.96"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize -->
+<g id="node20" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="438.93" cy="-529.99" rx="41.63" ry="18"/>
+<text text-anchor="middle" x="438.93" y="-524.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">equalize</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize -->
+<g id="edge11" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M438.93,-172.35C438.93,-281.75 438.93,-391.15 438.93,-500.56"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="435.43,-500.31 438.93,-510.31 442.43,-500.31 435.43,-500.31"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas -->
+<g id="node21" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="1223.32" cy="-495.99" rx="80.01" ry="18"/>
+<text text-anchor="middle" x="1223.32" y="-490.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">handle_both_areas</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas -->
+<g id="edge19" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M472.78,-136.93C497.56,-125.07 532.8,-110.29 565.69,-103.99 647.75,-88.27 877.75,-50.2 941.7,-103.99 1060.8,-204.17 893.74,-336.88 1001.7,-448.99 1035.32,-483.9 1087.99,-496.04 1133.44,-499.27"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="1133.14,-502.76 1143.32,-499.82 1133.53,-495.77 1133.14,-502.76"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_across_areas -->
+<g id="edge3" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_across_areas</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M514.95,-164.08C520.5,-167.18 525.54,-171.09 529.69,-175.99 600.05,-259.19 491.38,-585.3 565.69,-664.99 589.2,-690.21 624.94,-699.27 658.89,-701.19"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="658.69,-704.68 668.8,-701.53 658.93,-697.69 658.69,-704.68"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_within_area -->
+<g id="node23" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_within_area</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-259.99" rx="94.34" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-254.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">plot_tests_within_area</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_within_area -->
+<g id="edge16" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_within_area</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M493.16,-168.72C505.96,-172.28 519.01,-177.3 529.69,-184.99 554.01,-202.49 540.55,-225.68 565.69,-241.99 595.6,-261.4 633.84,-269.19 667.92,-271.04"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="667.68,-274.54 677.8,-271.4 667.93,-267.54 667.68,-274.54"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results -->
+<g id="node24" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results</title>
+<ellipse fill="#ff3232" fill-opacity="0.698039" stroke="black" cx="753.69" cy="-205.99" rx="81.04" ry="18"/>
+<text text-anchor="middle" x="753.69" y="-200.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">summarize_results</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results -->
+<g id="edge20" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M478.88,-170.51C512.54,-180.72 557.1,-191.46 565.69,-192.99 596.65,-198.48 630.74,-202.95 661.25,-205.92"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="660.52,-209.37 670.8,-206.8 661.17,-202.4 660.52,-209.37"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____combine_sessions -->
+<g id="edge38" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____combine_sessions</title>
+<path fill="none" stroke="#000000" d="M1299.04,-296.01C1373.23,-284.12 1486.57,-265.95 1562.48,-253.78"/>
+<polygon fill="#000000" stroke="#000000" points="1562.59,-257.31 1571.91,-252.27 1561.48,-250.4 1562.59,-257.31"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="edge39" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<path fill="none" stroke="#000000" d="M1322.97,-307.2C1363.21,-310.59 1408.89,-319.44 1445.95,-339.99 1482.08,-360.02 1471.94,-387.53 1505.95,-410.99 1532.36,-429.21 1566.41,-441.2 1593.87,-448.65"/>
+<polygon fill="#000000" stroke="#000000" points="1592.78,-451.98 1603.34,-451.09 1594.53,-445.2 1592.78,-451.98"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____permutate_combinations -->
+<g id="edge40" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____permutate_combinations</title>
+<path fill="none" stroke="#000000" d="M1322.05,-310.56C1381.45,-312.12 1457.78,-314.13 1521.01,-315.8"/>
+<polygon fill="#000000" stroke="#000000" points="1520.65,-319.29 1530.74,-316.05 1520.84,-312.29 1520.65,-319.29"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____run_tests_equalize_by_sessions -->
+<g id="edge41" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____run_tests_equalize_by_sessions</title>
+<path fill="none" stroke="#000000" d="M1306.14,-318.27C1348.07,-323.93 1399.87,-331.51 1445.95,-339.99 1485.49,-347.26 1529.16,-356.89 1565.25,-365.28"/>
+<polygon fill="#000000" stroke="#000000" points="1564.19,-368.63 1574.73,-367.5 1565.79,-361.81 1564.19,-368.63"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells -->
+<g id="edge48" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells</title>
+<path fill="none" stroke="#000000" d="M855.3,-464.37C938.83,-454.73 1056.41,-441.15 1135.79,-431.98"/>
+<polygon fill="#000000" stroke="#000000" points="1136.18,-435.46 1145.71,-430.84 1135.37,-428.51 1136.18,-435.46"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="edge49" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<path fill="none" stroke="#000000" d="M881.29,-472.09C919.94,-470.99 962.56,-469.85 1001.7,-468.99 1220.3,-464.19 1480.92,-460.86 1590.11,-459.58"/>
+<polygon fill="#000000" stroke="#000000" points="1589.96,-463.08 1599.92,-459.46 1589.88,-456.08 1589.96,-463.08"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells -->
+<g id="edge58" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells</title>
+<path fill="none" stroke="#000000" d="M883.94,-517.75C903.58,-514.06 923.38,-509.25 941.7,-502.99 970.7,-493.07 973.04,-479.86 1001.7,-468.99 1045.46,-452.38 1096.46,-441.03 1138.4,-433.66"/>
+<polygon fill="#000000" stroke="#000000" points="1138.93,-437.12 1148.2,-431.98 1137.75,-430.22 1138.93,-437.12"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas -->
+<g id="edge59" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas</title>
+<path fill="none" stroke="#000000" d="M898.17,-519.56C975.71,-513.92 1068.9,-507.14 1135.43,-502.31"/>
+<polygon fill="#000000" stroke="#000000" points="1135.47,-505.81 1145.19,-501.6 1134.96,-498.83 1135.47,-505.81"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs -->
+<g id="edge51" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs</title>
+<path fill="none" stroke="#000000" d="M877.76,-801.91C901.04,-797.12 923.71,-788.29 941.7,-772.99 1009.47,-715.33 933.94,-639.67 1001.7,-581.99 1039.05,-550.19 1093.51,-542.03 1138.97,-541.91"/>
+<polygon fill="#000000" stroke="#000000" points="1138.76,-545.4 1148.8,-542.02 1138.84,-538.4 1138.76,-545.4"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="edge50" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<path fill="none" stroke="#000000" d="M878.34,-801.25C901.32,-796.45 923.71,-787.78 941.7,-772.99 1003.9,-721.82 937.32,-650.4 1001.7,-601.99 1041.21,-572.28 1398.7,-591.54 1445.95,-576.99 1511.36,-556.85 1577.57,-510.45 1613.93,-482.21"/>
+<polygon fill="#000000" stroke="#000000" points="1616.07,-484.98 1621.75,-476.04 1611.73,-479.48 1616.07,-484.98"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs -->
+<g id="edge60" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs</title>
+<path fill="none" stroke="#000000" d="M878.6,-625.57C899.89,-621.89 921.62,-617.13 941.7,-610.99 970.02,-602.33 973.38,-590.66 1001.7,-581.99 1044.4,-568.91 1093.44,-561.12 1134.42,-556.51"/>
+<polygon fill="#000000" stroke="#000000" points="1134.68,-560 1144.25,-555.45 1133.93,-553.04 1134.68,-560"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas -->
+<g id="edge61" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas</title>
+<path fill="none" stroke="#000000" d="M901.35,-628.98C915.58,-624.57 929.31,-618.72 941.7,-610.99 981.86,-585.93 961.27,-547.61 1001.7,-522.99 1041.4,-498.8 1092.6,-491.4 1135.68,-490.35"/>
+<polygon fill="#000000" stroke="#000000" points="1135.55,-493.85 1145.51,-490.22 1135.47,-486.85 1135.55,-493.85"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions -->
+<g id="edge43" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions</title>
+<path fill="none" stroke="#000000" d="M896.9,-312.16C966.1,-311.28 1048.02,-310.23 1112.36,-309.4"/>
+<polygon fill="#000000" stroke="#000000" points="1112.28,-312.9 1122.23,-309.27 1112.19,-305.9 1112.28,-312.9"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="edge42" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<path fill="none" stroke="#000000" d="M869.28,-324.96C910.94,-328.62 958.41,-332.42 1001.7,-334.99 1051,-337.92 1400.72,-330.13 1445.95,-349.99 1480.77,-365.28 1473.85,-390.59 1505.95,-410.99 1533.12,-428.26 1567.31,-440.28 1594.65,-447.97"/>
+<polygon fill="#000000" stroke="#000000" points="1593.5,-451.28 1604.06,-450.51 1595.32,-444.52 1593.5,-451.28"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions -->
+<g id="edge45" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions</title>
+<path fill="none" stroke="#000000" d="M868.79,-353.35C948.9,-343.07 1054.68,-329.5 1129.6,-319.89"/>
+<polygon fill="#000000" stroke="#000000" points="1129.91,-323.38 1139.38,-318.63 1129.02,-316.43 1129.91,-323.38"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="edge44" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<path fill="none" stroke="#000000" d="M922.05,-359.67C1094.58,-352.88 1351.31,-348.26 1445.95,-374.99 1475.87,-383.44 1477.8,-397.76 1505.95,-410.99 1535.49,-424.88 1570.21,-437.04 1597.21,-445.65"/>
+<polygon fill="#000000" stroke="#000000" points="1595.87,-448.9 1606.46,-448.55 1597.97,-442.22 1595.87,-448.9"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells -->
+<g id="edge46" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells</title>
+<path fill="none" stroke="#000000" d="M885.26,-421.99C961.42,-421.99 1055.85,-421.99 1125.37,-421.99"/>
+<polygon fill="#000000" stroke="#000000" points="1125.23,-425.49 1135.23,-421.99 1125.23,-418.49 1125.23,-425.49"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="edge47" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<path fill="none" stroke="#000000" d="M839.92,-408.01C971.05,-388.89 1229.77,-360.65 1445.95,-394.99 1475.84,-399.74 1551.71,-426.06 1599.9,-443.44"/>
+<polygon fill="#000000" stroke="#000000" points="1598.61,-446.69 1609.2,-446.81 1600.99,-440.11 1598.61,-446.69"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells -->
+<g id="edge54" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_cells</title>
+<path fill="none" stroke="#000000" d="M903.27,-574.37C916.81,-570.04 929.87,-564.37 941.7,-556.99 981.86,-531.93 962.39,-495.37 1001.7,-468.99 1038.33,-444.4 1085.46,-432.35 1126.74,-426.57"/>
+<polygon fill="#000000" stroke="#000000" points="1126.96,-430.07 1136.43,-425.32 1126.07,-423.12 1126.96,-430.07"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas -->
+<g id="edge55" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas</title>
+<path fill="none" stroke="#000000" d="M884.44,-571.66C903.91,-567.98 923.54,-563.2 941.7,-556.99 970.7,-547.07 972.59,-532.59 1001.7,-522.99 1043.4,-509.23 1091.62,-502.37 1132.33,-498.99"/>
+<polygon fill="#000000" stroke="#000000" points="1132.39,-502.5 1142.09,-498.24 1131.85,-495.52 1132.39,-502.5"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs -->
+<g id="edge53" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs</title>
+<path fill="none" stroke="#000000" d="M878.29,-856.52C901.53,-851.68 924.05,-842.68 941.7,-826.99 1019.04,-758.22 927.46,-674.1 1001.7,-601.99 1035.78,-568.88 1086.79,-555.44 1131.18,-550.47"/>
+<polygon fill="#000000" stroke="#000000" points="1131.48,-553.96 1141.1,-549.51 1130.81,-546.99 1131.48,-553.96"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__ -->
+<g id="edge52" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____init__</title>
+<path fill="none" stroke="#000000" d="M878.63,-856.26C901.72,-851.41 924.08,-842.47 941.7,-826.99 1016.21,-761.5 923.84,-673.47 1001.7,-611.99 1040.46,-581.37 1399.09,-610.62 1445.95,-594.99 1515.38,-571.82 1582.42,-515.93 1617.35,-483.47"/>
+<polygon fill="#000000" stroke="#000000" points="1619.55,-486.2 1624.42,-476.79 1614.74,-481.11 1619.55,-486.2"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs -->
+<g id="edge56" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_pfs</title>
+<path fill="none" stroke="#000000" d="M906.66,-737.91C919.22,-733.21 931.13,-727.04 941.7,-718.99 994.59,-678.72 948.82,-622.27 1001.7,-581.99 1039.58,-553.13 1092.01,-544.62 1136.25,-543.57"/>
+<polygon fill="#000000" stroke="#000000" points="1136.13,-547.07 1146.09,-543.47 1136.06,-540.07 1136.13,-547.07"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas -->
+<g id="edge57" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas</title>
+<path fill="none" stroke="#000000" d="M909.06,-738.62C920.89,-733.73 931.98,-727.31 941.7,-718.99 1010.87,-659.71 931.89,-581.52 1001.7,-522.99 1040.42,-490.52 1097.26,-484.21 1143.54,-485.78"/>
+<polygon fill="#000000" stroke="#000000" points="1143.09,-489.26 1153.25,-486.25 1143.43,-482.27 1143.09,-489.26"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells -->
+<g id="edge28" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells</title>
+<path fill="none" stroke="#000000" d="M476.12,-521.54C501.18,-515.85 535.35,-508.43 565.69,-502.99 591.68,-498.33 619.82,-493.93 646.18,-490.09"/>
+<polygon fill="#000000" stroke="#000000" points="646.46,-493.58 655.86,-488.69 645.46,-486.65 646.46,-493.58"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas -->
+<g id="edge31" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_cells_both_areas</title>
+<path fill="none" stroke="#000000" d="M480.82,-529.99C504.02,-529.99 534.9,-529.99 567.5,-529.99"/>
+<polygon fill="#000000" stroke="#000000" points="567.1,-533.49 577.1,-529.99 567.1,-526.49 567.1,-533.49"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs -->
+<g id="edge37" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs</title>
+<path fill="none" stroke="#000000" d="M480.68,-530.39C498.12,-532.72 517.27,-538.56 529.69,-551.99 597.23,-625.08 494.69,-703.26 565.69,-772.99 581.13,-788.16 601.04,-797.3 622.09,-802.51"/>
+<polygon fill="#000000" stroke="#000000" points="621.19,-805.9 631.7,-804.58 622.66,-799.06 621.19,-805.9"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas -->
+<g id="edge32" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_pfs_both_areas</title>
+<path fill="none" stroke="#000000" d="M480.31,-533.13C496.87,-536.04 515.44,-541.57 529.69,-551.99 554.48,-570.13 540.05,-594.07 565.69,-610.99 574.53,-616.82 584.11,-621.61 594.11,-625.53"/>
+<polygon fill="#000000" stroke="#000000" points="592.65,-628.72 603.25,-628.8 595.01,-622.13 592.65,-628.72"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions -->
+<g id="edge35" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions</title>
+<path fill="none" stroke="#000000" d="M480.83,-529.23C498.08,-526.8 517.05,-520.99 529.69,-507.99 582.62,-453.55 510.18,-392.8 565.69,-340.99 575.62,-331.72 587.23,-324.75 599.71,-319.56"/>
+<polygon fill="#000000" stroke="#000000" points="600.8,-322.89 608.97,-316.14 598.38,-316.32 600.8,-322.89"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas -->
+<g id="edge30" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_animals_by_sessions_both_areas</title>
+<path fill="none" stroke="#000000" d="M480.71,-528.58C497.73,-526 516.56,-520.26 529.69,-507.99 568.21,-472.01 525.47,-429.06 565.69,-394.99 571.19,-390.33 577.13,-386.27 583.38,-382.74"/>
+<polygon fill="#000000" stroke="#000000" points="584.77,-385.96 592.11,-378.31 581.61,-379.72 584.77,-385.96"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells -->
+<g id="edge36" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells</title>
+<path fill="none" stroke="#000000" d="M480.31,-526.85C496.87,-523.94 515.44,-518.41 529.69,-507.99 554.48,-489.85 540.05,-465.9 565.69,-448.99 580.2,-439.42 596.72,-432.65 613.79,-427.94"/>
+<polygon fill="#000000" stroke="#000000" points="614.16,-431.45 623.01,-425.63 612.46,-424.66 614.16,-431.45"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas -->
+<g id="edge33" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_cells_both_areas</title>
+<path fill="none" stroke="#000000" d="M476.12,-538.44C501.18,-544.13 535.35,-551.55 565.69,-556.99 587.37,-560.88 610.55,-564.58 632.94,-567.94"/>
+<polygon fill="#000000" stroke="#000000" points="632.31,-571.38 642.71,-569.38 633.33,-564.46 632.31,-571.38"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs -->
+<g id="edge29" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs</title>
+<path fill="none" stroke="#000000" d="M480.88,-530.21C498.35,-532.51 517.49,-538.36 529.69,-551.99 611.92,-643.82 479.1,-739.25 565.69,-826.99 580.99,-842.5 600.94,-851.78 622.1,-857.01"/>
+<polygon fill="#000000" stroke="#000000" points="621.27,-860.41 631.78,-859.08 622.73,-853.57 621.27,-860.41"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas -->
+<g id="edge34" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__equalize&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__calc_equalize_sessions_by_pfs_both_areas</title>
+<path fill="none" stroke="#000000" d="M480.83,-530.75C498.08,-533.18 517.05,-538.99 529.69,-551.99 582.62,-606.43 510.18,-667.18 565.69,-718.99 571.87,-724.76 578.7,-729.64 586,-733.76"/>
+<polygon fill="#000000" stroke="#000000" points="584.35,-736.84 594.85,-738.22 587.5,-730.59 584.35,-736.84"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_across_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas -->
+<g id="edge64" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_across_areas&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__handle_both_areas</title>
+<path fill="none" stroke="#000000" d="M848.49,-696.54C880.83,-693.7 915.47,-685.23 941.7,-664.99 995.94,-623.13 947,-564.26 1001.7,-522.99 1040.88,-493.42 1095.61,-486.57 1140.75,-487.16"/>
+<polygon fill="#000000" stroke="#000000" points="1140.4,-490.66 1150.49,-487.43 1140.59,-483.66 1140.4,-490.66"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_within_area&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness -->
+<g id="edge62" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_within_area&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness</title>
+<path fill="none" stroke="#000000" d="M663.94,-254.03C630.89,-250.57 594.45,-242.64 565.69,-223.99 543.2,-209.4 551.6,-189.31 530.34,-169.01"/>
+<polygon fill="#000000" stroke="#000000" points="532.64,-166.37 522.67,-162.79 528.23,-171.8 532.64,-166.37"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_within_area&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions -->
+<g id="edge63" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__plot_tests_within_area&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions</title>
+<path fill="none" stroke="#000000" d="M837.76,-268.52C918.01,-276.75 1039.56,-289.23 1124.47,-297.94"/>
+<polygon fill="#000000" stroke="#000000" points="1123.86,-301.4 1134.17,-298.94 1124.58,-294.44 1123.86,-301.4"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness -->
+<g id="edge65" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness</title>
+<path fill="none" stroke="#000000" d="M694.73,-193.21C657.67,-188.27 608.66,-182.61 565.69,-174.99 560.95,-174.15 545.31,-170.51 526.58,-166.38"/>
+<polygon fill="#000000" stroke="#000000" points="527.58,-163.02 517.06,-164.3 526.09,-169.86 527.58,-163.02"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions -->
+<g id="edge66" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness____equalize_by_sessions</title>
+<path fill="none" stroke="#000000" d="M832.78,-210.31C866.96,-213.96 907.08,-220.67 941.7,-232.99 970.99,-243.42 972.57,-258.1 1001.7,-268.99 1039.91,-283.27 1083.85,-292.4 1122.41,-298.2"/>
+<polygon fill="#000000" stroke="#000000" points="1121.77,-301.64 1132.16,-299.6 1122.76,-294.71 1121.77,-301.64"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results__cell_val -->
+<g id="node25" class="node">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results__cell_val</title>
+<ellipse fill="#ff0000" fill-opacity="0.698039" stroke="black" cx="1223.32" cy="-213.99" rx="40.09" ry="18"/>
+<text text-anchor="middle" x="1223.32" y="-208.94" font-family="Times New Roman,serif" font-size="14.00" fill="#000000">cell_val</text>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results__cell_val -->
+<g id="edge24" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results__cell_val</title>
+<path fill="none" stroke="#838b8b" stroke-dasharray="5,2" d="M833.23,-202.13C930.05,-201.47 1091.72,-204.52 1172.79,-208.79"/>
+<polygon fill="#838b8b" stroke="#838b8b" points="1172.46,-212.28 1182.64,-209.34 1172.85,-205.29 1172.46,-212.28"/>
+</g>
+<!-- ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results__cell_val -->
+<g id="edge67" class="edge">
+<title>ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results&#45;&gt;ABmice__BTSP__Statistics_Robustness__Statistics_Robustness__summarize_results__cell_val</title>
+<path fill="none" stroke="#000000" d="M830.08,-212.4C926.33,-216.45 1090.21,-219 1172.32,-217.5"/>
+<polygon fill="#000000" stroke="#000000" points="1172.15,-221.01 1182.07,-217.29 1172,-214.01 1172.15,-221.01"/>
+</g>
+</g>
+</svg>
+`,
+                    ready: function() {
+                        var gv = this
+                        gv.nodes().click(function () {
+                            var $set = $()
+                            $set.push(this)
+                            $set = $set.add(gv.linkedFrom(this, true))
+                            $set = $set.add(gv.linkedTo(this, true))
+                            gv.highlight($set, true)
+                            gv.bringToFront($set)
+                        })
+                        $(document).keydown(function (evt) {
+                            if (evt.keyCode == 27) {
+                                gv.highlight()
+                            }
+                        })
+                    }
+                });
+            });
+		</script>
+	</body>
+</html>

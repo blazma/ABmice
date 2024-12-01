@@ -92,6 +92,8 @@ class BtspStatistics:
             self.cell_stats_df = grow_df(self.cell_stats_df, cell_stats_df_animal)
             self.pfs_df = grow_df(self.pfs_df, pfs_df_animal)
         self.pfs_df = self.pfs_df.reset_index().drop("index", axis=1)
+        self.pfs_df["area"] = self.area
+
         if not self.is_shift_criterion_on:
             # if shift criterion is not considered: reset all BTSP to non-BTSP PFs
             self.pfs_df.loc[self.pfs_df["category"] == "btsp", "category"] = "non-btsp"
@@ -112,6 +114,7 @@ class BtspStatistics:
 
         # tag newly formed place fields
         self.pfs_df["newly formed"] = np.where(self.pfs_df["category"].isin(["transient", "non-btsp", "btsp"]), True, False)
+        self.pfs_df["log10(formation gain)"] = np.log10(self.pfs_df["formation gain"])
 
         # calculate cell count ratios
         self.cell_stats_df["active / total"] = self.cell_stats_df["active cells"] / self.cell_stats_df["total cells"]
@@ -552,7 +555,7 @@ class BtspStatistics:
 
     def calc_shift_gain_distribution(self, unit="cm"):
         #shift_gain_df = self.pfs_df[["category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
-        shift_gain_df = self.pfs_df[["animal id", "session id", "cell id", "corridor", "category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
+        shift_gain_df = self.pfs_df[["area", "animal id", "session id", "cell id", "corridor", "category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
         shift_gain_df = shift_gain_df[(shift_gain_df["initial shift"].notna()) & (shift_gain_df["formation gain"].notna())]
         shift_gain_df["log10(formation gain)"] = np.log10(shift_gain_df["formation gain"])
 
@@ -828,10 +831,9 @@ class BtspStatistics:
             #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
 
             test_results += f"\n"
-        if export_results:  # TODO: make this an excel using dataframe
-            with open(f"{self.output_root}/tests{suffix}.txt", "w") as test_results_file:
-                test_results_file.write(test_results)
         self.tests_df = pd.DataFrame.from_dict(test_dict)
+        if export_results:
+            self.tests_df.to_excel(f"{self.output_root}/tests_{self.area}{self.extra_info}.xlsx", index=False)
 
     def plot_shift_gain_distribution(self, unit="cm", without_transient=False):
         def take_same_sized_subsample(df):
@@ -2311,9 +2313,13 @@ if __name__ == "__main__":
     btsp_statistics.filter_low_behavior_score()
     btsp_statistics.calc_place_field_proportions()
     btsp_statistics.calc_shift_gain_distribution(unit="cm")
-    btsp_statistics.calc_place_field_quality()
+    #btsp_statistics.calc_place_field_quality()
     #btsp_statistics.calc_lap_by_lap_metrics()
     #btsp_statistics.calc_place_field_quality_all_laps()
+
+    btsp_statistics.run_tests(btsp_statistics.shift_gain_df,
+                              params=["initial shift", "log10(formation gain)"],
+                              export_results=True)
 
     #btsp_statistics.plot_formations()
     #btsp_statistics.plot_session_length_dependence()
@@ -2332,7 +2338,7 @@ if __name__ == "__main__":
     #btsp_statistics.plot_shift_gain_distribution(without_transient=False)
     #btsp_statistics.plot_place_field_quality()
     #btsp_statistics.plot_lap_by_lap_metrics()
-    btsp_statistics.depth_analysis(depth_folder)
+    #btsp_statistics.depth_analysis(depth_folder)
     #btsp_statistics.plot_shift_scores()
     #btsp_statistics.plot_slopes_like_Madar()
     #btsp_statistics.plot_highgain_vs_lowgain_shift_diffs()

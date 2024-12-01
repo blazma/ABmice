@@ -17,31 +17,43 @@ extra_info = ""
 
 
 class Statistics_BothAreas:
-    def __init__(self, data_root, output_root, extra_info_CA1, extra_info_CA3, extra_info):
+    def __init__(self, data_root, output_root, extra_info_CA1, extra_info_CA3, extra_info,
+                 create_output_folder=True):
+        # set parameters
+        self.extra_info_CA1 = extra_info_CA1
+        self.extra_info_CA3 = extra_info_CA3
         self.extra_info = "" if not extra_info else f"_{extra_info}"
+        self.data_root = data_root
+        self.output_root = f"{output_root}//statistics//BothAreas{self.extra_info}"
+        if create_output_folder:
+            makedir_if_needed(self.output_root)
 
-        self.CA1_stat = BtspStatistics("CA1", data_root, output_root, extra_info_CA1, is_shift_criterion_on=True, is_notebook=False)
+        # declare variables
+        self.CA1_stat = None
+        self.CA3_stat = None
+        self.pfs_df = None
+        self.shift_gain_df = None
+        self.tests_df = None
+
+    def load_data(self):
+        self.CA1_stat = BtspStatistics("CA1", self.data_root, self.data_root, self.extra_info_CA1, is_shift_criterion_on=True, is_notebook=False)
         self.CA1_stat.load_data()
         self.CA1_stat.filter_low_behavior_score()
         self.CA1_stat.calc_shift_gain_distribution(unit="cm")
         self.CA1_stat.pfs_df["area"] = "CA1"
         self.CA1_stat.shift_gain_df["area"] = "CA1"
 
-        self.CA3_stat = BtspStatistics("CA3", data_root, output_root, extra_info_CA3, is_shift_criterion_on=True, is_notebook=False)
+        self.CA3_stat = BtspStatistics("CA3", self.data_root, self.data_root, self.extra_info_CA3, is_shift_criterion_on=True, is_notebook=False)
         self.CA3_stat.load_data()
         self.CA3_stat.filter_low_behavior_score()
         self.CA3_stat.calc_shift_gain_distribution(unit="cm")
         self.CA3_stat.pfs_df["area"] = "CA3"
         self.CA3_stat.shift_gain_df["area"] = "CA3"
 
-        self.output_root = f"{output_root}//statistics//BothAreas{self.extra_info}"
-        makedir_if_needed(self.output_root)
-
         self.pfs_df = pd.concat([self.CA1_stat.pfs_df, self.CA3_stat.pfs_df]).reset_index(drop=True)
         self.shift_gain_df = pd.concat([self.CA1_stat.shift_gain_df, self.CA3_stat.shift_gain_df]).reset_index(drop=True)
-        self.tests_df = None
 
-    def run_tests(self):
+    def run_tests(self, save_results=True):
         for pop in ["newly formed", "established"]:
             if pop == "newly formed":
                 is_nf = True
@@ -68,7 +80,8 @@ class Statistics_BothAreas:
             }
             test_df = pd.DataFrame.from_dict(test_dict)
             self.tests_df = grow_df(self.tests_df, test_df)
-        self.tests_df.to_excel(f"{self.output_root}/tests_bothAreas.xlsx", index=False)
+        if save_results:
+            self.tests_df.to_excel(f"{self.output_root}/tests_bothAreas.xlsx", index=False)
 
     def plot_shift_gain_both_areas(self):
         palette = list(AREA_PALETTE.values())
@@ -155,6 +168,26 @@ class Statistics_BothAreas:
             plt.savefig(f"{self.output_root}//shift_gain_{pop}_cumulative.pdf")
             #plt.savefig(f"{self.output_root}//shift_gain_{pop}_cumulative.svg")
 
+    def export_data(self):
+        cols = ["area", "animal id", "session id", "cell id", "corridor", "category", "lower bound", "upper bound",
+                "formation lap", "end lap", "formation bin", "formation gain", "log10(formation gain)", "initial shift",
+                "spearman r", "spearman p", "linear fit m", "linear fit b",
+                "is BTSP", "has high gain", "has backwards shift", "has no drift"]
+        # export all place field data (selected columns only)
+        pfs = self.pfs_df[cols]
+        pfs.to_excel(f"{self.output_root}/place_fields.xlsx", index=False)
+
+        # export CA1-only test results
+        self.CA1_stat.run_tests(self.CA1_stat.shift_gain_df, params=["initial shift", "log10(formation gain)"], export_results=False)
+        self.CA1_stat.tests_df.to_excel(f"{self.output_root}/tests_CA1.xlsx", index=False)
+
+        # export CA3-only test results
+        self.CA3_stat.run_tests(self.CA3_stat.shift_gain_df, params=["initial shift", "log10(formation gain)"], export_results=False)
+        self.CA3_stat.tests_df.to_excel(f"{self.output_root}/tests_CA3.xlsx", index=False)
+
+        # export CA1 vs CA3 test results
+        self.tests_df.to_excel(f"{self.output_root}/tests_bothAreas.xlsx", index=False)
+
     """
     def crossvalidation():
         nf_df = shift_gain_df[shift_gain_df["newly formed"] == True]
@@ -220,7 +253,9 @@ class Statistics_BothAreas:
         pass
     """
 
-
-stats = Statistics_BothAreas(data_root, output_root, extra_info_CA1, extra_info_CA3, extra_info)
-stats.run_tests()
-stats.plot_shift_gain_both_areas()
+if __name__ == "__main__":
+    stats = Statistics_BothAreas(data_root, output_root, extra_info_CA1, extra_info_CA3, extra_info)
+    stats.load_data()
+    stats.run_tests()
+    #stats.plot_shift_gain_both_areas()
+    stats.export_data()

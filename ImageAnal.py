@@ -530,7 +530,9 @@ class ImagingSessionData:
 
         self.cell_SDs = np.zeros(self.N_cells) # a vector with the SD of the cells
         self.cell_SNR = np.zeros(self.N_cells) # a vector with the signal to noise ratio of the cells (max F / SD)
-        self.cell_baselines = np.zeros(self.N_cells) # a vector with the baseline F of the cells
+        self.cell_baselines = np.zeros(self.N_cells) # a vector with the baseline dF/F of the cells
+        self.cell_baselines_F = np.zeros(self.N_cells)
+        self.cell_baselines_F_SDs = np.zeros(self.N_cells)
 
         ## to calculate the SD and SNR, we need baseline periods with no spikes for at least 1 sec
         frame_rate = int(np.ceil(1/self.frame_period))
@@ -599,12 +601,18 @@ class ImagingSessionData:
 
             sds = np.zeros(len(rise_ind))
             bases = np.zeros(len(rise_ind))
+            bases_F = np.zeros(len(rise_ind))
+            bases_F_sds = np.zeros(len(rise_ind))
             for k in range(len(rise_ind)):
                 i_start = fall_ind[k] + L_after_spike
                 i_end = rise_ind[k] - L_before_spike
                 sds[k] = np.sqrt(np.var(self.dF_F[i_cell,i_start:i_end]))
                 bases[k] = np.average(self.dF_F[i_cell,i_start:i_end])
+                bases_F[k] = np.average(self.F[i_cell,i_start:i_end])
+                bases_F_sds[k] = np.sqrt(np.var(self.F[i_cell,i_start:i_end]))
             self.cell_baselines[i_cell] = np.mean(bases)
+            self.cell_baselines_F[i_cell] = np.mean(bases_F)
+            self.cell_baselines_F_SDs[i_cell] = np.mean(bases_F_sds)
             self.cell_SDs[i_cell] = np.mean(sds)
             self.cell_SNR[i_cell] = max(self.dF_F[i_cell,:]) / np.mean(sds)
             self.spks[i_cell,:] = self.spks[i_cell,:]# / baseline / self.cell_SDs[i_cell]
