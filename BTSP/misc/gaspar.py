@@ -86,8 +86,6 @@ base_folder = rf"D:\{area}"
 meta_df = pd.read_excel(f"{base_folder}/{area}_meta.xlsx")
 
 for i_row, row in meta_df.iterrows():
-    if row["name"] not in ["srb410", "srb410a"]:
-        continue
     print(row["session id"])
     session_folder = f"{base_folder}/data/{row["name"]}_imaging/{row["suite2p_folder"]}"
     spks = np.load(f"{session_folder}/spks_oasis_08s.npy")

@@ -232,7 +232,7 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
     parser.add_argument("-dp", "--data-path", required=True)
     parser.add_argument("-op", "--output-path", default=os.getcwd())
-    parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
+    parser.add_argument("-x", "--extra-info", default="")  # don't provide _ in the beginning
     args = parser.parse_args()
 
     area = args.area

@@ -137,7 +137,8 @@ class BtspAnalysisSingleCell:
                 if len(place_field.i_laps) > self.params["FORMATION_GAIN_WINDOW"] and len(place_field.active_laps) > self.params["FORMATION_GAIN_WINDOW"]:
                 #if len(place_field.i_laps) > PF.FORMATION_GAIN_WINDOW and len(place_field.active_laps) > PF.SHIFT_WINDOW:
                     place_field.calculate_formation_gain()
-                    place_field.calculate_shift()
+                    place_field.calculate_shift_scores()
+                    place_field.calculate_initial_shift()
                     place_field.evaluate_quality()
 
                 #place_field.calculate_dF_F_maxima(self.frames_pos_bins, self.frames_dF_F)

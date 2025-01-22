@@ -29,6 +29,10 @@ class PlaceField:
         self.end_lap = -1
         self.dF_F_maxima = np.empty(0)
         self.formation_gain = np.nan
+        self.formation_gain_AL5 = np.nan  # AL5 = after (active) lap 5
+        self.initial_shift = np.nan
+        self.initial_shift_AL5 = np.nan
+        self.coms = []  # stores COMs of each active lap
         self.com_diffs = [0]  # shift scores
         self.spearman_corrs = (np.nan, np.nan)  # r, p
         self.linear_coeffs = (np.nan, np.nan)  # m, b; from the linear regression of shift scores
@@ -54,7 +58,6 @@ class PlaceField:
 
     def to_dataframe(self):
         is_btsp = self.has_high_gain and self.has_no_drift and self.has_backwards_shift
-        initial_shift = np.mean(self.com_diffs[1:1+self.params["SPEARMAN_SKIP_LAPS"]])
         df_dict = {
             "animal id": self.animalID,
             "session id": self.sessionID,
@@ -74,7 +77,9 @@ class PlaceField:
             "has no drift": self.has_no_drift,
             "has backwards shift": self.has_backwards_shift,
             "formation gain": self.formation_gain,
-            "initial shift": initial_shift,
+            "formation gain AL5": self.formation_gain_AL5,
+            "initial shift": self.initial_shift,
+            "initial shift AL5": self.initial_shift_AL5,
             "spearman r": self.spearman_corrs[0],
             "spearman p": self.spearman_corrs[1],
             "linear fit m": self.linear_coeffs[0],
@@ -165,6 +170,18 @@ class PlaceField:
         window_rate = np.nanmax(self.rate_matrix_pf[:,self.active_laps[1:1+self.params["FORMATION_GAIN_WINDOW"]]],axis=0).mean()
         formation_gain = formation_rate / window_rate
 
+        self.formation_gain = formation_gain
+        if formation_gain > 1.0:
+            self.has_high_gain = True
+
+        # self-control - formation gain calculated at 5th active lap
+        if len(self.active_laps) < 5+self.params["FORMATION_GAIN_WINDOW"]:
+            return
+        reference_rate = np.nanmax(self.rate_matrix_pf[:, self.active_laps[5]])
+        window_rate_AL5 = np.nanmax(self.rate_matrix_pf[:, self.active_laps[6:6 + self.params["FORMATION_GAIN_WINDOW"]]],axis=0).mean()
+        formation_gain_AL5 = reference_rate / window_rate_AL5
+        self.formation_gain_AL5 = formation_gain_AL5
+
         #### all laps
         #window_rate = np.nanmax(self.rate_matrix_pf[:, 1:1 + self.params["FORMATION_GAIN_WINDOW"]],axis=0).mean()
         #formation_gain = formation_rate / window_rate
@@ -176,10 +193,6 @@ class PlaceField:
 
         #### 1st lap to 2nd lap ratio
         #formation_gain = np.nanmax(self.rate_matrix_pf[:, self.active_laps[0]]) / np.nanmax(self.rate_matrix_pf[:, self.active_laps[1]])
-
-        self.formation_gain = formation_gain
-        if formation_gain > 1.0:
-            self.has_high_gain = True
 
     def find_active_laps(self):
         active_laps = []
@@ -215,7 +228,7 @@ class PlaceField:
                 com_diffs.append(np.nan)
         self.com_diffs_lap_by_lap = np.array(com_diffs)
 
-    def calculate_shift(self):
+    def calculate_shift_scores(self):
         rate_matrix_active_laps = self.rate_matrix_pf[:,self.active_laps]
 
         lb, ub = self.bounds
@@ -228,6 +241,7 @@ class PlaceField:
             return
 
         formation_bin = np.average(pf_bins_range, weights=self.rate_matrix_pf[:, 0])
+        self.coms.append(formation_bin)
         for i in range(1, len(self.active_laps) - self.params["SHIFT_WINDOW"]):
             rate_matrix_window = rate_matrix_active_laps[:, i:i + self.params["SHIFT_WINDOW"]]
 
@@ -237,11 +251,23 @@ class PlaceField:
                 rates_lap = rate_matrix_window[:,i]
                 coms_window[i] = np.average(pf_bins_range, weights=rates_lap)
             avg_com_window = coms_window.mean()
+            self.coms.append(avg_com_window)
             com_diff = avg_com_window - formation_bin
             self.com_diffs.append(com_diff)
+
+    def calculate_initial_shift(self):
+        self.initial_shift = np.mean(self.com_diffs[1:1+self.params["SPEARMAN_SKIP_LAPS"]])
         if len(self.com_diffs) >= 1+self.params["SPEARMAN_SKIP_LAPS"]:
-            if np.mean(self.com_diffs[1:1+self.params["SPEARMAN_SKIP_LAPS"]]) < 0:
+            if self.initial_shift < 0:
                 self.has_backwards_shift = True
+
+        # initial shift after 5 laps
+        coms_AL5 = self.coms[5:]
+        if len(coms_AL5) == 0:
+            return  # not enough active laps to calculate
+        reference_bin = coms_AL5[0]
+        coms_diff_AL5 = [coms_AL5[i]-reference_bin for i in range(len(coms_AL5))]
+        self.initial_shift_AL5 = np.mean(coms_diff_AL5[1:1+self.params["SPEARMAN_SKIP_LAPS"]])
 
     def calculate_spearman(self):
         com_diffs_after_shift = self.com_diffs[self.params["SPEARMAN_SKIP_LAPS"]:]

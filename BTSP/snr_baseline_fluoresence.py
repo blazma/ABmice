@@ -166,6 +166,39 @@ def plot_SNR_and_baseline_histograms():
     sns.kdeplot(data=ca3["event rate"], cut=0, label="ca3")
     plt.legend()
 
+
+
+    ###################################
+    #######################################
+    fig, axs = plt.subplots(2, 1, figsize=(6, 7), sharex=True)
+    ca1 = SNR_baselines_df[SNR_baselines_df["area"] == "CA1"]
+    ca3 = SNR_baselines_df[SNR_baselines_df["area"] == "CA3"]
+
+    palette = {
+        "KS028": "red",
+        "KS029": "red",
+        "KS030": "red",
+        "srb131": "red",
+        "srb231": "red",
+        "srb251": "red",
+        "srb402": "blue",
+        "srb410": "red",
+        "srb410a": "red",
+        "srb363": "red",
+        "srb377": "red",
+        "srb270": "red",
+        "srb269": "red",
+    }
+
+    sns.kdeplot(data=ca1, x="event rate", hue="animal id", common_norm=False, ax=axs[0])
+    sns.kdeplot(data=ca3, x="event rate", hue="animal id", common_norm=False, ax=axs[1])
+
+    # sns.kdeplot(data=ca1[(ca1["animal id"] != "srb402")], x="SNR", hue="animal id", common_norm=False, ax=axs[0], palette=palette, alpha=0.2)
+    # sns.kdeplot(data=ca1[(ca1["animal id"] == "srb402")], x="SNR", hue="animal id", common_norm=False, ax=axs[0], palette=palette)
+    # sns.kdeplot(data=ca3[(ca3["animal id"] != "srb402")], x="SNR", hue="animal id", common_norm=False, ax=axs[1], palette=palette, alpha=0.2)
+    # sns.kdeplot(data=ca3[(ca3["animal id"] == "srb402")], x="SNR", hue="animal id", common_norm=False, ax=axs[1], palette=palette)
+    # axs[0].set_xlim([0,150])
+
 #extract_SNR_and_baselines("CA1")
 #extract_SNR_and_baselines("CA3")
 plot_SNR_and_baseline_histograms()

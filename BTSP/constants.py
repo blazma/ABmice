@@ -4,12 +4,12 @@ ANIMALS = {
     "CA1": ["KS028",
             "KS029",
             "KS030",
+            "srb128",
             "srb131",
             "srb231",
             "srb251",
             "srb402",
-            "srb410",
-            "srb410a"],
+            "srb410",],
     "CA3": ["srb231",
             "srb251",
             "srb269",
@@ -17,8 +17,7 @@ ANIMALS = {
             "srb363",
             "srb377",
             "srb402",
-            "srb410",
-            "srb410a"]
+            "srb410",]
 }
 
 AREA_PALETTE = {

@@ -1,3 +1,5 @@
+import warnings
+
 import pandas as pd
 import numpy as np
 import tqdm
@@ -17,6 +19,7 @@ from utils import grow_df, makedir_if_needed
 import sklearn
 import scipy
 from BTSP.BehavioralStatistics import BehaviorStatistics
+
 
 class BtspStatistics:
     def __init__(self, area, data_path, output_path, extra_info="", is_shift_criterion_on=True, is_notebook=False, history="ALL"):
@@ -120,6 +123,9 @@ class BtspStatistics:
         self.cell_stats_df["active / total"] = self.cell_stats_df["active cells"] / self.cell_stats_df["total cells"]
         self.cell_stats_df["tuned / total"] = self.cell_stats_df["tuned cells"] / self.cell_stats_df["total cells"]
         self.cell_stats_df["tuned / active"] = self.cell_stats_df["tuned cells"] / self.cell_stats_df["active cells"]
+
+        # merge srb410 with srb410a
+        self.pfs_df.loc[self.pfs_df["animal id"] == "srb410a", "animal id"] = "srb410"
 
     def filter_low_behavior_score(self):
         # filter sessions where behavior score is lower than threshold -- to homogenize dataset
@@ -555,12 +561,17 @@ class BtspStatistics:
 
     def calc_shift_gain_distribution(self, unit="cm"):
         #shift_gain_df = self.pfs_df[["category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
-        shift_gain_df = self.pfs_df[["area", "animal id", "session id", "cell id", "corridor", "category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
+        shift_gain_df = self.pfs_df[["area", "animal id", "session id", "cell id", "corridor", "category",
+                                     "newly formed", "initial shift", "initial shift AL5",
+                                     "formation gain", "formation gain AL5", "formation rate sum",
+                                     "formation lap"]].reset_index(drop=True)
         shift_gain_df = shift_gain_df[(shift_gain_df["initial shift"].notna()) & (shift_gain_df["formation gain"].notna())]
         shift_gain_df["log10(formation gain)"] = np.log10(shift_gain_df["formation gain"])
+        shift_gain_df["log10(formation gain AL5)"] = np.log10(shift_gain_df["formation gain AL5"])
 
         if unit == "cm":
             shift_gain_df["initial shift"] = self.bin_length * shift_gain_df["initial shift"]
+            shift_gain_df["initial shift AL5"] = self.bin_length * shift_gain_df["initial shift AL5"]
         self.shift_gain_df = shift_gain_df.reset_index(drop=True)
 
     def plot_highgain_vs_lowgain_shift_diffs(self):
@@ -732,12 +743,20 @@ class BtspStatistics:
             "test": [],
             "statistic": [],
             "p-value": [],
-            "log p-value": []
+            "log p-value": [],
+            f"n cells {self.area}": [],
+            f"n pfs {self.area}": [],
         }
         for param in params:
             test_results += f"{param}\n"
             df_newlyF = df[df["newly formed"] == True]
             df_establ = df[df["newly formed"] == False]
+
+            df_newlyF = df_newlyF[(~df_newlyF[param].isna())]
+            df_establ = df_establ[(~df_establ[param].isna())]
+
+            if len(df_newlyF) == 0 or len(df_establ) == 0:
+                continue
 
             # t-test: do the 2 samples have equal means?
             test = scipy.stats.ttest_ind(df_newlyF[param].values, df_establ[param].values)
@@ -749,6 +768,8 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
+            test_dict[f"n cells {self.area}"] = self.shift_gain_df.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n pfs {self.area}"].append(len(df_newlyF[param].values)+len(df_establ[param].values))
 
             # mann-whitney u: do the 2 samples come from same distribution?
             test = scipy.stats.mannwhitneyu(df_newlyF[param].values, df_establ[param].values)
@@ -760,6 +781,8 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
+            test_dict[f"n cells {self.area}"] = self.shift_gain_df.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n pfs {self.area}"].append(len(df_newlyF[param].values)+len(df_establ[param].values))
 
             # kolmogorov-smirnov: do the 2 samples come from the same distribution?
             test = scipy.stats.kstest(df_newlyF[param].values, cdf=df_establ[param].values)
@@ -771,6 +794,8 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
+            test_dict[f"n cells {self.area}"] = self.shift_gain_df.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n pfs {self.area}"].append(len(df_newlyF[param].values)+len(df_establ[param].values))
 
             # wilcoxon
             test = scipy.stats.wilcoxon(df_newlyF[param].values)
@@ -782,6 +807,8 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
+            test_dict[f"n cells {self.area}"] = df_newlyF.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n pfs {self.area}"].append(len(df_newlyF[param].values))
 
             test = scipy.stats.wilcoxon(df_establ[param].values)
             test_results += f"    p={test.pvalue:.3} (WX-ES) {stars(test.pvalue)}\n"
@@ -792,6 +819,8 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
+            test_dict[f"n cells {self.area}"] = df_establ.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n pfs {self.area}"].append(len(df_establ[param].values))
 
             # t-test (1 sample)
             test = scipy.stats.ttest_1samp(df_newlyF[param].values, popmean=0)
@@ -803,6 +832,8 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
+            test_dict[f"n cells {self.area}"] = df_newlyF.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n pfs {self.area}"].append(len(df_newlyF[param].values))
 
             test = scipy.stats.ttest_1samp(df_establ[param].values, popmean=0)
             test_results += f"    p={test.pvalue:.3} (TT1S_ES) {stars(test.pvalue)}\n"
@@ -813,6 +844,8 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
+            test_dict[f"n cells {self.area}"] = df_establ.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n pfs {self.area}"].append(len(df_establ[param].values))
 
             # shapiro-wilk: does the 1 sample have normal distribution?
             #_, pvalue = scipy.stats.shapiro(df_newlyF[param].values)
@@ -831,7 +864,7 @@ class BtspStatistics:
             #test_results += f"    p={test.pvalue} (t-test) {stars(test.pvalue)}\n"
 
             test_results += f"\n"
-        self.tests_df = pd.DataFrame.from_dict(test_dict)
+        self.tests_df = grow_df(self.tests_df,pd.DataFrame.from_dict(test_dict))
         if export_results:
             self.tests_df.to_excel(f"{self.output_root}/tests_{self.area}{self.extra_info}.xlsx", index=False)
 
@@ -2253,6 +2286,78 @@ class BtspStatistics:
             plt.tight_layout()
             plt.savefig(f"{self.output_root}/formations/{session_id}_formations.pdf")
 
+    def plot_formation_lap_dependence_of_newly_formed(self):
+        sg = self.shift_gain_df
+        nf = sg[(sg["newly formed"] == True)]
+        nf_5laps = sg[(sg["newly formed"] == True) & (sg["formation lap"] > 5)]
+        nf_10laps = sg[(sg["newly formed"] == True) & (sg["formation lap"] > 10)]
+        i_animal = 0
+
+        palette = {
+            "default": "#000000",
+            "5 laps": "#1ECBE1",
+            "10 laps": "#ff4c00",
+        }
+        scale = 3
+        fig_all, axs_all = plt.subplots(1,2,figsize=(scale*3,scale*2), sharey=True)
+        for animal in self.animals:
+            if animal in ["srb231", "srb251"]:
+                continue  # too few PFs for violinplots to make sense
+            nf_animal = nf[nf["animal id"] == animal]
+            nf_5laps_animal = nf_5laps[nf_5laps["animal id"] == animal]
+            nf_10laps_animal = nf_10laps[nf_10laps["animal id"] == animal]
+
+            if len(nf_animal) == 0:
+                print(f"{animal} has no NF pfs")
+                continue
+
+            with warnings.catch_warnings(action="ignore"):
+                nf_animal["min. formation lap"] = "default"
+                nf_5laps_animal["min. formation lap"] = "5 laps"
+                nf_10laps_animal["min. formation lap"] = "10 laps"
+            print(len(nf_animal), len(nf_5laps_animal), len(nf_10laps_animal))
+            nf_animal_conc = pd.concat([nf_animal, nf_5laps_animal, nf_10laps_animal])
+
+            fig, axs = plt.subplots(1, 2, figsize=(scale*3,scale*2), sharey=True)
+            sns.kdeplot(data=nf_animal_conc, x="initial shift", hue="min. formation lap", bw_adjust=0.2,
+                        common_norm=False, ax=axs[0], legend=False, cumulative=True, cut=0, palette=palette, warn_singular=False)
+            sns.kdeplot(data=nf_animal_conc, x="log10(formation gain)", hue="min. formation lap", bw_adjust=0.2,
+                        common_norm=False, ax=axs[1], legend=True, cumulative=True, cut=0, palette=palette, warn_singular=False)
+
+            # add to all
+            sns.kdeplot(data=nf_animal_conc, x="initial shift", hue="min. formation lap", bw_adjust=0.2, alpha=1,
+                        common_norm=False, ax=axs_all[0], legend=False, cumulative=True, cut=0, palette=palette, warn_singular=False)
+            sns.kdeplot(data=nf_animal_conc, x="log10(formation gain)", hue="min. formation lap", bw_adjust=0.2, alpha=1,
+                        common_norm=False, ax=axs_all[1], legend=True, cumulative=True, cut=0, palette=palette, warn_singular=False)
+
+            axs[0].axvline(0, linestyle="--", linewidth=1, c="k")
+            axs[1].axvline(0, linestyle="--", linewidth=1, c="k")
+            axs[0].axhline(0.5, linestyle="--", linewidth=1, c="k")
+            axs[1].axhline(0.5, linestyle="--", linewidth=1, c="k")
+            axs[0].set_xlim([-20,20])
+            axs[1].set_xlim([-1,1])
+            axs[0].set_ylim([0,1])
+            axs[1].set_ylim([0,1])
+            axs[0].set_title(animal)
+            i_animal += 1
+            fig.tight_layout()
+            makedir_if_needed(f"{self.output_root}/FL_dependence")
+            fig.savefig(f"{self.output_root}/FL_dependence/{animal}.pdf")
+            plt.close(fig)
+
+        axs_all[0].axvline(0, linestyle="--", linewidth=1, c="k")
+        axs_all[1].axvline(0, linestyle="--", linewidth=1, c="k")
+        axs_all[0].axhline(0.5, linestyle="--", linewidth=1, c="k")
+        axs_all[1].axhline(0.5, linestyle="--", linewidth=1, c="k")
+        axs_all[0].set_xlim([-20, 20])
+        axs_all[1].set_xlim([-1, 1])
+        axs_all[0].set_ylim([0, 1])
+        axs_all[1].set_ylim([0, 1])
+        fig_all.tight_layout()
+        makedir_if_needed(f"{self.output_root}/FL_dependence")
+        fig_all.savefig(f"{self.output_root}/FL_dependence/all_animals.pdf")
+        plt.close(fig_all)
+
     def export_results(self, export_path=""):
         path = f"{self.output_root}/results.json"
         if export_path:
@@ -2309,7 +2414,7 @@ if __name__ == "__main__":
 
     btsp_statistics = BtspStatistics(area, data_path, output_path, extra_info, is_shift_criterion_on, is_notebook, history)
     btsp_statistics.load_data()
-    btsp_statistics.load_cell_data()
+    #btsp_statistics.load_cell_data()
     btsp_statistics.filter_low_behavior_score()
     btsp_statistics.calc_place_field_proportions()
     btsp_statistics.calc_shift_gain_distribution(unit="cm")
@@ -2317,9 +2422,9 @@ if __name__ == "__main__":
     #btsp_statistics.calc_lap_by_lap_metrics()
     #btsp_statistics.calc_place_field_quality_all_laps()
 
-    btsp_statistics.run_tests(btsp_statistics.shift_gain_df,
-                              params=["initial shift", "log10(formation gain)"],
-                              export_results=True)
+    #btsp_statistics.run_tests(btsp_statistics.shift_gain_df,
+    #                          params=["initial shift", "log10(formation gain)"],
+    #                          export_results=True)
 
     #btsp_statistics.plot_formations()
     #btsp_statistics.plot_session_length_dependence()
@@ -2358,4 +2463,6 @@ if __name__ == "__main__":
     #btsp_statistics.plot_formation_rate_sum(log=False)
     #btsp_statistics.plot_ratemaps()
     #btsp_statistics.calc_place_field_quality()
+
+    btsp_statistics.plot_formation_lap_dependence_of_newly_formed()
     #btsp_statistics.export_data()

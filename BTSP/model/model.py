@@ -1,28 +1,17 @@
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
+from BTSP.Statistics_BothAreas import Statistics_BothAreas
 
-states = [0, 1, 2]  # silent, fires, fires more
+data_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
+output_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
 
-transition = np.array([[0.5,  0,    0.5],
-                       [0,    0.3,  0.7],
-                       [0.15, 0.4,  0.6]])
+extra_info_CA1 = ""
+extra_info_CA3 = ""
+extra_info = ""
 
-emission = np.array([[0.9, 0.1,   0],
-                     [0.5, 0.4, 0.1],
-                     [0.1, 0.4, 0.5]])
+def preprocess():
+    stats_both = Statistics_BothAreas(data_root, output_root,
+                                      extra_info_CA1, extra_info_CA3, extra_info,
+                                      create_output_folder=False)
 
-rng = np.random.default_rng(1234)
-N = 100
-data = np.zeros(N)
-data[30:] = rng.integers(1, 3, size=N-30)
-
-prior = np.array([1/3, 1/3, 1/3]) #emission[int(data[0])]
-posterior = np.zeros((3,N))
-posterior[:,0] = prior
-for n in range(1,N):
-    posterior[:,n] = np.multiply(emission[int(data[n])].T, transition @ posterior[:,n-1])
-    posterior[:,n] = posterior[:,n] / np.sum(posterior[:,n])
-
-plt.plot(data, c="red")
-plt.imshow(posterior)
-plt.show()

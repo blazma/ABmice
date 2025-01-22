@@ -14,6 +14,7 @@ from copy import deepcopy
 from utils import makedir_if_needed, grow_df
 import itertools
 import warnings
+from robustness_params import PARAMS
 warnings.filterwarnings("ignore")
 
 
@@ -60,6 +61,7 @@ class Statistics_Robustness:
         self.tests_equalize_by_pfs_across_areas = None
 
         # run parameters
+        self.params_df = None
         self.selection_sizes_equalize_by_sessions = []  # (n_CA1, n_CA3)
         self.selection_sizes_equalize_by_cells = []
         self.n_runs_equalize_by_cells = None
@@ -69,8 +71,67 @@ class Statistics_Robustness:
         self.selection_sizes_equalize_by_pfs_both_areas = []
         self.omission = False
 
-    def equalize(self, analysis_type, what_to_eq, eq_by_what, params, export=False):
-        print(f"equalizing {what_to_eq} by {eq_by_what}, {analysis_type}")
+    def calc_params(self):
+        ca1 = self.CA1_stat.shift_gain_df
+        ca3 = self.CA3_stat.shift_gain_df
+
+        animals_to_ignore = ["srb231", "srb269"]  # very low place cell count: (3, 1)
+        ca1 = ca1[~ca1["animal id"].isin(animals_to_ignore)]
+        ca3 = ca3[~ca3["animal id"].isin(animals_to_ignore)]
+
+        CA1_AxC = ca1.groupby(["area", "animal id"])["cell id"].nunique()
+        CA1_AxPFs = ca1.groupby(["area", "animal id"]).count().mean(axis=1)
+        CA1_SxC = ca1.groupby(["area", "animal id", "session id"])["cell id"].nunique()
+        CA1_SxPFs = ca1.groupby(["area", "animal id", "session id"]).count().mean(axis=1)
+
+        CA3_AxC = ca3.groupby(["area", "animal id"])["cell id"].nunique()
+        CA3_AxPFs = ca3.groupby(["area", "animal id"]).count().mean(axis=1)
+        CA3_SxC = ca3.groupby(["area", "animal id", "session id"])["cell id"].nunique()
+        CA3_SxPFs = ca3.groupby(["area", "animal id", "session id"]).count().mean(axis=1)
+
+        equalization_types = ["min", "avg", "median", "quartile"]
+        min_element_count = 3
+
+        def apply_func(df, eq_type):
+            if eq_type == "min":
+                val = df.min()
+            elif eq_type == "avg":
+                val = df.mean()
+            elif eq_type == "median":
+                val = df.median()
+            elif eq_type == "quartile":
+                val = df.quantile(q=0.25)
+            if val < min_element_count:
+                return min_element_count
+            else:
+                return int(val)
+
+        params_df = None
+        for eq_type in equalization_types:
+            params_dict_CA1 = {
+                "eq_type": eq_type,
+                "area": "CA1",
+                "AxC": apply_func(CA1_AxC, eq_type),
+                "AxPFs": apply_func(CA1_AxPFs, eq_type),
+                "SxC": apply_func(CA1_SxC, eq_type),
+                "SxPFs": apply_func(CA1_SxPFs, eq_type)
+            }
+            params_dict_CA3 = {
+                "eq_type": eq_type,
+                "area": "CA3",
+                "AxC": apply_func(CA3_AxC, eq_type),
+                "AxPFs": apply_func(CA3_AxPFs, eq_type),
+                "SxC": apply_func(CA3_SxC, eq_type),
+                "SxPFs": apply_func(CA3_SxPFs, eq_type)
+            }
+            params_df_CA1 = pd.DataFrame.from_dict([params_dict_CA1])
+            params_df_CA3 = pd.DataFrame.from_dict([params_dict_CA3])
+            params_eq_type = pd.concat([params_df_CA1, params_df_CA3])
+            params_df = grow_df(params_df, params_eq_type)
+        self.params_df = params_df
+
+    def equalize(self, eq_type, analysis_type, what_to_eq, eq_by_what, params, export=False):
+        print(f"equalizing {what_to_eq} by {eq_by_what} to {eq_type}, {analysis_type}\n")
         funcs = {
             "single area": {
                 "animal": {
@@ -101,13 +162,14 @@ class Statistics_Robustness:
              "analysis type": [analysis_type],
              "what to equalize": [what_to_eq],
              "equalize by what": [eq_by_what],
+             "equalize to": [eq_type],
              "parameters": [params],
              "test results": [tests]
         }
         equalization_df = pd.DataFrame.from_dict(equalization_dict)
         self.equalizations = grow_df(self.equalizations, equalization_df)
         if export:
-            equalization_df.to_pickle(f"{self.output_root}/{analysis_type}_equalize_{what_to_eq}_by_{eq_by_what}.pickle")
+            equalization_df.to_pickle(f"{self.output_root}/{analysis_type}_equalize_{what_to_eq}_by_{eq_by_what}_to_{eq_type}.pickle")
 
     def __combine_sessions(self, stat_obj, selection_size):
         animals_sessions = stat_obj.pfs_df[["animal id", "session id"]].groupby(["animal id", "session id"]).count().reset_index()
@@ -150,7 +212,7 @@ class Statistics_Robustness:
 
     def __run_tests_equalize_by_sessions(self, stat_obj, permutation_dfs, generate_plots):
         tests_df = None
-        for i_perm in range(len(permutation_dfs)):
+        for i_perm in tqdm.tqdm(range(len(permutation_dfs))):
             permutation_df = permutation_dfs[i_perm]
             mpl.rcParams.update(mpl.rcParamsDefault)
 
@@ -180,7 +242,6 @@ class Statistics_Robustness:
     def __equalize_by_sessions(self, is_both_areas, selection_sizes, generate_plots):
         tests_equalize_animals_by_sessions = None
         permutations_dfs_both_areas = []
-        # TODO: this is wrong af, we calculate tests_eq_A_by_S every single time anyway so why keep this as one function?
         for i_area, stat_obj in enumerate([self.CA1_stat, self.CA3_stat]):
             # step 1: create combinations of sessions with a fixed size of session subsample
             combinations_dict = self.__combine_sessions(stat_obj, selection_sizes[i_area])
@@ -190,16 +251,19 @@ class Statistics_Robustness:
             permutations_dfs_both_areas.append(permutation_dfs)
 
             # step 3: run analyses, tests, plot shift gain distributions in needed
+            if is_both_areas:
+                continue  # we handle this step separately
             tests_df = self.__run_tests_equalize_by_sessions(stat_obj, permutation_dfs, generate_plots)
             tests_equalize_animals_by_sessions = grow_df(tests_equalize_animals_by_sessions, tests_df)
+
+        # step 3 for both areas: run tests -- it is 'outsourced' to Statistics_BothAreas object
         if is_both_areas:
             init_params = [self.data_root, self.output_root, self.extra_info_CA1, self.extra_info_CA3, self.extra_info]
             stat_both_areas = Statistics_BothAreas(*init_params, create_output_folder=False)
-            # TODO: pretty inelegant solution - i just recalculate what BtspStatistics.calc_shift_gain_distribution does
             sg_df = pd.concat([*permutations_dfs_both_areas[0], *permutations_dfs_both_areas[1]])  # 0 = CA1, 1 = CA3
             permut_dfs_CA1 = permutations_dfs_both_areas[0]
             permut_dfs_CA3 = permutations_dfs_both_areas[1]
-            for permut_df_CA1 in permut_dfs_CA1:
+            for permut_df_CA1 in tqdm.tqdm(permut_dfs_CA1):
                 for permut_df_CA3 in permut_dfs_CA3:
                     sg_df_CA1 = self.CA1_stat.shift_gain_df.merge(permut_df_CA1, on="session id")
                     sg_df_CA3 = self.CA3_stat.shift_gain_df.merge(permut_df_CA3, on="session id")
@@ -244,6 +308,9 @@ class Statistics_Robustness:
             pfs = pfs[pfs[f"{object_type} id"] == object]
 
             cells = pfs["cell id"].unique()
+            if len(cells) < 5:
+                # TODO: keep track of skipped objects
+                continue
             if selection_size > len(cells):
                 cells_subset = cells
             else:
@@ -271,6 +338,10 @@ class Statistics_Robustness:
 
             nf = sg_df[sg_df["newly formed"] == True]
             es = sg_df[sg_df["newly formed"] == False]
+
+            if len(nf) < 5 or len(es) < 5:
+                # TODO: keep track of skipped objects
+                continue
 
             if selection_size > len(nf):
                 if self.omission:
@@ -302,7 +373,7 @@ class Statistics_Robustness:
 
         tests_df = None
         for i_area, stat_area in enumerate([self.CA1_stat, self.CA3_stat]):
-            for i_subset in range(n_runs):
+            for i_subset in tqdm.tqdm(range(n_runs)):
                 stat_subset = self.__equalize_by_cells(rng,
                                                        stat_area,
                                                        "session",
@@ -322,7 +393,7 @@ class Statistics_Robustness:
 
         tests_df = None
         for i_area, stat_area in enumerate([self.CA1_stat, self.CA3_stat]):
-            for i_subset in range(n_runs):
+            for i_subset in tqdm.tqdm(range(n_runs)):
                 stat_subset = self.__equalize_by_cells(rng,
                                                        stat_area,
                                                        "animal",
@@ -342,7 +413,7 @@ class Statistics_Robustness:
 
         tests_df = None
         for i_area, stat_area in enumerate([self.CA1_stat, self.CA3_stat]):
-            for i_subset in range(n_runs):
+            for i_subset in tqdm.tqdm(range(n_runs)):
                 stat_subset = self.__equalize_by_pfs(rng,
                                                      stat_area,
                                                      "animal",
@@ -362,7 +433,7 @@ class Statistics_Robustness:
 
         tests_df = None
         for i_area, stat_area in enumerate([self.CA1_stat, self.CA3_stat]):
-            for i_subset in range(n_runs):
+            for i_subset in tqdm.tqdm(range(n_runs)):
                 stat_subset = self.__equalize_by_pfs(rng,
                                                      stat_area,
                                                      "session",
@@ -374,7 +445,6 @@ class Statistics_Robustness:
                 tests_df = grow_df(tests_df, tests_df_area)
         # self.tests_equalize_by_cells = tests_df  # TODO:obsolete
         return tests_df
-
 
     def handle_both_areas(self, equalize_func, object_type, n_subsets, selection_sizes):
         rng = np.random.default_rng(1234)
@@ -398,7 +468,7 @@ class Statistics_Robustness:
 
         ### combine cell (or pf) subsets across areas, run tests for each combo
         tests = None
-        for CA1_subset in CA1_subsets:
+        for CA1_subset in tqdm.tqdm(CA1_subsets):
             for CA3_subset in CA3_subsets:
                 shift_gain_combo = pd.concat([CA1_subset.shift_gain_df, CA3_subset.shift_gain_df]).reset_index(drop=True)
                 stat_bothAreas = Statistics_BothAreas(self.data_root, self.output_root, self.extra_info_CA1, self.extra_info_CA3,
@@ -412,8 +482,6 @@ class Statistics_Robustness:
     def calc_equalize_sessions_by_cells_both_areas(self, params):
         selection_sizes = [params["max cells CA1"], params["max cells CA3"]]
         n_subsets = params["runs"]
-        self.n_subsets_equalize_by_cells_both_areas = n_subsets  # TODO: obsolete
-        self.selection_sizes_equalize_by_cells_both_areas = selection_sizes  # TODO: obsolete
         tests = self.handle_both_areas(self.__equalize_by_cells, "session", n_subsets, selection_sizes)
         self.tests_equalize_by_cells_across_areas = tests
         return tests
@@ -421,8 +489,6 @@ class Statistics_Robustness:
     def calc_equalize_sessions_by_pfs_both_areas(self, params):
         selection_sizes = [params["max pfs CA1"], params["max pfs CA3"]]
         n_subsets = params["runs"]
-        self.n_subsets_equalize_by_pfs_both_areas = n_subsets  # TODO: obsolete
-        self.selection_sizes_equalize_by_pfs_both_areas = selection_sizes  # TODO: obsolete
         tests = self.handle_both_areas(self.__equalize_by_pfs, "session", n_subsets, selection_sizes)
         self.tests_equalize_by_pfs_across_areas = tests
         return tests
@@ -430,8 +496,6 @@ class Statistics_Robustness:
     def calc_equalize_animals_by_cells_both_areas(self, params):
         selection_sizes = [params["max cells CA1"], params["max cells CA3"]]
         n_subsets = params["runs"]
-        self.n_subsets_equalize_by_pfs_both_areas = n_subsets  # TODO: obsolete
-        self.selection_sizes_equalize_by_pfs_both_areas = selection_sizes  # TODO: obsolete
         tests = self.handle_both_areas(self.__equalize_by_cells, "animal", n_subsets, selection_sizes)
         self.tests_equalize_by_pfs_across_areas = tests
         return tests
@@ -439,8 +503,6 @@ class Statistics_Robustness:
     def calc_equalize_animals_by_pfs_both_areas(self, params):
         selection_sizes = [params["max pfs CA1"], params["max pfs CA3"]]
         n_subsets = params["runs"]
-        self.n_subsets_equalize_by_pfs_both_areas = n_subsets  # TODO: obsolete
-        self.selection_sizes_equalize_by_pfs_both_areas = selection_sizes  # TODO: obsolete
         tests = self.handle_both_areas(self.__equalize_by_pfs, "animal", n_subsets, selection_sizes)
         self.tests_equalize_by_pfs_across_areas = tests
         return tests
@@ -661,48 +723,34 @@ if __name__ == "__main__":
     extra_info = ""
 
     stats = Statistics_Robustness(data_root, output_root, extra_info_CA1, extra_info_CA3, extra_info)
-    #stats.calc_equalize_animals_by_sessions(selection_sizes=[3,5])
-    #stats.calc_equalize_sessions_by_cells(selection_sizes=[15,15], n_runs=1000)
+    stats.calc_params()
     #stats.plot_tests_within_area()
-    #stats.summarize_results()
-    #stats.omission = False  # omit session if pfs fewer than selection
-    #stats.calc_equalize_both_areas(selection_sizes=[10,10], n_subsets=100, eq_type="pfs")
     #stats.plot_tests_across_areas(eq_type="pfs")
 
-    params_AxS = {
-        "max sessions CA1": 10,  #3
-        "max sessions CA3": 10   #5
-    }
-    params_AxC = {
-        "max cells CA1": 15,
-        "max cells CA3": 15,
-        "runs": 100
-    }
-    params_AxPFs = {
-        "max pfs CA1": 15,
-        "max pfs CA3": 15,
-        "runs": 100
-    }
-    params_SxC = {
-        "max cells CA1": 15,
-        "max cells CA3": 15,
-        "runs": 100
-    }
-    params_SxPFs = {
-        "max pfs CA1": 15,
-        "max pfs CA3": 15,
-        "runs": 100
-    }
-    stats.equalize("single area", "animal", "session", params_AxS, export=True)
-    stats.equalize("single area", "animal", "cells", params_AxC, export=True)
-    stats.equalize("single area", "animal", "pfs", params_AxPFs, export=True)
-    stats.equalize("single area", "session", "cells", params_SxC, export=True)
-    stats.equalize("single area", "session", "pfs", params_SxPFs, export=True)
+    ######## equalized to min #########
+    p = PARAMS["equalized to min"]
+    stats.equalize("min", "single area", "animal", "session", p["AxS"]["single area"], export=True)
+    stats.equalize("min", "single area", "animal", "cells", p["AxC"]["single area"], export=True)
+    stats.equalize("min", "single area", "animal", "pfs", p["AxPFs"]["single area"], export=True)
+    stats.equalize("min", "single area", "session", "cells", p["SxC"]["single area"], export=True)
+    stats.equalize("min", "single area", "session", "pfs", p["SxPFs"]["single area"], export=True)
 
-    stats.equalize("both areas", "animal", "session", params_AxS, export=True)
-    stats.equalize("both areas", "animal", "cells", params_AxC, export=True)
-    stats.equalize("both areas", "animal", "pfs", params_AxPFs, export=True)
-    stats.equalize("both areas", "session", "cells", params_SxC, export=True)
-    stats.equalize("both areas", "session", "pfs", params_SxPFs, export=True)
+    stats.equalize("min", "both areas", "animal", "session", p["AxS"]["both areas"], export=True)
+    stats.equalize("min", "both areas", "animal", "cells", p["AxC"]["both areas"], export=True)
+    stats.equalize("min", "both areas", "animal", "pfs", p["AxPFs"]["both areas"], export=True)
+    stats.equalize("min", "both areas", "session", "cells", p["SxC"]["both areas"], export=True)
+    stats.equalize("min", "both areas", "session", "pfs", p["SxPFs"]["both areas"], export=True)
 
-    pass
+    ######### equalized to average ##########
+    p = PARAMS["equalized to avg"]
+    stats.equalize("avg", "single area", "animal", "session", p["AxS"]["single area"], export=True)
+    stats.equalize("avg", "single area", "animal", "cells", p["AxC"]["single area"], export=True)
+    stats.equalize("avg", "single area", "animal", "pfs", p["AxPFs"]["single area"], export=True)
+    stats.equalize("avg", "single area", "session", "cells", p["SxC"]["single area"], export=True)
+    stats.equalize("avg", "single area", "session", "pfs", p["SxPFs"]["single area"], export=True)
+
+    stats.equalize("avg", "both areas", "animal", "session", p["AxS"]["both areas"], export=True)
+    stats.equalize("avg", "both areas", "animal", "cells", p["AxC"]["both areas"], export=True)
+    stats.equalize("avg", "both areas", "animal", "pfs", p["AxPFs"]["both areas"], export=True)
+    stats.equalize("avg", "both areas", "session", "cells", p["SxC"]["both areas"], export=True)
+    stats.equalize("avg", "both areas", "session", "pfs", p["SxPFs"]["both areas"], export=True)
