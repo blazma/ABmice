@@ -29,10 +29,11 @@ class PlaceField:
         self.end_lap = -1
         self.dF_F_maxima = np.empty(0)
         self.formation_gain = np.nan
-        self.formation_gain_AL5 = np.nan  # AL5 = after (active) lap 5
+        self.formation_gain_AL5 = np.nan  # AL5 = after active lap 5
         self.initial_shift = np.nan
         self.initial_shift_AL5 = np.nan
-        self.coms = []  # stores COMs of each active lap
+        self.coms = []  # COM for each active lap
+        self.coms_windows = []  # first element: formation bin, rest of the elements: each COM avg. in shift window starting from FL
         self.com_diffs = [0]  # shift scores
         self.spearman_corrs = (np.nan, np.nan)  # r, p
         self.linear_coeffs = (np.nan, np.nan)  # m, b; from the linear regression of shift scores
@@ -44,6 +45,9 @@ class PlaceField:
         self.formation_rate_sum = -1  # integral of firing rate should be proportional to Ca2+ signal size
         self.cv_coms = -1
         self.com_diffs_lap_by_lap = []
+        self.is_overextended = False
+        #self.spike_counts_whole_cell = []
+        self.spike_counts_pf = []
 
         # BTSP signatures`
         self.has_high_gain = False
@@ -63,11 +67,13 @@ class PlaceField:
             "session id": self.sessionID,
             "cell id": self.cellid,
             "corridor": self.cor_index,
+            "corridor laps": self.i_laps,
             "history": self.history,
             "formation lap history": self.formation_lap_history,
             "category": self.category,
             "lower bound": self.bounds[0],
             "upper bound": self.bounds[1],
+            "active laps": self.active_laps,
             "formation lap": self.formation_lap,
             "formation lap uncorrected": self.formation_lap_uncorrected,
             "formation bin": self.formation_bin,
@@ -85,22 +91,32 @@ class PlaceField:
             "linear fit m": self.linear_coeffs[0],
             "linear fit b": self.linear_coeffs[1],
             "formation rate sum": self.formation_rate_sum,
+            "COMs": self.coms,
+            "PF COM": self.bounds[0]+np.nanmean(np.array(self.coms)),
+            "COMs windows": self.coms_windows,
             "CV(COMs)": self.cv_coms,
             "shift scores": [self.com_diffs],
             "dF/F maxima": [self.dF_F_maxima],
             "dCOM (lap-by-lap)": [self.com_diffs_lap_by_lap],
             "session length": self.rate_matrix.shape[1],
+            "is overextended": self.is_overextended,
+            #"spike counts (whole cell)": self.spike_counts_whole_cell,
+            "spike counts": self.spike_counts_pf,
             "notes": self.notes
         }
         df = pd.DataFrame.from_dict([df_dict])
         return df
 
-    def set_bounds(self, bounds):
+    def set_bounds(self, bounds, without_fbe=False):
         lb, ub = bounds[0], bounds[1]
+        if without_fbe:
+            self.bounds = (lb, ub)
+            return
         if ub + self.params["FORWARDS_BOUND_EXTENSION"] < self.N_pos_bins:
             ub += self.params["FORWARDS_BOUND_EXTENSION"]
         else:
             ub = self.N_pos_bins
+            self.is_overextended = True
         self.bounds = (lb, ub)
 
     def find_formation_lap(self, start_lap=0, correction=False):
@@ -228,6 +244,19 @@ class PlaceField:
                 com_diffs.append(np.nan)
         self.com_diffs_lap_by_lap = np.array(com_diffs)
 
+    #def calculate_PF_COM(self):
+    #    lb, ub = self.bounds
+    #    ub = ub + 1 if ub != self.N_pos_bins else ub  # ub+1 because we want to include ub (closed set from right too)
+    #    pf_bins_range = np.arange(0, ub - lb)
+    #
+    #    COM_laps = []
+    #    for lap in self.active_laps:
+    #        rates_lap = self.rate_matrix_pf[:,lap]
+    #        COM_lap = np.average(pf_bins_range, weights=rates_lap)
+    #        COM_laps.append(COM_lap)
+    #    COM_laps = np.array(COM_laps)
+    #    self.COM_PF = ...
+
     def calculate_shift_scores(self):
         rate_matrix_active_laps = self.rate_matrix_pf[:,self.active_laps]
 
@@ -235,23 +264,33 @@ class PlaceField:
         ub = ub + 1 if ub != self.N_pos_bins else ub  # ub+1 because we want to include ub (closed set from right too)
         #ub = ub if ub != self.N_pos_bins else ub  # ub+1 because we want to include ub (closed set from right too)
         pf_bins_range = np.arange(0, ub - lb)
-
         if all(self.rate_matrix_pf[:,0] == 0):
             self.add_note("empty formation lap")
             return
 
-        formation_bin = np.average(pf_bins_range, weights=self.rate_matrix_pf[:, 0])
+        formation_lap = self.rate_matrix_pf[:, 0]
+        formation_lap_filt = formation_lap[~np.isnan(formation_lap)]
+        pf_bins_range_filt = pf_bins_range[~np.isnan(formation_lap)]
+        formation_bin = np.average(pf_bins_range_filt, weights=formation_lap_filt)
+        self.coms_windows.append(formation_bin)
         self.coms.append(formation_bin)
         for i in range(1, len(self.active_laps) - self.params["SHIFT_WINDOW"]):
             rate_matrix_window = rate_matrix_active_laps[:, i:i + self.params["SHIFT_WINDOW"]]
 
             # moving average of centers of mass (com)
             coms_window = np.zeros(self.params["SHIFT_WINDOW"])
-            for i in range(self.params["SHIFT_WINDOW"]):
-                rates_lap = rate_matrix_window[:,i]
-                coms_window[i] = np.average(pf_bins_range, weights=rates_lap)
+            for j in range(self.params["SHIFT_WINDOW"]):
+                rates_lap = rate_matrix_window[:,j]
+                rates_lap_filt = rates_lap[~np.isnan(rates_lap)]
+
+                pf_bins_range = np.arange(0, ub - lb)
+                pf_bins_range_filt = pf_bins_range[~np.isnan(rates_lap)]
+
+                coms_window[j] = np.average(pf_bins_range_filt, weights=rates_lap_filt)
+                if j == 0:  # store first COM of each shift window
+                    self.coms.append(coms_window[j])
             avg_com_window = coms_window.mean()
-            self.coms.append(avg_com_window)
+            self.coms_windows.append(avg_com_window)
             com_diff = avg_com_window - formation_bin
             self.com_diffs.append(com_diff)
 
@@ -262,7 +301,7 @@ class PlaceField:
                 self.has_backwards_shift = True
 
         # initial shift after 5 laps
-        coms_AL5 = self.coms[5:]
+        coms_AL5 = self.coms_windows[5:]
         if len(coms_AL5) == 0:
             return  # not enough active laps to calculate
         reference_bin = coms_AL5[0]

@@ -1,14 +1,24 @@
-import os
 import openpyxl
 import json
 import logging
-import argparse
+import tqdm
 import warnings
 warnings.filterwarnings("ignore")
 
 from ImageAnal import *
 from constants import ANIMALS, SESSIONS_TO_IGNORE, DISENGAGEMENT
 from utils import makedir_if_needed
+
+import os
+import sys
+class HiddenPrints:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
 
 
 class TunedCellList:
@@ -106,11 +116,12 @@ class TunedCellList:
 
     def create_tuned_cell_list(self):
         for animal in self.animals:
+            print(animal)
             logging.info(f"creating tuned cell list for animal {animal}")
             sessions_all = self._read_meta(animal)
 
             cell_stats_df = None
-            for current_session in sessions_all:
+            for current_session in tqdm.tqdm(sessions_all):
                 # TODO: debug only
                 #if current_session != "srb402_240307":
                 #    continue
@@ -122,7 +133,8 @@ class TunedCellList:
                 #    continue
 
                 try:
-                    ISD = self._load_session(sessions_all, current_session)
+                    with HiddenPrints():
+                        ISD = self._load_session(sessions_all, current_session)
                 except Exception:
                     logging.exception(f"loading session {current_session} failed; skipping")
                     continue
@@ -136,7 +148,8 @@ class TunedCellList:
                         cells_to_shuffle = np.arange(ISD.N_cells)
                     else:
                         cells_to_shuffle = ISD.active_cells
-                    ISD.calc_shuffle(cells_to_shuffle, 1000, 'shift', batchsize=12)
+                    with HiddenPrints():
+                        ISD.calc_shuffle(cells_to_shuffle, 1000, 'shift', batchsize=12)
                 except Exception:
                     logging.exception(f"loading/calculating shuffle data failed for session {current_session}; skipping")
                     continue
@@ -175,20 +188,15 @@ class TunedCellList:
                 continue
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
-    parser.add_argument("-dp", "--data-path", required=True)
-    parser.add_argument("-op", "--output-path", default=os.getcwd())
-    parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
-    args = parser.parse_args()
+    area = "CA3"
+    data_path = f"D:/{area}/"
+    output_path = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual"
+    extra_info = "NFafter5Laps"
 
     shuffled_laps = False
-    extra_info = ""
-    if args.extra_info:
-        if "shuffled_laps" in args.extra_info:
+    if extra_info:
+        if "shuffled_laps" in extra_info:
             shuffled_laps = True
-        extra_info = args.extra_info
 
-    tcl = TunedCellList(args.area, args.data_path, args.output_path, extra_info=extra_info,
-                        shuffled_laps=shuffled_laps)
+    tcl = TunedCellList(area, data_path, output_path, extra_info=extra_info, shuffled_laps=shuffled_laps)
     tcl.create_tuned_cell_list()

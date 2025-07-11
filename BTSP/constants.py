@@ -9,7 +9,10 @@ ANIMALS = {
             "srb231",
             "srb251",
             "srb402",
-            "srb410",],
+            "srb410",
+            "srb504",
+            "srb504a",
+            "srb517"],
     "CA3": ["srb231",
             "srb251",
             "srb269",
@@ -17,7 +20,8 @@ ANIMALS = {
             "srb363",
             "srb377",
             "srb402",
-            "srb410",]
+            "srb410",
+            "srb529"]
 }
 
 AREA_PALETTE = {
@@ -25,12 +29,10 @@ AREA_PALETTE = {
     "CA3": "#FFB0BA"
 }
 ANIMALS_PALETTE = {
-    #"CA1": ["#00DB55", "#00C7DB", "#274FDB", "#B25ADB"],
-    #"CA1": ["#00FFFF", "#0000FF", "#4169E1", "#6A5ACD", "#800080", "#9932CC", "#00CED1", "#00FFFF", "#0000FF"],
-    "CA1": ["#0065ff", "#da4cda", "#ff51a1", "#ff876d", "#ffc355", "#f9f871", "#bfa975", "#847655", "#464555"],
-    #"CA3": ["#D435FD", "#FF9733", "#E7FF33", "#FD3566", "#FFCD33", "#88FF4D"],
-    #"CA3": ["#FFD700", "#FF69B4", "#FF7F00", "#32CD32", "#FFFA00", "#ADFF2F", "#FF0000", "#FFD700", "#FF69B4"]
-    "CA3": ["#ff3700", "#ff005f", "#ee00a8", "#a046e3", "#006cfe", "#007bf2", "#74b2df", "#d0f5ff", "#567b97"]
+    #"CA1": ["#FF00FF", "#005ACF", "#E6AFFF", "#A0FAFF", "#4C99FF", "#3BFFB0", "#BB8DFF", "#00C77B", "#414BFF", "#A6FF9E", "#FF6EB4"],
+    "CA1": ["#E6194B", "#3CB44B", "#FFE119", "#4363D8", "#F58231", "#911EB4", "#42D4F4", "#F032E6", "#BFEF45", "#FABED4", "#469990"],
+    #"CA3": ["#ff3700", "#ff005f", "#ee00a8", "#a046e3", "#006cfe", "#007bf2", "#74b2df", "#d0f5ff", "#567b97"]
+    "CA3": ["#911EB4", "#42D4F4", "#E6194B", "#3CB44B", "#FFE119", "#4363D8", "#F032E6", "#BFEF45"]
 }
 
 SESSIONS_TO_IGNORE = {

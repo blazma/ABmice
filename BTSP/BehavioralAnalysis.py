@@ -47,6 +47,7 @@ class BehaviorAnalysis:
     def _read_meta(self, animal):
         logging.info(f"reading meta file at {self.meta_xlsx}")
         wb = openpyxl.load_workbook(filename=f"{self.data_path}/{self.meta_xlsx}")
+        print(f"{self.data_path}/{self.meta_xlsx}")
         ws = wb.worksheets[0]
         sessions = {}
         for row in ws.rows:
@@ -172,6 +173,10 @@ class BehaviorAnalysis:
                 mean_SNR = np.round(np.nanmean(ISD.cell_SNR), 2)
                 std_SNR = np.round(np.nanstd(ISD.cell_SNR), 2)
 
+                avgspeed_matrix = np.array([lap.ave_speed for lap in ISD.ImLaps]).T  # (bins x laps)
+                avgspeed_matrix_14 = avgspeed_matrix[:,ISD.i_corridors == 14]
+                avgspeed_matrix_15 = avgspeed_matrix[:,ISD.i_corridors == 15]
+
                 self.behavior_dict_sess = {
                     "area": area,
                     "animalID": animal,
@@ -186,6 +191,8 @@ class BehaviorAnalysis:
                     "#corrs": ISD.N_corridors,
                     "corrIDs": ISD.corridors,
                     "#laps(total)": ISD.N_ImLaps,
+                    "avgspeed matrix (14)": avgspeed_matrix_14,
+                    "avgspeed matrix (15)": avgspeed_matrix_15
                 }
                 self._determine_experimental_protocol(ISD)
                 self._find_lap_numbers(ISD)
@@ -227,19 +234,10 @@ class BehaviorAnalysis:
 
 
 if __name__ == "__main__":
-    # parse arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
-    parser.add_argument("-dp", "--data-path", required=True)
-    parser.add_argument("-op", "--output-path", default=os.getcwd())
-    parser.add_argument("-x", "--extra-info", default="")  # don't provide _ in the beginning
-    args = parser.parse_args()
-
-    area = args.area
-    data_path = args.data_path
-    output_path = args.output_path
-    extra_info = args.extra_info
-
+    area = "CA1"
+    data_path = f"D:/{area}/"
+    output_path = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual"
+    extra_info = ""
     generate_all_plots = True
 
     # run analysis

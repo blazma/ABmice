@@ -21,8 +21,8 @@ def use_font():
 data_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
 output_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
 
-extra_info_CA1 = ""
-extra_info_CA3 = ""
+extra_info_CA1 = "NFafter5Laps"
+extra_info_CA3 = "NFafter5Laps"
 
 CA1_stat = BtspStatistics("CA1", data_root, output_root, extra_info_CA1, is_shift_criterion_on=True, is_notebook=False)
 CA1_stat.load_data()
@@ -35,8 +35,8 @@ CA3_stat.filter_low_behavior_score()
 CA3_stat.calc_shift_gain_distribution(unit="cm")
 
 base_folders = {
-    "CA1": fr"C:\Users\martin\home\phd\btsp_project\analyses\manual\tuned_cells\CA1{extra_info_CA1}",
-    "CA3": fr"C:\Users\martin\home\phd\btsp_project\analyses\manual\tuned_cells\CA3{extra_info_CA3}"
+    "CA1": fr"C:\Users\martin\home\phd\btsp_project\analyses\manual\tuned_cells\CA1_{extra_info_CA1}",
+    "CA3": fr"C:\Users\martin\home\phd\btsp_project\analyses\manual\tuned_cells\CA3_{extra_info_CA3}"
 }
 
 df = pd.concat((CA1_stat.cell_stats_df, CA3_stat.cell_stats_df))
@@ -78,7 +78,7 @@ ax.spines["top"].set_visible(False)
 ax.spines["right"].set_visible(False)
 ax.spines["bottom"].set_visible(False)
 ax.set_xticks([], [])
-ax.set_ylim([0,8])
+ax.set_ylim([0,7])
 ax.set_xlabel("")
 output_root = r"C:\Users\martin\home\phd\btsp_project\analyses\manual\statistics"
 plt.tight_layout()
@@ -96,4 +96,5 @@ plt.close()
 
 # statistics
 import scipy
-scipy.stats.mannwhitneyu(tcs_df[tcs_df["area"] == "CA1"]["event rate"].values, tcs_df[tcs_df["area"] == "CA3"]["event rate"].values)
+test = scipy.stats.mannwhitneyu(tcs_df[tcs_df["area"] == "CA1"]["event rate"].values, tcs_df[tcs_df["area"] == "CA3"]["event rate"].values)
+print(test.pvalue)

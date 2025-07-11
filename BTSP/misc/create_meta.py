@@ -4,25 +4,30 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import pandas
 
-area = "CA1"
+area = "CA3"
 base_folder = rf"D:\{area}\data"
 
 animals = {
     "CA1": [#"KS028",
             #"KS029",
             #"KS030",
-            "srb128"],
+            #"srb128"],
             #"srb131",
             #"srb231",
             #"srb251",
             #"srb402"],
-    "CA3": ["srb231",
-            "srb251",
-            "srb269",
-            "srb270",
-            "srb363",
-            "srb377",
-            "srb402"]
+            "srb498"], #old animal - different proj.
+            #"srb504",
+            #"srb504a",
+            #"srb517"],
+    "CA3": [#"srb231",
+            #"srb251",
+            #"srb269",
+            #"srb270",
+            #"srb363",
+            #"srb377",
+            #"srb402"
+            "srb529"]
 }
 
 meta_content = []
@@ -57,4 +62,5 @@ for animal in animals[area]:
         meta_content.append(meta_row)
 
 meta_df = pandas.DataFrame.from_dict(meta_content)
-meta_df.to_excel(f"{base_folder}/{area}_meta_srb128.xlsx", index=False)
+meta_df.to_excel(f"{base_folder}/{area}_meta_srb529.xlsx", index=False)
+

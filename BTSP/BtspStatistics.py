@@ -13,16 +13,24 @@ import pickle
 import argparse
 import json
 import pingouin
+from copy import deepcopy
+from decimal import Decimal
 
-from BTSP.constants import ANIMALS, CATEGORIES, CATEGORIES_DARK, ANIMALS_PALETTE, AREA_PALETTE, BEHAVIOR_SCORE_THRESHOLD
+try:
+    from BTSP.constants import ANIMALS, CATEGORIES, CATEGORIES_DARK, ANIMALS_PALETTE, AREA_PALETTE, BEHAVIOR_SCORE_THRESHOLD
+    from BTSP.BehavioralStatistics import BehaviorStatistics
+except ModuleNotFoundError:
+    from constants import ANIMALS, CATEGORIES, CATEGORIES_DARK, ANIMALS_PALETTE, AREA_PALETTE, BEHAVIOR_SCORE_THRESHOLD
+    from BehavioralStatistics import BehaviorStatistics
 from utils import grow_df, makedir_if_needed
 import sklearn
 import scipy
-from BTSP.BehavioralStatistics import BehaviorStatistics
 
 
 class BtspStatistics:
-    def __init__(self, area, data_path, output_path, extra_info="", is_shift_criterion_on=True, is_notebook=False, history="ALL"):
+    def __init__(self, area, data_path, output_path, extra_info="",
+                 is_shift_criterion_on=True, is_drift_criterion_on=True,
+                 is_notebook=False, history="ALL", filter_overextended=False):
         self.area = area
         self.animals = ANIMALS[area]
         self.data_path = data_path
@@ -36,19 +44,31 @@ class BtspStatistics:
         self.bin_length = 2.13  # cm
         self._use_font()
         self.is_shift_criterion_on = is_shift_criterion_on
+        self.is_drift_criterion_on = is_drift_criterion_on
         self.is_notebook = is_notebook
         self.history = history
+        self.filter_overextended = filter_overextended
 
         # set output folder
         self.extra_info = "" if not extra_info else f"_{extra_info}"
         self.output_root = f"{output_path}/statistics/{self.area}{self.extra_info}"
         if not self.is_shift_criterion_on:
             self.output_root = f"{self.output_root}_withoutShiftCriterion"
+        if not self.is_drift_criterion_on:
+            self.output_root = f"{self.output_root}_withoutDriftCriterion"
         if "historyDependent" in self.extra_info and history in ["CHANGE", "STAY"]:
             self.output_root = f"{self.output_root}_{self.history}"
             self.history_dependent = True
         else:
             self.history_dependent = False
+        if self.filter_overextended:
+            self.output_root = f"{self.output_root}_withoutOverext"
+
+        # cut track edges = ignore PFs formed in first 5 bins or in last 5 bins of track
+        self.cut_track_edges = False
+        if "cutTrackEdges" in self.extra_info:
+            self.cut_track_edges = True
+
         makedir_if_needed(f"{output_path}/statistics")
         makedir_if_needed(self.output_root)
 
@@ -59,6 +79,7 @@ class BtspStatistics:
         self.shift_gain_df = None
         self.tc_df = None
         self.tests_df = None
+        self.behavior_df = None
 
         # "debug"
         self.long_pf_only = True
@@ -99,9 +120,11 @@ class BtspStatistics:
 
         if not self.is_shift_criterion_on:
             # if shift criterion is not considered: reset all BTSP to non-BTSP PFs
-            self.pfs_df.loc[self.pfs_df["category"] == "btsp", "category"] = "non-btsp"
+            self.pfs_df.loc[self.pfs_df["category"] == "btsp", "category"] = "non-btsp"  # TODO: is this line necessary?
             # then set those non-BTSP to BTSP who satisfy gain and drift only
             self.pfs_df.loc[(self.pfs_df["has high gain"] == True) & (self.pfs_df["has no drift"] == True), "category"] = "btsp"
+        if not self.is_drift_criterion_on:
+            self.pfs_df.loc[(self.pfs_df["has high gain"] == True) & (self.pfs_df["has backwards shift"] == True), "category"] = "btsp"
         #if self.long_pf_only:
         #    self.pfs_df = self.pfs_df[self.pfs_df["end lap"] - self.pfs_df["formation lap"] > 15].reset_index()
         #self.cell_stats_df = self.cell_stats_df.reset_index().drop("index", axis=1)
@@ -126,6 +149,24 @@ class BtspStatistics:
 
         # merge srb410 with srb410a
         self.pfs_df.loc[self.pfs_df["animal id"] == "srb410a", "animal id"] = "srb410"
+        self.pfs_df.loc[self.pfs_df["animal id"] == "srb504a", "animal id"] = "srb504"
+        self.cell_stats_df.loc[self.cell_stats_df["animalID"] == "srb504a", "animalID"] = "srb504"
+
+        # handle "after 5 laps" formation criteria for NF
+        if "NFafter5Laps" in self.extra_info:
+            self.pfs_df = self.pfs_df[(self.pfs_df["newly formed"] == False) |
+                                      ((self.pfs_df["newly formed"] == True) &
+                                       (self.pfs_df["formation lap"] > 5))]
+
+        # cut off place fields formed in edge regions
+        if self.cut_track_edges:
+            self.pfs_df = self.pfs_df[(self.pfs_df["category"] == "unreliable") |
+                                      ((self.pfs_df["formation bin"] >= 5) &
+                                       (self.pfs_df["formation bin"] <= 70))]
+
+        # filter overextended PFs (i.e where PF ub + forwards bounds extension couldn't fully fit the track)
+        if self.filter_overextended:
+            self.pfs_df = self.pfs_df[self.pfs_df["is overextended"] == False]
 
     def filter_low_behavior_score(self):
         # filter sessions where behavior score is lower than threshold -- to homogenize dataset
@@ -142,6 +183,8 @@ class BtspStatistics:
         behavior_scores = behavior_scores.rename({"sessionID": "session id"}, axis=1)  # rename in order to do merge with pfs_df
         self.pfs_df = self.pfs_df.merge(behavior_scores, on="session id")
         self.pfs_df = self.pfs_df[self.pfs_df["behavior score"] > BEHAVIOR_SCORE_THRESHOLD].reset_index()
+
+        self.behavior_df = behav_stats.behavior_df[behav_stats.behavior_df["behavior score"] > BEHAVIOR_SCORE_THRESHOLD]
 
     def load_cell_data(self):
         def get_tc(session_id, cellid, corridor):
@@ -205,27 +248,28 @@ class BtspStatistics:
 
         # various proportions
         w, h = 16, 8
-        w_poster, h_poster = 10, 18
+        w_poster, h_poster = 15, 15
         w_pres, h_pres = 10, 10
 
-        #w, h = w_pres, h_pres
-        scale_poster = 0.275
-        scale = 0.4
+        w, h = w_poster, h_poster
+
+        scale = 0.27
         fig, ax = plt.subplots(figsize=(scale*w, scale*h), dpi=dpi)
-        sns.boxplot(self.cell_stats_df[["total cells", "active cells", "tuned cells"]], color=AREA_PALETTE[self.area],
-                    ax=ax, width=0.85, showfliers=False)
+        #sns.boxplot(self.cell_stats_df[["total cells", "active cells", "tuned cells"]], color=AREA_PALETTE[self.area],
+        #            ax=ax, width=0.66, showfliers=False)
+        cell_stats = self.cell_stats_df.rename(columns={"active cells":"active", "total cells":"total", "tuned cells":"tuned"})
         if swarmplot:
-            sns.swarmplot(data=self.cell_stats_df[["sessionID", "animalID", "total cells", "active cells", "tuned cells"]].melt(id_vars=["sessionID", "animalID"]),
-                          x="variable", y="value", hue="animalID", s=5, alpha=0.85, palette=ANIMALS_PALETTE[self.area], ax=ax,
-                          linewidth=1, dodge=True)  # 4 = number of animals (nr. of distinct hues
-            ax.legend(loc='upper right', title="animals", bbox_to_anchor=(1.25, 1.35))
-        ax.set_ylabel("# cells")
+            sns.swarmplot(data=cell_stats[["sessionID", "animalID", "total", "active", "tuned"]].melt(id_vars=["sessionID", "animalID"]),
+                          x="variable", y="value", hue="animalID", s=4.7, alpha=1, palette=ANIMALS_PALETTE[self.area], ax=ax,
+                          linewidth=0.5, dodge=False)  # 4 = number of animals (nr. of distinct hues
+            ax.legend(loc='upper right', title="animals", bbox_to_anchor=(1, 1.2), ncols=2)
+        ax.set_ylabel("number of cells")
         ax.spines[['right', 'top']].set_visible(False)
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
         ax.set_xlabel("")
         if self.area == "CA1":
-            ax.set_ylim([0,2000])
-            ax.set_yticks(np.linspace(0,2000,9))
+            ax.set_ylim([0,3500])
+            ax.set_yticks(np.linspace(0,3500,8))
         else:
             ax.set_ylim([0,200])
             ax.set_yticks(np.linspace(0,200,9))
@@ -287,24 +331,28 @@ class BtspStatistics:
             scale = 1
             dpi = 150
         else:
-            scale = 0.75
+            scale = 0.67
             #scale = 1
             dpi=125
-        fig, ax = plt.subplots(figsize=(scale*3, scale*3), dpi=dpi, num=1, clear=True)  # , gridspec_kw={"width_ratios": [1,3]}
-        pfs_by_category = self.pfs_df.groupby(["category", "category_order"]).count().sort_values(by="category_order")
+        fig, ax = plt.subplots(figsize=(scale*3.6, scale*3.6), dpi=dpi, num=1, clear=True)  # , gridspec_kw={"width_ratios": [1,3]}
+        pfs_df_relabeled = deepcopy(self.pfs_df)
+        pfs_df_relabeled.loc[pfs_df_relabeled["category"] == "early", "category"] = "established"
+        pfs_by_category = pfs_df_relabeled.groupby(["category", "category_order"]).count().sort_values(by="category_order")
         pfs_by_category = pfs_by_category.reset_index().set_index("category")  # so we can get rid of the category ordering from the label names
-        pfs_by_category.plot(kind="bar", y="session id", ax=ax, color=self.categories_colors_RGB, legend=False)
-        if self.area == "CA1":
-            ax.set_yticks(np.linspace(0,8000,9))
-        else:
-            ax.set_yticks(np.linspace(0,500,5))
-            if "noCaThreshold" in self.extra_info:
-                ax.set_yticks(np.linspace(0, 800, 9))
-        ax.set_title(f"n = {len(self.pfs_df)}")
+        pfs_by_category.plot(kind="bar", y="session id", ax=ax, color=self.categories_colors_RGB, legend=False, width=0.66)
+        ax.bar_label(ax.containers[0])
+        #if self.area == "CA1":
+        #    ax.set_yticks(np.linspace(0,20000,11))
+        #else:
+        #    ax.set_yticks(np.linspace(0,400,5))
+        #    if "noCaThreshold" in self.extra_info:
+        #        ax.set_yticks(np.linspace(0, 800, 9))
+        ax.get_yaxis().set_visible(False)
+        ax.set_title(f"n = {len(self.pfs_df)}", loc="right")
         ax.set_ylabel("# place fields")
         ax.set_xlabel("")
         ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode="anchor")
-        ax.spines[['right', 'top']].set_visible(False)
+        ax.spines[['right', 'top', 'left']].set_visible(False)
         #plt.suptitle(f"Number of place fields in {self.area}")
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_place_fields.pdf")
@@ -365,7 +413,8 @@ class BtspStatistics:
         #sns.boxplot(data=self.pf_proportions_by_category_df, ax=ax, palette=self.categories_colors_RGB,
         #            showfliers=False, width=0.7)
         #sns.swarmplot(data=self.pf_proportions_by_category_df, ax=ax, palette=self.categories_colors_RGB, alpha=0.75, size=4)
-        sns.violinplot(data=self.pf_proportions_by_category_df, ax=ax, palette=self.categories_colors_RGB,
+        pf_props_relabeled = self.pf_proportions_by_category_df.rename(columns={"early": "established"})
+        sns.violinplot(data=pf_props_relabeled, ax=ax, palette=self.categories_colors_RGB,
                       alpha=1.0, saturation=1, cut=0, inner_kws={"box_width": 3.5})
         # plt.title(f"[{area}] Proportion of various place field categories by session")
         ax.spines[['right', 'top']].set_visible(False)
@@ -562,17 +611,45 @@ class BtspStatistics:
     def calc_shift_gain_distribution(self, unit="cm"):
         #shift_gain_df = self.pfs_df[["category", "newly formed", "initial shift", "formation gain", "formation rate sum"]].reset_index(drop=True)
         shift_gain_df = self.pfs_df[["area", "animal id", "session id", "cell id", "corridor", "category",
-                                     "newly formed", "initial shift", "initial shift AL5",
-                                     "formation gain", "formation gain AL5", "formation rate sum",
-                                     "formation lap"]].reset_index(drop=True)
+                                     "newly formed", "initial shift", "initial shift AL5", "formation bin",
+                                     "formation gain", "formation gain AL5", "formation rate sum", "PF COM",
+                                     "formation lap", "is overextended", "category_order", "lower bound", "upper bound"]].reset_index(drop=True)
         shift_gain_df = shift_gain_df[(shift_gain_df["initial shift"].notna()) & (shift_gain_df["formation gain"].notna())]
         shift_gain_df["log10(formation gain)"] = np.log10(shift_gain_df["formation gain"])
         shift_gain_df["log10(formation gain AL5)"] = np.log10(shift_gain_df["formation gain AL5"])
 
+        # shift, gain changes - formation vs AL5
+        shift_gain_df["initial shift change"] = shift_gain_df["initial shift AL5"] - shift_gain_df["initial shift"]
+        shift_gain_df["log10(formation gain) change"] = shift_gain_df["log10(formation gain AL5)"] - shift_gain_df["log10(formation gain)"]
+
         if unit == "cm":
             shift_gain_df["initial shift"] = self.bin_length * shift_gain_df["initial shift"]
             shift_gain_df["initial shift AL5"] = self.bin_length * shift_gain_df["initial shift AL5"]
-        self.shift_gain_df = shift_gain_df.reset_index(drop=True)
+
+        ### big TODO: the following should be done when self.pfs_df is formed otherwise there could be inconsistencies!
+        ###########################################################################
+        ############### ANALYZE NF LIKE NORMAL, ANALYZE ES ONLY FROM 5th ACTIVE LAP
+        # ESAL5: established PFs analyzed only after active lap 5; NF PFs left alone (analyzed from beginning)
+        #if "ESAL5" in self.extra_info:
+        sg_ESAL5 = deepcopy(shift_gain_df)
+        # 1) split df into NF and ES groups
+        sg_ESAL5_NF = sg_ESAL5[sg_ESAL5["newly formed"] == True]
+        sg_ESAL5_ES = sg_ESAL5[sg_ESAL5["newly formed"] == False]
+
+        # 2) remove original shift and gain columns from ES df
+        sg_ESAL5_ES = sg_ESAL5_ES.drop("initial shift", axis=1)
+        sg_ESAL5_ES = sg_ESAL5_ES.drop("log10(formation gain)", axis=1)
+
+        # 3) rename AL5 shift and gain columns to original names: so plotting function can rely on these
+        sg_ESAL5_ES = sg_ESAL5_ES.rename(columns={"initial shift AL5": "initial shift"})
+        sg_ESAL5_ES = sg_ESAL5_ES.rename(columns={"log10(formation gain AL5)": "log10(formation gain)"})
+
+        # 4) clean df of nan values (which can happen due to short-living established PFs)
+        sg_ESAL5_ES = sg_ESAL5_ES[(~sg_ESAL5_ES["initial shift"].isna()) & (~sg_ESAL5_ES["log10(formation gain)"].isna())]
+
+        # 5) rejoin the NF and modified ES dataframes
+        sg_ESAL5 = pd.concat([sg_ESAL5_NF, sg_ESAL5_ES], ignore_index=True)
+        self.shift_gain_df = sg_ESAL5.reset_index(drop=True)
 
     def plot_highgain_vs_lowgain_shift_diffs(self):
         def take_same_sized_subsample(df):
@@ -768,7 +845,7 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
-            test_dict[f"n cells {self.area}"] = self.shift_gain_df.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n cells {self.area}"] = df.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
             test_dict[f"n pfs {self.area}"].append(len(df_newlyF[param].values)+len(df_establ[param].values))
 
             # mann-whitney u: do the 2 samples come from same distribution?
@@ -781,7 +858,7 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
-            test_dict[f"n cells {self.area}"] = self.shift_gain_df.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n cells {self.area}"] = df.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
             test_dict[f"n pfs {self.area}"].append(len(df_newlyF[param].values)+len(df_establ[param].values))
 
             # kolmogorov-smirnov: do the 2 samples come from the same distribution?
@@ -794,7 +871,7 @@ class BtspStatistics:
             test_dict["statistic"].append(test.statistic)
             test_dict["p-value"].append(test.pvalue)
             test_dict["log p-value"].append(np.log10(test.pvalue))
-            test_dict[f"n cells {self.area}"] = self.shift_gain_df.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
+            test_dict[f"n cells {self.area}"] = df.groupby(["area", "animal id", "session id"])["cell id"].nunique().sum()
             test_dict[f"n pfs {self.area}"].append(len(df_newlyF[param].values)+len(df_establ[param].values))
 
             # wilcoxon
@@ -893,21 +970,25 @@ class BtspStatistics:
             sg_df = sg_df[sg_df["category"] != "transient"]
             suffix = "_withoutTransient"
 
-        ss_cc = take_same_sized_subsample(sg_df)
-        ss_cc.to_excel(f"{self.output_root}/data_shift_gain.xlsx")
+        #ss_cc = take_same_sized_subsample(sg_df)
+        #ss_cc.to_excel(f"{self.output_root}/data_shift_gain.xlsx")
         self.pfs_df.to_excel(f"{self.output_root}/data_pfs_df.xlsx")
         #ss_cc = convert_to_z_score(ss_cc)
 
         palette = ["#00B0F0", "#F5B800"]
         if self.area == "CA1":
-            alpha=0.4
+            alpha=0.15
+            s=12
         else:
-            alpha=0.8
+            alpha=0.6
+            s=25
 
         is_legend = False
         fig, ax = plt.subplots()
-        g = sns.jointplot(data=ss_cc, x="initial shift", y="log10(formation gain)", palette=sns.color_palette(palette, 2),
-                      hue="newly formed", alpha=alpha, s=30, marginal_kws={"common_norm": False}, height=3.5, ratio=3, legend=is_legend)
+        g = sns.jointplot(data=sg_df.sample(frac=1), x="initial shift", y="log10(formation gain)", palette=sns.color_palette(palette, 2),
+                      hue="newly formed", alpha=alpha, s=s, marginal_kws={"common_norm": False},
+                          joint_kws={"edgecolor": 'none'}, height=4.3, ratio=3, legend=is_legend)
+        g.figure.set_figwidth(4.9)
 
         # change legend
         if is_legend:
@@ -922,22 +1003,41 @@ class BtspStatistics:
             g.ax_joint.legend_.set_bbox_to_anchor((0.5, 0.85))
 
         # change labels
-        g.set_axis_labels("initial shift [cm]", r"$log_{10}(formation\ gain)$")
+        g.set_axis_labels("shift [cm]", r"$log_{10}(gain)\ [a.u]$")
         #.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
         #plt.tight_layout()
         #sg_df_z = convert_to_z_score(self.shift_gain_df)
         plt.ylim([-1, 1])
-        xlims = [-16, 16]
+        xlims = [-20, 20]
         if unit == "cm":
-            xlims = [-16 * self.bin_length, 16 * self.bin_length]
-            plt.xticks(np.arange(-30, 40, 10))
+            xlims = [-20 * self.bin_length, 20 * self.bin_length]
+            plt.xticks(np.arange(-40, 50, 10))
         plt.xlim(xlims)
 
         #plt.ylim([-4, 4])
         #plt.xlim([-4, 4])
         plt.axvline(x=0, c="k", linestyle="--", zorder=1)
         plt.axhline(y=0, c="k", linestyle="--", zorder=1)
+
+        ax_shift = g.ax_marg_x
+        ax_shift.axvline(x=0, c="k", linestyle="--", zorder=1)
+        nf_median_shift = sg_df[sg_df["newly formed"] == True]["initial shift"].median()
+        es_median_shift = sg_df[sg_df["newly formed"] == False]["initial shift"].median()
+        ax_shift.axvline(x=es_median_shift, c=palette[0], linestyle="--", zorder=1)
+        ax_shift.axvline(x=nf_median_shift, c=palette[1], linestyle="--", zorder=1)
+        ax_shift.annotate(f"E median = {np.round(es_median_shift,2)}", (0.0, 0.8), xycoords="axes fraction", color=palette[0])
+        ax_shift.annotate(f"N median = {np.round(nf_median_shift,2)}", (0.0, 0.6), xycoords="axes fraction", color=palette[1])
+
+        ax_gain = g.ax_marg_y
+        ax_gain.axhline(y=0, c="k", linestyle="--", zorder=1)
+        nf_median_gain = sg_df[sg_df["newly formed"] == True]["log10(formation gain)"].median()
+        es_median_gain = sg_df[sg_df["newly formed"] == False]["log10(formation gain)"].median()
+        ax_gain.axhline(y=nf_median_gain, c=palette[1], linestyle="--", zorder=1)
+        ax_gain.axhline(y=es_median_gain, c=palette[0], linestyle="--", zorder=1)
+        ax_gain.annotate(f"E median = {np.round(es_median_gain,3)}", (0.2, 0.05), xycoords="axes fraction", color=palette[0])
+        ax_gain.annotate(f"N median = {np.round(nf_median_gain,3)}", (0.2, 0.0), xycoords="axes fraction", color=palette[1])
+
 
         #mean_newly_shift = ss_cc[ss_cc["newly formed"] == True]["initial shift"].mean()
         #mean_newly_gain = ss_cc[ss_cc["newly formed"] == True]["log10(formation gain)"].mean()
@@ -955,11 +1055,44 @@ class BtspStatistics:
         annotate = False
 
         self.run_tests(sg_df, params=["initial shift", "log10(formation gain)"], suffix=suffix)
-        g.figure.set_size_inches((height, height))
+        #g.figure.set_size_inches((height, height))
 
-        if annotate:
-            g.figure.set_size_inches((scale*1.81*height, scale*height))
-            plt.subplots_adjust(right=0.65)
+        nf = sg_df[sg_df["newly formed"] == True]
+        es = sg_df[sg_df["newly formed"] == False]
+        plt.annotate(f"n={len(nf)}", (20, 0.9), color=palette[1])
+        plt.annotate(f"n={len(es)}", (20, 0.8), color=palette[0])
+
+        def pvalue_label(p):
+            if p < 1e-323:  # we ran out of floating point precision
+                return "p<$10^{-323}$"
+            elif p>0.001:
+                return f"p={np.round(p, 3)}"
+            else:
+                p_dec = Decimal(str(p)).as_tuple()
+                exponent = p_dec.exponent + len(p_dec.digits) - 1
+                return "p<$10^{" + str(exponent+1) + "}$"
+
+        if self.tests_df is not None:
+            tests_animal_idxed = self.tests_df.set_index(["area", "population", "feature", "test"])
+            try:
+                ax_shift = g.ax_marg_x
+                pval_es0_shift = pvalue_label(tests_animal_idxed.loc[area, "established", "initial shift", "wilcoxon"]["p-value"])
+                pval_nf0_shift = pvalue_label(tests_animal_idxed.loc[area, "newly formed", "initial shift", "wilcoxon"]["p-value"])
+                pval_nf_es_shift = pvalue_label(tests_animal_idxed.loc[area, "reliables", "initial shift", "mann-whitney u"]["p-value"])
+                ax_shift.annotate(f"E vs 0: {pval_es0_shift}", (0.6, 0.8), xycoords="axes fraction", color=palette[0])
+                ax_shift.annotate(f"N vs 0: {pval_nf0_shift}", (0.6, 0.6), xycoords="axes fraction", color=palette[1])
+                ax_shift.annotate(f"E vs N: {pval_nf_es_shift}", (0.6, 0.4), xycoords="axes fraction")
+                #ax_shift.annotate(f"{area}\n{animal_or_session}\nn={n_sessions}", (0.0, 0.4), xycoords="axes fraction")
+
+                ax_gain = g.ax_marg_y
+                pval_es0_gain = pvalue_label(tests_animal_idxed.loc[area, "established", "log10(formation gain)", "wilcoxon"]["p-value"])
+                pval_nf0_gain = pvalue_label(tests_animal_idxed.loc[area, "newly formed", "log10(formation gain)", "wilcoxon"]["p-value"])
+                pval_nf_es_gain = pvalue_label(tests_animal_idxed.loc[area, "reliables", "log10(formation gain)", "mann-whitney u"]["p-value"])
+                ax_gain.annotate(f"E vs 0: {pval_es0_gain}", (0.2, 0.95), xycoords="axes fraction", color=palette[0])
+                ax_gain.annotate(f"N vs 0: {pval_nf0_gain}", (0.2, 0.9), xycoords="axes fraction", color=palette[1])
+                ax_gain.annotate(f"E vs N: {pval_nf_es_gain}", (0.2, 0.85), xycoords="axes fraction")
+            except KeyError:
+                print(f"failed to read test results; skip annotation on shift gain plots")
 
         #else:
         #    #g.fig.set_size_inches((height, height))
@@ -969,7 +1102,7 @@ class BtspStatistics:
         #g.fig.suptitle(f"Distribution of PFs by shift and gain ({title_suffix})")
         plt.tight_layout()
         plt.savefig(f"{self.output_root}/plot_shift_gain_distributions{suffix}.pdf")
-        plt.savefig(f"{self.output_root}/plot_shift_gain_distributions{suffix}.svg")
+        plt.savefig(f"{self.output_root}/plot_shift_gain_distributions{suffix}.svg", transparent=True)
         plt.clf()
         plt.cla()
         plt.close()
@@ -985,9 +1118,9 @@ class BtspStatistics:
             sns.set_context("poster")
         fig, axs = plt.subplots(1,2, figsize=(scale*9,scale*9), num=5, clear=True)
 
-        q_lo = ss_cc["initial shift"].quantile(0.01)
-        q_hi = ss_cc["initial shift"].quantile(0.99)
-        ss_cc_filt = ss_cc[(ss_cc["initial shift"] < q_hi) & (ss_cc["initial shift"] > q_lo)]
+        q_lo = sg_df["initial shift"].quantile(0.01)
+        q_hi = sg_df["initial shift"].quantile(0.99)
+        ss_cc_filt = sg_df[(sg_df["initial shift"] < q_hi) & (sg_df["initial shift"] > q_lo)]
         df_violin = ss_cc_filt[["newly formed", "initial shift"]].reset_index(drop=True).melt(id_vars="newly formed")
         g = sns.violinplot(data=df_violin, x="variable", y="value", hue="newly formed", split=True, fill=False, ax=axs[0],
                        palette=palette, saturation=1, legend=False, gap=0.0, inner=None, linewidth=5)  # inner_kws={"color": "0.5"}
@@ -1013,9 +1146,9 @@ class BtspStatistics:
         axs[0].set_ylabel("")
         axs[0].set_xticklabels([r"initial shift [cm]"])
 
-        q_lo = ss_cc["log10(formation gain)"].quantile(0.001)
-        q_hi = ss_cc["log10(formation gain)"].quantile(0.999)
-        ss_cc_filt = ss_cc[(ss_cc["log10(formation gain)"] < q_hi) & (ss_cc["log10(formation gain)"] > q_lo)]
+        q_lo = sg_df["log10(formation gain)"].quantile(0.001)
+        q_hi = sg_df["log10(formation gain)"].quantile(0.999)
+        ss_cc_filt = sg_df[(sg_df["log10(formation gain)"] < q_hi) & (sg_df["log10(formation gain)"] > q_lo)]
         df_violin = ss_cc_filt[["newly formed", "log10(formation gain)"]].reset_index(drop=True).melt(id_vars="newly formed")
         g = sns.violinplot(data=df_violin, x="variable", y="value", hue="newly formed", split=True, fill=False, ax=axs[1],
                        palette=palette, saturation=1, legend=False, gap=0.0, inner=None, linewidth=5)  # inner_kws={"color": "0.5"}
@@ -1646,17 +1779,23 @@ class BtspStatistics:
                 else:
                     history = "ALL"
 
-                scale = 4.2
-                fig, axs = plt.subplots(2,1,figsize=(scale*2.4, scale*3.5), sharex=True, height_ratios=[3,2])
-                im = axs[0].imshow(np.transpose(cell.rate_matrix), aspect='auto', origin='lower', cmap='binary', interpolation="none")
-                axs[1].plot(np.mean(cell.rate_matrix,axis=1), marker="o")
-                p95_cell = p95[corridor_idx,:,cellid]
-                axs[1].plot(p95_cell, color="red")
+                scale = 4
+                #fig, axs = plt.subplots(2,1,figsize=(scale*2.4, scale*3.5), sharex=True, height_ratios=[3,2])
+                fig, ax = plt.subplots(figsize=(scale*2.4, scale*3.5))
+                #im = axs[0].imshow(np.transpose(cell.rate_matrix), aspect='auto', origin='lower', cmap='binary', interpolation="none")
+                im = ax.imshow(np.transpose(cell.rate_matrix), aspect='auto', origin='lower', cmap='binary',interpolation="none")
+                #axs[1].plot(np.mean(cell.rate_matrix,axis=1), marker="o")
+                #try:
+                #    p95_cell = p95[corridor_idx,:,cellid]
+                #    axs[1].plot(p95_cell, color="red")
+                #except IndexError:
+                #    print(f"couldn't load p95 for cell {cellid}, corridor {corridor}, session {session}")
 
                 pfs = self.pfs_df[(self.pfs_df["session id"] == session) &
                                   (self.pfs_df["cell id"] == cellid) &
                                   (self.pfs_df["corridor"] == corridor) &
                                   (self.pfs_df["history"] == history)]
+                #pfs = pfs[pfs["formation bin"] >= 70]
                 if pfs.empty:
                     plt.close()
                     continue
@@ -1665,12 +1804,42 @@ class BtspStatistics:
                 for _, pf in pfs.iterrows():
                     category = pf["category"]
                     lb, ub = pf["lower bound"] - 0.5, pf["upper bound"] - 0.5  # correcting by half bin width so it plots correctly on imshow
-                    fl, el = pf["formation lap"] / n_laps, (pf["end lap"] + 1) / n_laps
+                    fl, el = pf["formation lap"], (pf["end lap"] + 1)
 
                     if category == "unreliable":
-                        axs[0].axvspan(lb, ub, color="black", alpha=0.3, linewidth=0)
+                        #axs[0].axvspan(lb, ub, color="black", alpha=0.3, linewidth=0)
+                        ax.axvspan(lb, ub, color="black", alpha=0.3, linewidth=0)
                     else:
-                        axs[0].axvspan(lb, ub, ymin=fl, ymax=el, color=CATEGORIES[category].color, alpha=0.3, linewidth=0)
+                        #axs[0].axvspan(lb, ub, ymin=fl, ymax=el, color=CATEGORIES[category].color, alpha=0.3, linewidth=0)
+                        ax.axvspan(lb, ub, ymin=fl/n_laps, ymax=el/n_laps, color=CATEGORIES[category].color, alpha=0.3, linewidth=0)
+
+                        if pf["category"] not in ["btsp", "non-btsp"]:
+                            continue
+                        if len(pf["COMs"]) > 0:
+                            #ax.axvline(lb - 0.5, color=CATEGORIES[category].color, alpha=0.8, linewidth=2.5)
+                            #ax.axvline(ub + 0.5, color=CATEGORIES[category].color, alpha=0.8, linewidth=2.5)
+                            #ax.annotate(f"PF{pf["pf id"]}", (lb - 5, 5), color=CATEGORIES[category].color)
+                            label_x = lb - 10
+                            if lb <= 10:
+                                label_x = lb + 10
+                            ax.annotate(f"S={np.round(pf["initial shift"], 2)}", (label_x, 3), color=CATEGORIES[category].color)
+                            ax.annotate(f"G={np.round(pf["log10(formation gain)"], 2)}", (label_x, 1), color=CATEGORIES[category].color)
+
+                            coms = pf["COMs"]
+                            active_laps = pf["active laps"]
+                            ms = 10  # markersize
+                            ax.plot(lb + coms[0], fl, marker="o", color="red", markersize=ms, markeredgecolor="black")
+                            window = 5
+                            if len(pf["COMs"]) <= window:
+                                window = len(pf["COMs"])-1
+                            for i in range(1, window + 1):
+                                lap = active_laps[i]
+                                ax.plot(lb + coms[i], fl + lap, marker="o", color="cyan", markersize=ms, markeredgecolor="blue")
+                            for lap in active_laps:
+                                ax.plot(lb - 1, fl + lap, marker="o", markerfacecolor="orange", fillstyle="full", markeredgecolor="red", markersize=ms)
+                            ax.axhline(fl, color="red")
+                            ax.axvline(lb + coms[0], color="red", linestyle="--", linewidth=2.5, alpha=0.5)
+                    pass
 
                     # btsp inset
                     #if category == "btsp":
@@ -1686,7 +1855,8 @@ class BtspStatistics:
 
                 plt.ylabel("laps")
                 plt.xlabel("spatial position")
-                plt.colorbar(im, orientation='horizontal', ax=axs[0])
+                #plt.colorbar(im, orientation='horizontal', ax=axs[0])
+                plt.colorbar(im, orientation='horizontal', ax=ax)
                 plt.tight_layout()
 
                 categories = np.unique(pfs["category"].values)
@@ -1710,6 +1880,205 @@ class BtspStatistics:
                     #    #plt.savefig(f"{category_folder}/{session}_Cell{cellid}_Corr{corridor}_INSET.pdf")
                     #    #plt.savefig(f"{category_folder}/{session}_Cell{cellid}_Corr{corridor}_INSET.svg", transparent=True)
                     #    plt.close()
+
+    def plot_rates_with_next_lap_other_corridor(self):
+        makedir_if_needed(f"{self.output_root}/pf_with_other_corridor")
+        tcs = self.tc_df.set_index(["sessionID", "cellid", "corridor"])
+        pfs = self.pfs_df[(self.pfs_df["category"] == "btsp") | (self.pfs_df["category"] == "non-btsp")].sample(frac=0.025)
+        corr_order = [14, 15]
+
+        for i_pf, pf in pfs.iterrows():
+            category = pf["category"]
+            lb, ub = pf["lower bound"] - 0.5, pf["upper bound"] - 0.5  # correcting by half bin width so it plots correctly on imshow
+            fl, el = pf["formation lap"], pf["end lap"]
+
+            corr_of_pf = pf["corridor"]
+            corr_other = 14 if pf["corridor"] == 15 else 15
+
+            tc_of_pf = tcs.loc[pf["session id"], pf["cell id"], corr_of_pf]["tc"]
+            tc_other = tcs.loc[pf["session id"], pf["cell id"], corr_other]["tc"]
+
+            fig, axs = plt.subplots(1,2,sharey=True)
+            ax_of_pf = axs[corr_order.index(corr_of_pf)]
+            ax_other = axs[corr_order.index(corr_other)]
+            ax_of_pf.imshow(np.transpose(tc_of_pf.rate_matrix), aspect='auto', origin='lower', cmap='binary',interpolation="none")
+            ax_other.imshow(np.transpose(tc_other.rate_matrix), aspect='auto', origin='lower', cmap='binary',interpolation="none")
+
+            fl_of_pf = tc_of_pf.corridor_laps[fl]
+            fl_idx_other = len(tc_other.corridor_laps[tc_other.corridor_laps <= fl_of_pf])
+            ax_other.axhline(fl_idx_other, c="orange", alpha=0.8)
+
+            ax_of_pf.plot([lb,ub],[fl,fl], c=CATEGORIES[category].color)
+            ax_of_pf.plot([lb,lb],[fl,el], c=CATEGORIES[category].color)
+            ax_of_pf.plot([lb,ub],[el,el], c=CATEGORIES[category].color)
+            ax_of_pf.plot([ub,ub],[fl,el], c=CATEGORIES[category].color)
+
+            #print(fl_of_pf, tc_other.corridor_laps[fl_idx_other])
+
+            #n_laps = len(tc_of_pf.corridor_laps)
+            #ax_of_pf.axvspan(lb, ub, ymin=fl / n_laps, ymax=el / n_laps,
+            #                 color=CATEGORIES[category].color, alpha=0.3, linewidth=0)
+
+            tc_corridors = [tc_of_pf, tc_other]
+            shorter_corr = np.argmin([len(tc_of_pf.corridor_laps), len(tc_other.corridor_laps)])
+            longer_corr = 1-shorter_corr
+            tc_shorter = tc_corridors[shorter_corr]
+            tc_longer = tc_corridors[longer_corr]
+            n_laps_shorter = len(tc_shorter.corridor_laps)
+            n_laps_longer = len(tc_longer.corridor_laps)
+
+            #laps_diff = n_laps_longer - n_laps_shorter
+            #axs[shorter_corr].axvspan(0,75, ymin=1-(laps_diff/n_laps_longer), ymax=1, color="green")
+
+            filename = f"PF{i_pf}_{pf["session id"]}_Cell{pf["cell id"]}_Corr{pf["corridor"]}"
+            plt.savefig(f"{self.output_root}/pf_with_other_corridor/{filename}.pdf")
+            plt.close()
+
+    def plot_pf_influence_on_other_corridor(self, RZonly=True, mean_or_max="max", log=False):
+        tcs = self.tc_df.set_index(["sessionID", "cellid", "corridor"])
+
+        # filter for cells with max PF count of 1 per corridor
+        df = self.pfs_df.groupby(["animal id", "session id", "cell id"]).count()
+        idxs = df[df["index"] == 1].index.tolist()
+        pfs = self.pfs_df.set_index(["animal id", "session id", "cell id"]).loc[idxs].reset_index()
+
+        # filter for BTSP PFs
+        pfs = pfs[pfs["category"] == "btsp"]
+        corr_order = [14, 15]
+
+        fig, axs = plt.subplots(2,1)
+        x = np.arange(-5,6,1)
+        peri_FL_rate_means_allPFs = []
+        peri_FL_rate_means_other_allPFs = []
+        print(f"PF count before filters: {len(pfs)}")
+        skipped = 0
+        count_nonRZ = 0
+        for i_pf, pf in pfs.iterrows():
+            category = pf["category"]
+            lb, ub = pf["lower bound"], pf["upper bound"]
+            fl, el = pf["formation lap"], pf["end lap"]
+
+            corr_of_pf = pf["corridor"]
+            corr_other = 14 if pf["corridor"] == 15 else 15
+
+            # filter for RZ only
+            if RZonly:
+                RZ_lb, RZ_ub = self.reward_zones[corr_order.index(corr_of_pf)]
+                if pf["formation bin"] < RZ_lb-5 or pf["formation bin"] > RZ_ub+5:
+                    count_nonRZ += 1
+                    continue
+                RZ_other_lb, RZ_other_ub = self.reward_zones[corr_order.index(corr_other)]
+
+            tc_of_pf = tcs.loc[pf["session id"], pf["cell id"], corr_of_pf]["tc"]
+            tc_other = tcs.loc[pf["session id"], pf["cell id"], corr_other]["tc"]
+
+            fl_of_pf = tc_of_pf.corridor_laps[fl]
+            fl_idx_other = np.where(tc_other.corridor_laps > fl_of_pf)[0][0]
+            fl_other = tc_other.corridor_laps[fl_idx_other]
+
+            RM_of_pf_norm = tc_of_pf.rate_matrix / np.nanmax(np.concatenate([tc_of_pf.rate_matrix, tc_other.rate_matrix],axis=1))
+            RM_other_norm = tc_other.rate_matrix / np.nanmax(np.concatenate([tc_of_pf.rate_matrix, tc_other.rate_matrix],axis=1))
+
+            mean_or_max_func = np.mean if mean_or_max == "mean" else np.max
+            peri_FL_rate_means = mean_or_max_func(RM_of_pf_norm[:,fl-5:fl+6],axis=0)
+            if RZonly:
+                peri_FL_rate_means_other = mean_or_max_func(RM_other_norm[RZ_other_lb-5:RZ_other_ub+5,fl_other-5:fl_other+6],axis=0)
+            else:
+                peri_FL_rate_means_other = mean_or_max_func(RM_other_norm[:,fl_other-5:fl_other+6],axis=0)
+
+            if len(peri_FL_rate_means) != 11 or len(peri_FL_rate_means_other) != 11:
+                skipped += 1
+                continue
+
+            peri_FL_rate_means_allPFs.append(peri_FL_rate_means)
+            peri_FL_rate_means_other_allPFs.append(peri_FL_rate_means_other)
+
+            if log:
+                axs[0].plot(x, np.log10(peri_FL_rate_means), c="k", alpha=0.01)
+                axs[1].plot(x, np.log10(peri_FL_rate_means_other), c="k", alpha=0.01)
+            else:
+                axs[0].plot(x, peri_FL_rate_means, c="k", alpha=0.03)
+                axs[1].plot(x, peri_FL_rate_means_other, c="k", alpha=0.03)
+
+        print(f"nonRZ: {count_nonRZ}")
+        print(f"skipped: {skipped}")
+        peri_FL_rate_means_allPFs = np.array(peri_FL_rate_means_allPFs)
+        peri_FL_rate_means_other_allPFs = np.array(peri_FL_rate_means_other_allPFs)
+        if log:
+            axs[0].plot(x, np.log10(np.nanmean(peri_FL_rate_means_allPFs, axis=0)), c="r")
+            axs[1].plot(x, np.log10(np.nanmean(peri_FL_rate_means_other_allPFs, axis=0)), c="r")
+            axs[0].set_ylabel("log10 rate")
+            axs[1].set_ylabel("log10 rate")
+        else:
+            axs[0].plot(x, np.nanmean(peri_FL_rate_means_allPFs, axis=0), c="r")
+            axs[1].plot(x, np.nanmean(peri_FL_rate_means_other_allPFs, axis=0), c="r")
+            axs[0].set_ylabel("rate")
+            axs[1].set_ylabel("rate")
+
+        nearRZ_title = "- near RZs" if RZonly else ""
+        plt.suptitle(f"{self.area} - {mean_or_max} of rates (norm.) - BTSP PFs only - max 1 PF / corridor {nearRZ_title}")
+        axs[0].set_xlabel("laps since FL in the corridor of PF formation")
+        axs[1].set_xlabel("laps since 1st lap in other corridor after PF formation")
+
+        axs[0].set_xticks(x, labels=x)
+        axs[1].set_xticks(x, labels=x)
+
+        plt.tight_layout()
+        nearRZ_filename = "_nearRZ" if RZonly else ""
+        log_filename = "_log" if log else ""
+        filename = f"otherCorridor_{mean_or_max}{nearRZ_filename}{log_filename}"
+        makedir_if_needed(f"{self.output_root}/otherCorridor")
+        plt.savefig(f"{self.output_root}/otherCorridor/{filename}.pdf")
+        plt.close()
+
+    def plot_pf_influence_on_FL_counts_in_other_corridor(self, RZonly=True):
+        tcs = self.tc_df.set_index(["sessionID", "cellid", "corridor"])
+
+        # filter for cells with max PF count of 1 per corridor
+        #df = self.pfs_df.groupby(["animal id", "session id", "cell id"]).count()
+        #idxs = df[df["index"] == 1].index.tolist()
+        #pfs = self.pfs_df.set_index(["animal id", "session id", "cell id"]).loc[idxs].reset_index()
+        pfs = self.pfs_df
+
+        # filter for BTSP PFs
+        pfs = pfs[pfs["category"] == "btsp"]
+        corr_order = [14, 15]
+
+        fig, axs = plt.subplots(2,1)
+        x = np.arange(-5,6,1)
+
+        FL_counts = np.zeros(11)
+        pfs = pfs.set_index(["animal id", "session id", "cell id"])
+        for idx_pf, pf in pfs.iterrows():
+            if len(pfs.loc[idx_pf].query("corridor == 15")) == 0 or len(pfs.loc[idx_pf].query("corridor == 14")) == 0:
+                continue
+
+
+
+        for i_pf, pf in pfs.iterrows():
+            category = pf["category"]
+            lb, ub = pf["lower bound"], pf["upper bound"]
+            fl, el = pf["formation lap"], pf["end lap"]
+
+            corr_of_pf = pf["corridor"]
+            corr_other = 14 if pf["corridor"] == 15 else 15
+
+            # filter for RZ only
+            if RZonly:
+                RZ_lb, RZ_ub = self.reward_zones[corr_order.index(corr_of_pf)]
+                if pf["formation bin"] < RZ_lb-5 or pf["formation bin"] > RZ_ub+5:
+                    #count_nonRZ += 1
+                    continue
+                RZ_other_lb, RZ_other_ub = self.reward_zones[corr_order.index(corr_other)]
+
+            tc_of_pf = tcs.loc[pf["session id"], pf["cell id"], corr_of_pf]["tc"]
+            tc_other = tcs.loc[pf["session id"], pf["cell id"], corr_other]["tc"]
+
+            fl_of_pf = tc_of_pf.corridor_laps[fl]
+            fl_idx_other = np.where(tc_other.corridor_laps > fl_of_pf)[0][0]
+            fl_other = tc_other.corridor_laps[fl_idx_other]
+
+            pass
 
     def calc_place_field_quality(self):
         for i_pf, pf in self.pfs_df.iterrows():
@@ -1763,18 +2132,21 @@ class BtspStatistics:
         def sort_df(series):
             return series.apply(lambda x: CATEGORIES[x].order)
         pfs_sorted = self.pfs_df.sort_values(by="category", key=sort_df)
-        cols = ['ALR', 'CALR', 'COM SD', 'PF width', 'Norm. COM SD']
+        #cols = ['ALR', 'CALR', 'COM SD', 'PF width', 'Norm. COM SD']
         #cols = ['ALR', 'COM SD', 'PF width', 'Norm. COM SD']
-        ylims = [[0,1], [0,1], [0,7], [0,100], [0, 0.2]]
+        #ylims = [[0,1], [0,1], [0,7], [0,100], [0, 0.2]]
         #ylims = [[0,1], [0,7], [0,100], [0,0.5]]
 
-        scale = 1.3
-        fig, axs = plt.subplots(1, len(cols), figsize=(scale * len(cols)*5,scale * 2.8))
+        cols = ["ALR", "PF width"]
+        ylims = [[0,1], [0,100]]
+
+        scale = 1.2
+        fig, axs = plt.subplots(1, len(cols), figsize=(scale * len(cols)*5,scale * 3.3))
         palette = ["#00B0F0", "#F5B800"]
         for i, col in enumerate(cols):
             pfs_filtered = pfs_sorted[pfs_sorted["category"] != "unreliable"]
             pf_quality_df = pfs_filtered[["newly formed", col]]
-            is_legend = False #if i < len(cols)-1 else True
+            is_legend = False if i < len(cols)-1 else True
             sns.violinplot(pf_quality_df.melt(id_vars="newly formed"), x="variable", y="value", hue="newly formed",
                         palette=palette, saturation=1, ax=axs[i], legend=is_legend, linewidth=2, cut=0)
             axs[i].set_ylim(ylims[i])
@@ -1791,7 +2163,7 @@ class BtspStatistics:
         plt.savefig(f"{self.output_root}/plot_PFquality_NFvEst.svg")
         plt.close()
 
-        fig, axs = plt.subplots(1, len(cols), figsize=(scale * len(cols)*5,scale * 2.8))
+        fig, axs = plt.subplots(1, len(cols), figsize=(scale * len(cols)*4.5,scale * 3.3))
         for i, col in enumerate(cols):
             pf_quality_df = pfs_sorted[["category", col]]
             is_legend = False #if i < len(cols)-1 else True
@@ -1801,7 +2173,7 @@ class BtspStatistics:
             axs[i].set_ylim(ylims[i])
             axs[i].set_xlabel("")
             axs[i].set_ylabel("")
-            axs[i].set_title(col)
+            #axs[i].set_title(col)
             axs[i].spines["top"].set_visible(False)
             axs[i].spines["right"].set_visible(False)
             axs[i].spines["bottom"].set_visible(False)
@@ -2389,32 +2761,150 @@ class BtspStatistics:
         sg_df_ES = sg_df[sg_df["newly formed"] == False]
         sg_df_ES[["initial shift", "log10(formation gain)"]].to_csv(f"{self.output_root}/shift_gain_ES.csv", index=False)
 
-if __name__ == "__main__":
-    # parse arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
-    parser.add_argument("-dp", "--data-path", required=True)
-    parser.add_argument("-op", "--output-path")
-    parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
-    parser.add_argument("-hi", "--history", choices=["ALL", "STAY", "CHANGE"])
-    #parser.add_argument("-np", "--no-shift-path")
-    args = parser.parse_args()
+    def plot_speed_vs_shift(self):
+        sg_df = self.shift_gain_df
+        avgspeed_df = self.behavior_df[["sessionID", "avgspeed matrix (14)", "avgspeed matrix (15)"]].set_index("sessionID")
+        for i_pf, pf in sg_df.iterrows():
+            session, corridor, flap, fbin = pf["session id"], pf["corridor"], pf["formation lap"], pf["formation bin"]
+            avgspeed_matrix = avgspeed_df.loc[session, f"avgspeed matrix ({corridor})"]
 
-    area = args.area
-    data_path = args.data_path
-    output_path = args.output_path
-    extra_info = args.extra_info
-    history = args.history
+            try:
+                fbin = int(np.round(fbin))
+            except ValueError:
+                print(i_pf)
+                continue
+            formation_bin_speed = avgspeed_matrix[fbin, flap]
+            sg_df.at[i_pf, "formation bin speed"] = formation_bin_speed
+
+        palette = ["#00B0F0", "#F5B800"]
+        if self.area == "CA1":
+            alpha=0.3
+            s=15
+        else:
+            alpha=0.6
+            s=25
+
+        sns.jointplot(data=sg_df.sample(frac=1), x="formation bin speed", y="initial shift", hue="newly formed",
+                      palette=sns.color_palette(palette, 2), alpha=alpha, s=s, marginal_kws={"common_norm": False, "cut": 0},
+                      joint_kws={"edgecolor": 'none'})#, height=4.3, ratio=3)
+        plt.axhline(0, linestyle="--", c="k")
+        plt.savefig(f"{self.output_root}/plot_speed_vs_shift_joint.pdf")
+        plt.savefig(f"{self.output_root}/plot_speed_vs_shift_joint.svg")
+        plt.close()
+        # sg_df = sg_df[sg_df["newly formed"]]
+        #sns.jointplot(data=sg_df, x="formation bin speed", y="initial shift",
+        #              color=palette[1], alpha=alpha, s=s, marginal_kws={"common_norm": False},
+        #              joint_kws={"edgecolor": 'none'})#, height=4.3, ratio=3)
+        #sns.regplot(data=sg_df, x="formation bin speed", y="initial shift",
+        #            color=palette[1], scatter_kws={'alpha': alpha})#, height=4.3, ratio=3)
+        #plt.axhline(0, linestyle="--", c="k")
+        #plt.show()
+
+        scale = 1.5
+        fig, axs = plt.subplots(2,1, figsize=(scale*5,scale*5))
+
+        bins = np.arange(0, 65, 5)
+        sg_df["formation bin speed (binned)"] = pd.cut(sg_df["formation bin speed"], bins=bins)
+        sns.boxplot(data=sg_df, x="formation bin speed (binned)", y="initial shift", hue="newly formed",
+                    palette=sns.color_palette(palette,2), showfliers=None, ax=axs[0])
+        axs[0].axhline(0, linestyle="--", c="k")
+        nf = sg_df[sg_df["newly formed"]]
+        nf_slow_speed_median = nf[nf["formation bin speed"] < 5]["initial shift"].median()
+        axs[0].axhline(nf_slow_speed_median, linestyle="--", c=palette[1])
+
+        sns.histplot(data=sg_df, x="formation bin speed", hue="newly formed", multiple="dodge",
+                     palette=sns.color_palette(palette,2), ax=axs[1], bins=bins)
+
+        axs[0].set_ylim([-20,20])
+        axs[1].set_ylim([0,4000])
+        plt.tight_layout()
+        plt.savefig(f"{self.output_root}/plot_speed_vs_shift_box.pdf")
+        plt.savefig(f"{self.output_root}/plot_speed_vs_shift_box.svg")
+        plt.close()
+
+    def plot_speed_vs_pfwidth(self):
+        sg_df = self.shift_gain_df
+
+        ########### filter for reward zones
+        sg_cor14 = sg_df[sg_df["corridor"] == 14]
+        sg_cor14_filt = sg_cor14[(sg_cor14["formation bin"] < self.reward_zones[0][0]-10) | (sg_cor14["formation bin"] > self.reward_zones[0][1])]
+        sg_cor15 = sg_df[sg_df["corridor"] == 15]
+        sg_cor15_filt = sg_cor15[(sg_cor15["formation bin"] < self.reward_zones[1][0]-10) | (sg_cor15["formation bin"] > self.reward_zones[1][1])]
+        sg_df = pd.concat([sg_cor14_filt, sg_cor15_filt])
+        avgspeed_df = self.behavior_df[["sessionID", "avgspeed matrix (14)", "avgspeed matrix (15)"]].set_index("sessionID")
+        for i_pf, pf in sg_df.iterrows():
+            session, corridor, flap, fbin = pf["session id"], pf["corridor"], pf["formation lap"], pf["formation bin"]
+            avgspeed_matrix = avgspeed_df.loc[session, f"avgspeed matrix ({corridor})"]
+
+            try:
+                fbin = int(np.round(fbin))
+            except ValueError:
+                print(i_pf)
+                continue
+            formation_bin_speed = avgspeed_matrix[fbin, flap]
+            sg_df.at[i_pf, "formation bin speed"] = formation_bin_speed
+            sg_df.at[i_pf, "PF width"] = pf["upper bound"] - pf["lower bound"]
+
+        # run correlation tests
+        nf = sg_df[sg_df["newly formed"]]
+        nf = nf[~nf["formation bin speed"].isna()]
+        es = sg_df[~sg_df["newly formed"]]
+        es = es[~es["formation bin speed"].isna()]
+        res_nf = scipy.stats.spearmanr(nf["formation bin speed"], nf["PF width"])
+        res_es = scipy.stats.spearmanr(es["formation bin speed"], es["PF width"])
+        print("CORRELATION BETWEEN SPEED AND PF WIDTH")
+        print("--------------------------------------")
+        print(f"NF: r={np.round(res_nf.statistic,3)}, p={np.round(res_nf.pvalue,5)}")
+        print(f"ES: r={np.round(res_es.statistic,3)}, p={np.round(res_es.pvalue,5)}")
+
+        if self.area == "CA1":
+            alpha=0.3
+            s=15
+        else:
+            alpha=0.6
+            s=25
+
+        # stable newly formed = st_nf (i.e BTSP and non-BTSP groups)
+        st_nf = sg_df[(sg_df["category"] == "btsp") | (sg_df["category"] == "non-btsp")]
+        st_nf = st_nf.sort_values(by="category_order")
+        palette = [category.color for _, category in CATEGORIES.items()][3:]
+        #sns.jointplot(data=st_nf, x="formation bin speed", y="PF width", hue="category",
+        #              palette=palette, alpha=alpha, s=s, marginal_kws={"common_norm": False, "cut": 0},
+        #              kind="kde", joint_kws={"cut":0}) #joint_kws={"edgecolor": 'none'},)
+
+        palette = ["#00B0F0", "#F5B800"]
+        sns.jointplot(data=sg_df, x="formation bin speed", y="PF width", hue="newly formed",
+                      palette=palette, alpha=1, s=s, marginal_kws={"common_norm": False, "cut": 0},
+                      kind="kde", joint_kws={"cut":0, "fill": False}) #joint_kws={"edgecolor": 'none'},)
+        if self.filter_overextended:
+            plt.axhline(8, linestyle="--", c="k")
+        else:
+            plt.axhline(3, linestyle="--", c="k")
+        plt.ylim([0,40])
+        plt.savefig(f"{self.output_root}/plot_speed_vs_PFwidth_filtRZ.pdf")
+        plt.savefig(f"{self.output_root}/plot_speed_vs_PFwidth_filtRZ.svg")
+        plt.close()
+
+if __name__ == "__main__":
+    area = "CA1"
+    data_path = f"C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual"
+    output_path = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual"
+    extra_info = "NFafter5Laps"
+    history = "ALL"  # allowed values: "ALL", "STAY" or "CHANGE"
     #noshift_path = args.no_shift_path
 
     #run analysis
     is_shift_criterion_on = True
+    is_drift_criterion_on = True
     is_notebook = False
     depth_folder = f"{data_path}/depths"
+    filter_overextended = True
 
-    btsp_statistics = BtspStatistics(area, data_path, output_path, extra_info, is_shift_criterion_on, is_notebook, history)
+    btsp_statistics = BtspStatistics(area, data_path, output_path, extra_info,
+                                     is_shift_criterion_on, is_drift_criterion_on,
+                                     is_notebook, history, filter_overextended)
     btsp_statistics.load_data()
-    #btsp_statistics.load_cell_data()
+    btsp_statistics.load_cell_data()
     btsp_statistics.filter_low_behavior_score()
     btsp_statistics.calc_place_field_proportions()
     btsp_statistics.calc_shift_gain_distribution(unit="cm")
@@ -2431,7 +2921,9 @@ if __name__ == "__main__":
     #btsp_statistics.plot_formation_lap_history_dependence()
     #plt.show()
 
-    #btsp_statistics.plot_cells(swarmplot=False)
+    #btsp_statistics.plot_speed_vs_shift()
+    #btsp_statistics.plot_speed_vs_pfwidth()
+    #btsp_statistics.plot_cells(swarmplot=True)
     #btsp_statistics.plot_place_fields()
     #btsp_statistics.plot_place_fields_by_session()
     #btsp_statistics.plot_place_field_proportions()
@@ -2462,7 +2954,14 @@ if __name__ == "__main__":
     #btsp_statistics.plot_formation_rate_sum_hist_by_categories()
     #btsp_statistics.plot_formation_rate_sum(log=False)
     #btsp_statistics.plot_ratemaps()
+    #btsp_statistics.plot_rates_with_next_lap_other_corridor()
+
+    #for RZonly in [True, False]:
+    #    for mean_or_max in ["mean", "max"]:
+    #        for log in [True, False]:
+    #            btsp_statistics.plot_pf_influence_on_other_corridor(RZonly, mean_or_max, log)
+    btsp_statistics.plot_pf_influence_on_FL_counts_in_other_corridor(RZonly=False)
     #btsp_statistics.calc_place_field_quality()
 
-    btsp_statistics.plot_formation_lap_dependence_of_newly_formed()
+    #btsp_statistics.plot_formation_lap_dependence_of_newly_formed()
     #btsp_statistics.export_data()

@@ -4,6 +4,9 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 from BtspStatistics import BtspStatistics
 import scipy
+import tqdm
+import warnings
+warnings.simplefilter("ignore", category=SyntaxWarning)  # latex miatt nyavalyog
 
 
 def calc_diff(sg_df, param, median=False):
@@ -18,6 +21,57 @@ def calc_diff(sg_df, param, median=False):
         mean_stable = sg_df[sg_df['newly formed'] == False][param].mean()
         diff = mean_newlyf - mean_stable
     return diff
+
+def plot_kde(diffs, ax, color):
+    kde = scipy.stats.gaussian_kde(diffs)
+    pos = np.linspace(min(diffs), max(diffs), 100)
+    # plt.plot(pos, kde_shift(pos), color="k", linewidth=3)
+    ax.fill_between(pos, kde(pos)/max(kde(pos)), alpha=0.15, color=color)
+    #ax.set_ylim([0, 1.1 * max(kde(pos))])
+    #ax.set_ylim([0, 1.1 * max(kde(pos))])
+    ax.set_ylim(bottom=0)
+
+    # 95% confidence interval
+    lb = np.percentile(diffs, q=2.5)
+    ub = np.percentile(diffs, q=97.5)
+    ci_95_lo = np.linspace(min(diffs), lb, 100)
+    ci_95_hi = np.linspace(ub, max(diffs), 100)
+    ax.fill_between(ci_95_lo, kde(ci_95_lo)/max(kde(pos)), alpha=0.25, color=color)
+    ax.fill_between(ci_95_hi, kde(ci_95_hi)/max(kde(pos)), alpha=0.25, color=color)
+
+    # 99% confidence interval
+    lb = np.percentile(diffs, q=0.5)
+    ub = np.percentile(diffs, q=99.5)
+    ci_99_lo = np.linspace(min(diffs), lb, 100)
+    ci_99_hi = np.linspace(ub, max(diffs), 100)
+    ax.fill_between(ci_99_lo, kde(ci_99_lo)/max(kde(pos)), alpha=0.2, color=color)
+    ax.fill_between(ci_99_hi, kde(ci_99_hi)/max(kde(pos)), alpha=0.2, color=color)
+
+def plot_hist(diffs, ax, color):
+    #bins = np.arange(min(diffs), max(diffs), 0.1)
+    hist, bin_edges = np.histogram(diffs, bins=100)
+    ax.bar(bin_edges[:-1], hist, width=np.diff(bin_edges), color=color, alpha=0.15,
+           linewidth=0, edgecolor="none")
+
+    # 95% confidence interval
+    lb = np.percentile(diffs, q=2.5)
+    ub = np.percentile(diffs, q=97.5)
+    ci_95_lo = bin_edges[bin_edges < lb]
+    ci_95_hi = bin_edges[bin_edges > ub]
+    ax.bar(ci_95_lo[:-1], hist[bin_edges[:-1] < lb][:-1], width=np.diff(ci_95_lo), color=color, alpha=0.35,
+           linewidth=0, edgecolor="none")
+    ax.bar(ci_95_hi[:-1], hist[bin_edges[:-1] > ub], width=np.diff(ci_95_hi), color=color, alpha=0.35,
+           linewidth=0, edgecolor="none")
+
+    # 99% confidence interval
+    lb = np.percentile(diffs, q=0.5)
+    ub = np.percentile(diffs, q=99.5)
+    ci_95_lo = bin_edges[bin_edges < lb]
+    ci_95_hi = bin_edges[bin_edges > ub]
+    ax.bar(ci_95_lo[:-1], hist[bin_edges[:-1] < lb][:-1], width=np.diff(ci_95_lo), color=color, alpha=1,
+           linewidth=0, edgecolor="none")
+    ax.bar(ci_95_hi[:-1], hist[bin_edges[:-1] > ub], width=np.diff(ci_95_hi), color=color, alpha=1,
+           linewidth=0, edgecolor="none")
 
 def bootstrapping(data_path, output_path, median=False, extra_info_CA1="", extra_info_CA3="", take_diff=True, without_transient=False):
     CA1_stats = BtspStatistics("CA1", data_path, output_path, extra_info=extra_info_CA1)
@@ -41,7 +95,7 @@ def bootstrapping(data_path, output_path, median=False, extra_info_CA1="", extra
 
     n = CA3_sg_df.shape[0]  # number of place fields in CA3
     print(n)
-    for seed in range(1000):
+    for seed in range(10000):
         shift_gain_df_subs = CA1_sg_df.sample(n=n, random_state=seed)
         if take_diff:
             shift = calc_diff(shift_gain_df_subs, param='initial shift', median=median)
@@ -63,29 +117,6 @@ def bootstrapping(data_path, output_path, median=False, extra_info_CA1="", extra
     print(f"initial shift: p={p_shift:.3}")
     print(f"log10(formation gain): p={p_gain:.3}")
 
-    def plot_kde(diffs, ax, color):
-        kde = scipy.stats.gaussian_kde(diffs)
-        pos = np.linspace(min(diffs), max(diffs), 100)
-        #plt.plot(pos, kde_shift(pos), color="k", linewidth=3)
-        ax.fill_between(pos, kde(pos), alpha=0.15, color="b")
-        ax.set_ylim([0,1.1*max(kde(pos))])
-
-        # 95% confidence interval
-        lb = np.percentile(diffs, q=2.5)
-        ub = np.percentile(diffs, q=97.5)
-        ci_95_lo = np.linspace(min(diffs), lb, 100)
-        ci_95_hi = np.linspace(ub, max(diffs), 100)
-        ax.fill_between(ci_95_lo, kde(ci_95_lo), alpha=0.25, color=color)
-        ax.fill_between(ci_95_hi, kde(ci_95_hi), alpha=0.25, color=color)
-
-        # 99% confidence interval
-        lb = np.percentile(diffs, q=0.5)
-        ub = np.percentile(diffs, q=99.5)
-        ci_99_lo = np.linspace(min(diffs), lb, 100)
-        ci_99_hi = np.linspace(ub, max(diffs), 100)
-        ax.fill_between(ci_99_lo, kde(ci_99_lo), alpha=0.25, color=color)
-        ax.fill_between(ci_99_hi, kde(ci_99_hi), alpha=0.25, color=color)
-
     scale = 0.8
     fig, ax = plt.subplots(figsize=(scale*5, scale*3))
     plot_kde(CA1_shifts, ax=ax, color="b")
@@ -95,10 +126,10 @@ def bootstrapping(data_path, output_path, median=False, extra_info_CA1="", extra
     if take_diff:
         CA3_shifts = calc_diff(CA3_sg_df, param='initial shift', median=median)
         label = "median" if median else "mean"
-        ax.set_xlabel(f"$\Delta\ {label}\ initial\ shift$")
+        ax.set_xlabel(f"$\Delta\ {label}\ shift$")
     else:
         CA3_shifts = CA3_sg_df[CA3_sg_df["newly formed"] == True]["initial shift"].mean()
-        ax.set_xlabel("mean initial shift; newly formed PFs")
+        ax.set_xlabel("mean shift; newly formed PFs")
     ax.axvline(CA3_shifts, c="r", linewidth=2, label="CA3")
     ax.axvline(0, c="k", linestyle="--")
     ax.set_xlim([-5,5])
@@ -118,12 +149,12 @@ def bootstrapping(data_path, output_path, median=False, extra_info_CA1="", extra
     if take_diff:
         CA3_gains = calc_diff(CA3_stats.shift_gain_df, param='log10(formation gain)', median=median)
         if median:
-            ax.set_xlabel("$\Delta\ median\ log_{10}(formation\ gain)$")
+            ax.set_xlabel("$\Delta\ median\ log_{10}(gain)$")
         else:
-            ax.set_xlabel("$\Delta\ mean\ log_{10}(formation\ gain)$")
+            ax.set_xlabel("$\Delta\ mean\ log_{10}(gain)$")
     else:
         CA3_gains = CA3_sg_df[CA3_sg_df["newly formed"] == True]["log10(formation gain)"].mean()
-        ax.set_xlabel("$mean\ log_{10}(formation gain);\quad newly\ formed\ PFs$")
+        ax.set_xlabel("$mean\ log_{10}(gain);\quad newly\ formed\ PFs$")
     ax.axvline(CA3_gains, c="r", linewidth=2, label="CA3")
     ax.axvline(0, c="k", linestyle="--")
     ax.set_xlim([-0.25,0.25])
@@ -189,6 +220,253 @@ def newly_vs_established_MW(data_path, output_path, extra_info=""):
     print(f"CA3 shift:\tu={np.round(test.statistic,3)},\tp={np.round(test.pvalue,3)}")
     test = scipy.stats.mannwhitneyu(CA3_newly["formation gain"].values, CA3_estab["formation gain"].values)
     print(f"CA3 gain:\tu={np.round(test.statistic,3)},\tp={np.round(test.pvalue,3)}")
+
+def bootstrapping_both_areas(data_path, output_path, median=False, extra_info_CA1="", extra_info_CA3="",
+                             population=None, without_transient=False, hist=False):
+    # population can take values from this list: ["ES", "NF, "ES-NF"]
+    if population == "NF-ES":
+        population = "ES-NF"
+    CA1_stats = BtspStatistics("CA1", data_path, output_path, extra_info=extra_info_CA1)
+    CA1_stats.load_data()
+    CA1_stats.filter_low_behavior_score()
+    CA1_stats.calc_shift_gain_distribution()
+    CA1_sg_df = CA1_stats.shift_gain_df
+    if without_transient:
+        CA1_sg_df = CA1_sg_df[CA1_sg_df["category"] != "transient"]
+
+    CA3_stats = BtspStatistics("CA3", data_path, output_path, extra_info=extra_info_CA3)
+    CA3_stats.load_data()
+    CA3_stats.filter_low_behavior_score()
+    CA3_stats.calc_shift_gain_distribution()
+    CA3_sg_df = CA3_stats.shift_gain_df
+    if without_transient:
+        CA3_sg_df = CA3_sg_df[CA3_sg_df["category"] != "transient"]
+
+    CA1_shifts = []
+    CA1_gains = []
+
+    CA3_shifts = []
+    CA3_gains = []
+
+    for seed in tqdm.tqdm(list(range(10000))):
+        CA1_sg_sub = CA1_sg_df.sample(n=len(CA1_sg_df), replace=True, random_state=seed)
+        if population == "ES-NF":
+            shift = calc_diff(CA1_sg_sub, param='initial shift', median=median)
+            gain = calc_diff(CA1_sg_sub, param='log10(formation gain)', median=median)
+        elif population == "NF":
+            if median:
+                shift = CA1_sg_sub[CA1_sg_sub["newly formed"] == True]["initial shift"].median()
+                gain = CA1_sg_sub[CA1_sg_sub["newly formed"] == True]["log10(formation gain)"].median()
+            else:
+                shift = CA1_sg_sub[CA1_sg_sub["newly formed"] == True]["initial shift"].mean()
+                gain = CA1_sg_sub[CA1_sg_sub["newly formed"] == True]["log10(formation gain)"].mean()
+        elif population == "ES":
+            if median:
+                shift = CA1_sg_sub[CA1_sg_sub["newly formed"] == False]["initial shift"].median()
+                gain = CA1_sg_sub[CA1_sg_sub["newly formed"] == False]["log10(formation gain)"].median()
+            else:
+                shift = CA1_sg_sub[CA1_sg_sub["newly formed"] == False]["initial shift"].mean()
+                gain = CA1_sg_sub[CA1_sg_sub["newly formed"] == False]["log10(formation gain)"].mean()
+        CA1_shifts.append(shift)
+        CA1_gains.append(gain)
+
+    for seed in tqdm.tqdm(list(range(10000))):
+        CA3_sg_sub = CA3_sg_df.sample(n=len(CA3_sg_df), replace=True, random_state=seed)
+        if population == "ES-NF":
+            shift = calc_diff(CA3_sg_sub, param='initial shift', median=median)
+            gain = calc_diff(CA3_sg_sub, param='log10(formation gain)', median=median)
+        elif population == "NF":
+            if median:
+                shift = CA3_sg_sub[CA3_sg_sub["newly formed"] == True]["initial shift"].median()
+                gain = CA3_sg_sub[CA3_sg_sub["newly formed"] == True]["log10(formation gain)"].median()
+            else:
+                shift = CA3_sg_sub[CA3_sg_sub["newly formed"] == True]["initial shift"].mean()
+                gain = CA3_sg_sub[CA3_sg_sub["newly formed"] == True]["log10(formation gain)"].mean()
+        elif population == "ES":
+            if median:
+                shift = CA3_sg_sub[CA3_sg_sub["newly formed"] == False]["initial shift"].median()
+                gain = CA3_sg_sub[CA3_sg_sub["newly formed"] == False]["log10(formation gain)"].median()
+            else:
+                shift = CA3_sg_sub[CA3_sg_sub["newly formed"] == False]["initial shift"].mean()
+                gain = CA3_sg_sub[CA3_sg_sub["newly formed"] == False]["log10(formation gain)"].mean()
+        CA3_shifts.append(shift)
+        CA3_gains.append(gain)
+
+    scale = 0.8
+    fig, ax = plt.subplots(figsize=(scale * 5, scale * 3))
+    if hist:
+        plot_hist(CA1_shifts, ax=ax, color="b")
+        plot_hist(CA3_shifts, ax=ax, color="r")
+    else:
+        plot_kde(CA1_shifts, ax=ax, color="b")
+        plot_kde(CA3_shifts, ax=ax, color="r")
+
+    # sg_df_CA3 = sg_df_CA3[sg_df_CA3["initial shift"] > -20]
+
+    label = "median" if median else "mean"
+    if population == "ES-NF":
+        ax.set_xlabel(f"$\Delta\ {label}\ shift$")
+    else:
+        ax.set_xlabel(f"{label} shift; {population} PFs")
+    ax.axvline(0, c="k", linestyle="--")
+    ax.set_xlim([-5, 5])
+    ax.spines[["right", "top"]].set_visible(False)
+    plt.tight_layout()
+    save_path = f"{CA1_stats.output_root}/BOOTSTRAP_BOTHAREAS_SHIFT"
+    save_path = f"{save_path}_median" if median else f"{save_path}"
+    save_path = f"{save_path}_diffs" if population == "ES-NF" else f"{save_path}_{population}"
+    save_path = f"{save_path}_withoutTransients" if without_transient else f"{save_path}"
+    save_path = f"{save_path}_HIST" if hist else f"{save_path}"
+    plt.savefig(f"{save_path}.pdf")
+    #plt.savefig(f"{save_path}.svg")
+
+    scale = 0.8
+    fig, ax = plt.subplots(figsize=(scale * 5, scale * 3))
+    plot_kde(CA1_gains, ax=ax, color="b")
+    plot_kde(CA3_gains, ax=ax, color="r")
+    # ax.set_xlabel("$\Delta\ mean\ formation\ gain$")
+    if population == "ES-NF":
+        if median:
+            ax.set_xlabel("$\Delta\ median\ log_{10}(gain)$")
+        else:
+            ax.set_xlabel("$\Delta\ mean\ log_{10}(gain)$")
+    else:
+        if median:
+            if population == "NF":
+                ax.set_xlabel("$median\ log_{10}(gain);\quad NF\ PFs$")
+            else:
+                ax.set_xlabel("$median\ log_{10}(gain);\quad ES\ PFs$")
+        else:
+            if population == "NF":
+                ax.set_xlabel("$mean\ log_{10}(gain);\quad NF\ PFs$")
+            else:
+                ax.set_xlabel("$mean\ log_{10}(gain);\quad ES\ PFs$")
+    ax.axvline(0, c="k", linestyle="--")
+    ax.set_xlim([-0.4, 0.4])
+    ax.spines[["right", "top"]].set_visible(False)
+    plt.tight_layout()
+    save_path = f"{CA1_stats.output_root}/BOOTSTRAP_BOTHAREAS_GAIN"
+    save_path = f"{save_path}_median" if median else f"{save_path}"
+    save_path = f"{save_path}_diffs" if population == "ES-NF" else f"{save_path}_{population}"
+    save_path = f"{save_path}_withoutTransients" if without_transient else f"{save_path}"
+    plt.savefig(f"{save_path}.pdf")
+    #plt.savefig(f"{save_path}.svg")
+
+def bootstrapping_proper(data_path, output_path, median=False, extra_info_CA1="", extra_info_CA3="",
+                        population=None, without_transient=False, hist=False):
+    # population can take values from this list: ["ES", "NF, "ES-NF"]
+    if population == "NF-ES":
+        population = "ES-NF"
+    CA1_stats = BtspStatistics("CA1", data_path, output_path, extra_info=extra_info_CA1)
+    CA1_stats.load_data()
+    CA1_stats.filter_low_behavior_score()
+    CA1_stats.calc_shift_gain_distribution()
+    CA1_sg_df = CA1_stats.shift_gain_df
+    if without_transient:
+        CA1_sg_df = CA1_sg_df[CA1_sg_df["category"] != "transient"]
+
+    CA3_stats = BtspStatistics("CA3", data_path, output_path, extra_info=extra_info_CA3)
+    CA3_stats.load_data()
+    CA3_stats.filter_low_behavior_score()
+    CA3_stats.calc_shift_gain_distribution()
+    CA3_sg_df = CA3_stats.shift_gain_df
+    if without_transient:
+        CA3_sg_df = CA3_sg_df[CA3_sg_df["category"] != "transient"]
+
+    CA1vCA3_shifts = []
+    CA1vCA3_gains = []
+    for seed in tqdm.tqdm(list(range(10000))):
+        CA1_sg_sub = CA1_sg_df.sample(n=len(CA1_sg_df), replace=True, random_state=seed)
+        CA3_sg_sub = CA3_sg_df.sample(n=len(CA3_sg_df), replace=True, random_state=seed)
+        if population == "ES-NF":
+            shift_CA1 = calc_diff(CA1_sg_sub, param='initial shift', median=median)
+            shift_CA3 = calc_diff(CA3_sg_sub, param='initial shift', median=median)
+            gain_CA1 = calc_diff(CA1_sg_sub, param='log10(formation gain)', median=median)
+            gain_CA3 = calc_diff(CA3_sg_sub, param='log10(formation gain)', median=median)
+        elif population == "NF":
+            if median:
+                shift_CA1 = CA1_sg_sub[CA1_sg_sub["newly formed"] == True]["initial shift"].median()
+                shift_CA3 = CA3_sg_sub[CA3_sg_sub["newly formed"] == True]["initial shift"].median()
+                gain_CA1 = CA1_sg_sub[CA1_sg_sub["newly formed"] == True]["log10(formation gain)"].median()
+                gain_CA3 = CA3_sg_sub[CA3_sg_sub["newly formed"] == True]["log10(formation gain)"].median()
+            else:
+                shift_CA1 = CA1_sg_sub[CA1_sg_sub["newly formed"] == True]["initial shift"].mean()
+                shift_CA3 = CA3_sg_sub[CA3_sg_sub["newly formed"] == True]["initial shift"].mean()
+                gain_CA1 = CA1_sg_sub[CA1_sg_sub["newly formed"] == True]["log10(formation gain)"].mean()
+                gain_CA3 = CA3_sg_sub[CA3_sg_sub["newly formed"] == True]["log10(formation gain)"].mean()
+        elif population == "ES":
+            if median:
+                shift_CA1 = CA1_sg_sub[CA1_sg_sub["newly formed"] == False]["initial shift"].median()
+                shift_CA3 = CA3_sg_sub[CA3_sg_sub["newly formed"] == False]["initial shift"].median()
+                gain_CA1 = CA1_sg_sub[CA1_sg_sub["newly formed"] == False]["log10(formation gain)"].median()
+                gain_CA3 = CA3_sg_sub[CA3_sg_sub["newly formed"] == False]["log10(formation gain)"].median()
+            else:
+                shift_CA1 = CA1_sg_sub[CA1_sg_sub["newly formed"] == False]["initial shift"].mean()
+                shift_CA3 = CA3_sg_sub[CA3_sg_sub["newly formed"] == False]["initial shift"].mean()
+                gain_CA1 = CA1_sg_sub[CA1_sg_sub["newly formed"] == False]["log10(formation gain)"].mean()
+                gain_CA3 = CA3_sg_sub[CA3_sg_sub["newly formed"] == False]["log10(formation gain)"].mean()
+        CA1vCA3_shifts.append(shift_CA1-shift_CA3)
+        CA1vCA3_gains.append(gain_CA1-gain_CA3)
+
+    scale = 0.8
+    fig, ax = plt.subplots(figsize=(scale * 5, scale * 3))
+    if hist:
+        plot_hist(CA1vCA3_shifts, ax=ax, color="k")
+    else:
+        plot_kde(CA1vCA3_shifts, ax=ax, color="k")
+
+    # sg_df_CA3 = sg_df_CA3[sg_df_CA3["initial shift"] > -20]
+
+    label = "median" if median else "mean"
+    if population == "ES-NF":
+        ax.set_xlabel(f"$\Delta\ {label}\ shift$")
+    else:
+        ax.set_xlabel(f"{label} shift; {population} PFs")
+    ax.axvline(0, c="k", linestyle="--")
+    ax.set_xlim([-5, 5])
+    ax.spines[["right", "top"]].set_visible(False)
+    plt.tight_layout()
+    save_path = f"{CA1_stats.output_root}/BOOTSTRAP_PROPER_SHIFT"
+    save_path = f"{save_path}_median" if median else f"{save_path}"
+    save_path = f"{save_path}_diffs" if population == "ES-NF" else f"{save_path}_{population}"
+    save_path = f"{save_path}_withoutTransients" if without_transient else f"{save_path}"
+    save_path = f"{save_path}_HIST" if hist else f"{save_path}"
+    plt.savefig(f"{save_path}.pdf")
+    #plt.savefig(f"{save_path}.svg")
+
+    scale = 0.8
+    fig, ax = plt.subplots(figsize=(scale * 5, scale * 3))
+    if hist:
+        plot_hist(CA1vCA3_gains, ax=ax, color="k")
+    else:
+        plot_kde(CA1vCA3_gains, ax=ax, color="k")
+    # ax.set_xlabel("$\Delta\ mean\ formation\ gain$")
+    if population == "ES-NF":
+        if median:
+            ax.set_xlabel("$\Delta\ median\ log_{10}(gain)$")
+        else:
+            ax.set_xlabel("$\Delta\ mean\ log_{10}(gain)$")
+    else:
+        if median:
+            if population == "NF":
+                ax.set_xlabel("$median\ log_{10}(gain);\quad NF\ PFs$")
+            else:
+                ax.set_xlabel("$median\ log_{10}(gain);\quad ES\ PFs$")
+        else:
+            if population == "NF":
+                ax.set_xlabel("$mean\ log_{10}(gain);\quad NF\ PFs$")
+            else:
+                ax.set_xlabel("$mean\ log_{10}(gain);\quad ES\ PFs$")
+    ax.axvline(0, c="k", linestyle="--")
+    ax.set_xlim([-0.4, 0.4])
+    ax.spines[["right", "top"]].set_visible(False)
+    plt.tight_layout()
+    save_path = f"{CA1_stats.output_root}/BOOTSTRAP_PROPER_GAIN"
+    save_path = f"{save_path}_median" if median else f"{save_path}"
+    save_path = f"{save_path}_diffs" if population == "ES-NF" else f"{save_path}_{population}"
+    save_path = f"{save_path}_withoutTransients" if without_transient else f"{save_path}"
+    save_path = f"{save_path}_HIST" if hist else f"{save_path}"
+    plt.savefig(f"{save_path}.pdf")
 
 def shuffled_MW(data_path, output_path, extra_info=""):
     for area in ["CA1", "CA3"]:
@@ -266,10 +544,41 @@ if __name__ == "__main__":
     data_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
     output_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
 
-    extra_info_CA1 = "without410"
-    extra_info_CA3 = "without410"
-    bootstrapping(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
-                  take_diff=True, without_transient=False, median=True)
+    extra_info_CA1 = "NFafter5Laps"
+    extra_info_CA3 = "NFafter5Laps"
+
+    ########### DOWNSAMPLE CA1 to CA3
+    #bootstrapping(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+    #              take_diff=True, without_transient=False, median=False)
+
+    ########## PLOT SEPARATE BOOTSTRAP FOR CA1 and CA3
+    #for median in [False, True]:
+    #    for hist in [False, True]:
+    #        for pop in ["ES-NF", "NF", "ES"]:
+    #            print(f"bootstrap both areas, pop={pop}, median={median}, hist={hist}")
+    #            bootstrapping_both_areas(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+    #                                     population=pop, without_transient=False, median=median, hist=hist)
+
+    bootstrapping_both_areas(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+                             population="ES", without_transient=False, median=True, hist=True)
+    bootstrapping_both_areas(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+                             population="NF", without_transient=False, median=True, hist=True)
+    bootstrapping_both_areas(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+                             population="ES-NF", without_transient=False, median=True, hist=True)
+    bootstrapping_both_areas(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+                             population="ES", without_transient=False, median=False, hist=True)
+    bootstrapping_both_areas(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+                             population="NF", without_transient=False, median=False, hist=True)
+    bootstrapping_both_areas(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+                             population="ES-NF", without_transient=False, median=False, hist=True)
+
+    ########## BOOTSTRAP CA1 AND CA3 TOGETHER
+    #for median in [False, True]:
+    #    for hist in [False, True]:
+    #        for pop in ["ES-NF", "NF", "ES"]:
+    #            print(f"bootstrap 'proper', pop={pop}, median={median}, hist={hist}")
+    #            bootstrapping_proper(data_root, output_root, extra_info_CA1=extra_info_CA1, extra_info_CA3=extra_info_CA3,
+    #                                     population=pop, without_transient=False, median=median, hist=hist)
     #bootstrapping(data_root, output_root, extra_info=extra_info, median=True)
     #bootstrapping(data_root, output_root, extra_info=f"{extra_info}_shuffled_laps")
     #bootstrapping(data_root, output_root, extra_info=f"{extra_info}_shuffled_laps", median=True)

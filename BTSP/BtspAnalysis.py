@@ -8,6 +8,7 @@ from configparser import ConfigParser
 from constants import ANIMALS, SESSIONS_TO_IGNORE
 from BtspAnalysisSingleCell import BtspAnalysisSingleCell
 from utils import makedir_if_needed, grow_df
+import tqdm
 
 
 class BtspAnalysis:
@@ -17,6 +18,7 @@ class BtspAnalysis:
         self.data_path = data_path
         self.extra_info = "" if not extra_info else f"_{extra_info}"
         self.history_dependent = True if "historyDependent" in extra_info else False
+        self.without_fbe = True if "withoutFBE" in extra_info else False  # FBE = forwards bound extension
         self.output_root = f"{output_path}/place_fields/{self.area}{self.extra_info}"
         self.reverse = True if "reverse" in self.extra_info else False
         makedir_if_needed(f"{output_path}/place_fields")
@@ -60,10 +62,9 @@ class BtspAnalysis:
     def run_btsp_analysis(self):
         tcl_root = f"{self.data_path}\\tuned_cells\\{self.area}{self.extra_info}\\"
         tcl_paths = [file for file in os.listdir(tcl_root) if "tuned_cells" in file]
-        for animal in self.animals:
+        for animal in tqdm.tqdm(self.animals):
             pfs_df_animal = None
-
-            tcl_paths_animal = [path for path in tcl_paths if animal in path]
+            tcl_paths_animal = [path for path in tcl_paths if f"_{animal}_" in path]
             for path in tcl_paths_animal:
                 with open(f"{tcl_root}\\{path}", "rb") as tcl_file:
                     tcl = pickle.load(tcl_file)
@@ -85,11 +86,14 @@ class BtspAnalysis:
 
                     basc = BtspAnalysisSingleCell(tuned_cell.sessionID, tuned_cell.cellid, rate_matrix,
                                                   tuned_cell.frames_pos_bins, tuned_cell.frames_dF_F, tuned_cell.lap_histories,
+                                                  tuned_cell.spike_matrix, i_laps=tuned_cell.corridor_laps,
                                                   params=self.params, bins_p95_geq_afr=tuned_cell.bins_p95_geq_afr)
                     if self.history_dependent:
-                        basc.categorize_place_fields(cor_index=tuned_cell.corridor, history=tuned_cell.history)
+                        basc.categorize_place_fields(cor_index=tuned_cell.corridor, history=tuned_cell.history,
+                                                     without_fbe=self.without_fbe)
                     else:
-                        basc.categorize_place_fields(cor_index=tuned_cell.corridor)
+                        basc.categorize_place_fields(cor_index=tuned_cell.corridor,
+                                                     without_fbe=self.without_fbe)
 
                     # TODO: ezt az operator overloadingot dobd ki
                     if basc_all is None:
@@ -123,15 +127,12 @@ class BtspAnalysis:
             config.write(params_file)
 
 if __name__ == "__main__":
-    #parse arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
-    parser.add_argument("-dp", "--data-path", required=True)
-    parser.add_argument("-op", "--output-path", default=os.getcwd())
-    parser.add_argument("-x", "--extra-info", default="")  # don't provide _ in the beginning
-    args = parser.parse_args()
+    area = "CA3"
+    data_path = f"C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual"
+    output_path = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual"
+    extra_info = "NFafter5Laps"
 
     #run analysis
-    analysis = BtspAnalysis(args.area, args.data_path, args.output_path, extra_info=args.extra_info)
+    analysis = BtspAnalysis(area, data_path, output_path, extra_info=extra_info)
     analysis.run_btsp_analysis()
     # TODO: hiányzik még NMF, cell stats és ratemaps

@@ -1,6 +1,6 @@
 class TunedCell:
     def __init__(self, sessionID, cellid, rate_matrix, corridor, history, bins_p95_geq_afr,
-                 lap_histories, frames_pos_bins, frames_dF_F, n_events, total_time):
+                 lap_histories, frames_pos_bins, frames_dF_F, n_events, total_time, spike_matrix, corridor_laps):
         self.sessionID = sessionID
         self.cellid = cellid
         self.rate_matrix = rate_matrix
@@ -20,6 +20,12 @@ class TunedCell:
         # number of Ca2+ events and total imaging time
         self.n_events = n_events
         self.total_time = total_time
+
+        # spike matrix - for Barna's modeling
+        self.spike_matrix = spike_matrix
+
+        # list of lap indices of the current corridor
+        self.corridor_laps = corridor_laps
 
 
 class Cell:

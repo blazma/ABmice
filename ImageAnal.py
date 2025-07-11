@@ -2672,6 +2672,8 @@ class ImagingSessionData:
         # now only focus on tuned cells for the main analysis
         for cellid in tuned_cell_ids:
             for i_cor, corridor in enumerate(self.corridors):
+                if corridor == 17:
+                    continue
                 i_laps = np.nonzero(self.i_corridors[self.i_Laps_ImData] == corridor)[0]
 
                 # filter out disengaged laps if there exist any
@@ -2714,7 +2716,8 @@ class ImagingSessionData:
                     else:
                         lap_histories = self.labels_b
                     tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, history,
-                                           bins_p95_geq_afr, lap_histories, frames_pos_bins, frames_dF_F, n_events, total_time)
+                                           bins_p95_geq_afr, lap_histories, frames_pos_bins, frames_dF_F, n_events, total_time,
+                                           spike_matrix=total_spikes, corridor_laps=i_laps)
                     tuned_cells.append(tuned_cell)
 
                 if history_dependent:
@@ -2728,7 +2731,7 @@ class ImagingSessionData:
                     p95_cell = self.p95[i_cor][:, i_cell]
                     bins_p95_geq_afr = [i for i in range(self.N_pos_bins) if average_firing_rate[i] >= p95_cell[i]]
                     tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, history, bins_p95_geq_afr, lap_histories=[],
-                                           frames_pos_bins=[], frames_dF_F=[], n_events=[], total_time=[])  # TODO: these are left intentionally empty for now
+                                           frames_pos_bins=[], frames_dF_F=[], n_events=[], total_time=[], spike_matrix=[], corridor_laps=[])  # TODO: these are left intentionally empty for now
                     tuned_cells.append(tuned_cell)
 
                     ################
@@ -2741,8 +2744,8 @@ class ImagingSessionData:
                     i_cell = np.where(tuned_cell_ids == cellid)[0]
                     p95_cell = self.p95[i_cor][:, i_cell]
                     bins_p95_geq_afr = [i for i in range(self.N_pos_bins) if average_firing_rate[i] >= p95_cell[i]]
-                    tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, history, bins_p95_geq_afr,
-                                           frames_pos_bins=[], frames_dF_F=[], n_events=[], total_time=[])  # TODO: these are left intentionally empty for now
+                    tuned_cell = TunedCell(self.sessionID, cellid, rate_matrix, corridor, history, bins_p95_geq_afr, lap_histories=[],
+                                           frames_pos_bins=[], frames_dF_F=[], n_events=[], total_time=[], spike_matrix=[], corridor_laps=[])  # TODO: these are left intentionally empty for now
                     tuned_cells.append(tuned_cell)
 
         return tuned_cells, tuning_curves, cells

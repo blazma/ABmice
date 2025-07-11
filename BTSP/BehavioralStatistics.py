@@ -5,7 +5,11 @@ import pandas as pd
 import seaborn as sns
 from datetime import datetime
 from matplotlib import pyplot as plt
-from BTSP.constants import (ANIMALS, SESSIONS_TO_IGNORE, ANIMALS_PALETTE, AREA_PALETTE,
+try:
+    from BTSP.constants import (ANIMALS, SESSIONS_TO_IGNORE, ANIMALS_PALETTE, AREA_PALETTE,
+                           VSEL_NORMALIZATION, BEHAVIOR_SCORE_THRESHOLD)
+except ModuleNotFoundError:
+    from constants import (ANIMALS, SESSIONS_TO_IGNORE, ANIMALS_PALETTE, AREA_PALETTE,
                        VSEL_NORMALIZATION, BEHAVIOR_SCORE_THRESHOLD)
 from utils import makedir_if_needed
 
@@ -59,13 +63,22 @@ class BehaviorStatistics:
             beh_df_animal_selcols = beh_df_animal[["sessionID", "protocol", *y_cols]]
             beh_df_animal_selcols_melted = beh_df_animal_selcols.melt(["sessionID", "protocol"], var_name="cols", value_name="vals")
 
-            plt.figure()
-            ax = sns.lineplot(x="sessionID", y="vals", hue="cols", palette=palette, data=beh_df_animal_selcols_melted)
-            sns.scatterplot(x="sessionID", style="protocol", y="vals", hue="cols", palette=palette, data=beh_df_animal_selcols_melted, ax=ax, s=60)
-            handles, labels = ax.get_legend_handles_labels()
+            scale = 0.8
+            fig, axs = plt.subplots(2,1, sharex=True, height_ratios=[1,2], figsize=(scale*10,scale*7))
+            # plot behavior score
+            sns.lineplot(ax=axs[0], x="sessionID", y="behavior score", color="k", data=beh_df_animal[["sessionID", "behavior score"]])
+            sns.scatterplot(ax=axs[0], x="sessionID", y="behavior score", color="k", data=beh_df_animal[["sessionID", "behavior score"]])
+            axs[0].axhline(4, c="r", linestyle="--")
+            axs[0].set_ylim([0,8])
+
+            # plot behavior score components
+            sns.lineplot(x="sessionID", y="vals", hue="cols", palette=palette, data=beh_df_animal_selcols_melted, ax=axs[1])
+            sns.scatterplot(x="sessionID", style="protocol", y="vals", hue="cols", palette=palette, data=beh_df_animal_selcols_melted, ax=axs[1], s=60)
+            handles, labels = axs[1].get_legend_handles_labels()
             plt.axhline(0, c="k", linestyle="--")
             plt.ylim([-1.1, 1.1])
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+            axs[1].set_xticklabels(axs[1].get_xticklabels(), rotation=45, ha="right")
+
             plt.legend(handles[len(y_cols):], labels[len(y_cols):], bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
             plt.tight_layout()
             plt.savefig(f"{self.output_root}/{animal}_behavior.pdf")
@@ -176,13 +189,15 @@ class BehaviorStatistics:
         df = behav#[behav["variable"] != "Vmax [cm/s]"]
         sns.set_context("poster")
         g = sns.catplot(kind="box", data=df, x="area", y="value", col="variable", palette=AREA_PALETTE, gap=0.2,
-                        showfliers=False, sharey=False, width=1, legend=False, linewidth=3, height=6, aspect=0.7, linecolor="k")
+                        showfliers=False, sharey=False, width=1, legend=False, linewidth=3, height=3.5, aspect=1.2, linecolor="k")
         palette = ANIMALS_PALETTE["CA1"] + ANIMALS_PALETTE["CA3"]
         #g.map_dataframe(sns.swarmplot, x="area", y="value", hue="animalID", dodge=False, size=8.25,
         #                palette=palette, linewidth=1.5, alpha=0.8, legend=False)
-        g.axes[0, 0].set_ylim([0, 70])
+        g.axes[0, 0].set_ylim([0, 75])
         g.axes[0, 1].set_ylim([-1, 1.05])
+        g.axes[0, 1].axhline(0,c="r",linestyle="--")
         g.axes[0, 2].set_ylim([-1, 1.05])
+        g.axes[0, 2].axhline(0,c="r",linestyle="--")
         #g.axes[0, 2].spines['left'].set_visible(False)
         #g.axes[0, 2].tick_params(axis="y", left=False)
         #g.axes[0, 2].set_yticklabels([""]*len(g.axes[0, 2].get_yticklabels()))
@@ -208,7 +223,7 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
     parser.add_argument("-dp", "--data-path", required=True)
     parser.add_argument("-op", "--output-path", default=os.getcwd())
-    parser.add_argument("-x", "--extra-info")  # don't provide _ in the beginning
+    parser.add_argument("-x", "--extra-info", default="")  # don't provide _ in the beginning
     args = parser.parse_args()
 
     area = args.area
@@ -220,9 +235,9 @@ if __name__ == "__main__":
     behav_stats = BehaviorStatistics(area, data_path, output_path, extra_info)
     behav_stats.calc_behavior_score()
     behav_stats.plot_behavioral_metrics_for_each_animal()
-    behav_stats.plot_behavioral_metrics_for_all_sessions()
+    #behav_stats.plot_behavioral_metrics_for_all_sessions()
     #behav_stats.plot_correlation_matrix()
-    #behav_stats.export_to_excel()
+    behav_stats.export_to_excel()
 
     extra_info_CA1 = ""
     extra_info_CA3 = ""

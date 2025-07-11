@@ -1,10 +1,12 @@
+import warnings
+
 import numpy as np
 from utils import grow_df
 from BTSP.PlaceField import PlaceField
 
 
 class BtspAnalysisSingleCell:
-    def __init__(self, sessionID, cellid, rate_matrix, frames_pos_bins, frames_dF_F, lap_histories,
+    def __init__(self, sessionID, cellid, rate_matrix, frames_pos_bins, frames_dF_F, lap_histories, spike_matrix,
                  params=None, corridors=None, place_field_bounds=None, bins_p95_geq_afr=None, i_laps=None, shift_criterion=True):
         """
         BTSP analysis for a single cell from a given session
@@ -29,6 +31,7 @@ class BtspAnalysisSingleCell:
         self.cellid = cellid
         self.rate_matrix = rate_matrix
         self.lap_histories = lap_histories
+        self.spike_matrix = spike_matrix
         self.params = params
 
         if corridors is None:
@@ -97,7 +100,7 @@ class BtspAnalysisSingleCell:
         place_field_bounds = [(cpf[0], cpf[-1]) for cpf in candidate_pfs_filtered]
         return place_field_bounds
 
-    def categorize_place_fields(self, cor_index=0, history="ALL"):
+    def categorize_place_fields(self, cor_index=0, history="ALL", without_fbe=False):
         """
         Run BTSP analysis, categorize place fields in a given corridor.
         Starting from first lap, it only finds the first place field and ignores later ones.
@@ -118,8 +121,11 @@ class BtspAnalysisSingleCell:
                 place_field.N_pos_bins = self.rate_matrix.shape[0]
                 place_field.params = self.params
                 place_field.lap_histories = self.lap_histories
+                #place_field.spike_counts_whole_cell = np.nansum(self.spike_matrix,axis=0)
 
-                place_field.set_bounds(self.place_field_bounds[i_cpf])
+                place_field.set_bounds(self.place_field_bounds[i_cpf], without_fbe)
+                lb, ub = place_field.bounds
+                place_field.spike_counts_pf = np.nansum(self.spike_matrix[lb:ub, :],axis=0)
                 place_field.find_formation_lap(start_lap=0)
                 place_field.find_end_lap()
 
@@ -129,6 +135,7 @@ class BtspAnalysisSingleCell:
                     self.unreliable_place_fields.append(place_field)
                     continue
 
+                fl, el = place_field.formation_lap, place_field.end_lap
                 place_field.prepare_for_nmf()
                 place_field.find_active_laps()
 
@@ -184,10 +191,12 @@ class BtspAnalysisSingleCell:
             self.nonbtsp_novel_place_fields,
             self.btsp_place_fields
         ]
-        place_fields_df = None
-        for place_field_category in place_field_categories:
-            for place_field in place_field_category:
-                place_fields_df = grow_df(place_fields_df, place_field.to_dataframe())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # numpy cries about means of empty lists and stuff
+            place_fields_df = None
+            for place_field_category in place_field_categories:
+                for place_field in place_field_category:
+                    place_fields_df = grow_df(place_fields_df, place_field.to_dataframe())
         return place_fields_df
 
     def create_nmf_matrix(self, type=""):

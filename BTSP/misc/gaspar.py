@@ -81,7 +81,7 @@ def spks_cleaner(fc, spks, event_snr_threshold=3.5, peri_median_width=0.5, pre_r
     return spks
 
 
-area = "CA1"
+area = "CA3"
 base_folder = rf"D:\{area}"
 meta_df = pd.read_excel(f"{base_folder}/{area}_meta.xlsx")
 

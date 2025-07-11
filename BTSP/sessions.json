@@ -51,7 +51,34 @@
     "srb402_240320_CA1": "random",
     "srb410_240528_CA1": "random",
     "srb410a_240529_CA1": "random",
-    "srb410a_240605_CA1": "random"
+    "srb410a_240605_CA1": "random",
+    "srb504_250121": "random",
+    "srb504_250122": "random",
+    "srb504_250123": "random",
+    "srb504_250124": "random",
+    "srb504_250127": "random",
+    "srb504_250128": "random",
+    "srb504_250129": "random",
+    "srb504_250130": "random",
+    "srb504a_250131": "random",
+    "srb504a_250203": "random",
+    "srb504a_250204": "random",
+    "srb504a_250205": "random",
+    "srb504a_250206": "random",
+    "srb504a_250207": "random",
+    "srb504a_250210": "random",
+    "srb504a_250211": "random",
+    "srb504a_250212": "random",
+    "srb517_250218": "random",
+    "srb517_250218a": "random",
+    "srb517_250219": "random",
+    "srb517_250219a": "random",
+    "srb517_250220": "random",
+    "srb517_250221": "random",
+    "srb517_250224": "random",
+    "srb517_250225": "random",
+    "srb517_250225a": "random",
+    "srb517_250226": "random"
   },
   "CA3": {
     "srb231_220804": "random",
@@ -128,6 +155,8 @@
     "srb410a_240530a": "random",
     "srb410a_240604":  "random",
     "srb410a_240605": "random",
-    "srb410a_240607":  "random"
+    "srb410a_240607":  "random",
+    "srb529_250313a": "random",
+    "srb529_250314": "random"
   }
 }
