@@ -8,6 +8,7 @@ import scipy
 import tqdm
 from utils import grow_df, makedir_if_needed
 from copy import deepcopy
+import warnings
 
 
 class Statistics_BothAreas:
@@ -144,13 +145,16 @@ class Statistics_BothAreas:
             self.tests_df.to_excel(f"{self.output_root}/tests_bothAreas.xlsx", index=False)
 
     def plot_shift_gain_both_areas(self):
-        palette = list(AREA_PALETTE.values())
+        palette_ES = ["#65a1ee", "#1553a3"]
+        palette_NF = ["#fda814", "#b6790e"]
 
-        for pop in ["newly formed", "established"]:
+        for i_pop, pop in enumerate(["newly formed", "established"]):
             if pop == "newly formed":
                 is_nf = True
+                palette = palette_NF
             else:
                 is_nf = False
+                palette = palette_ES
 
             sg_df = self.shift_gain_df[self.shift_gain_df["newly formed"] == is_nf]
             scale = 0.3  # 0.55 for poster
@@ -229,16 +233,18 @@ class Statistics_BothAreas:
 
             ###########################
             ##### CUMULATIVE PLOTS
-            scale = 1.3  # poster 0.55
-            fig, axs = plt.subplots(1,2, figsize=(scale*6,scale*3.5))
-            sg_df[sg_df["area"] == "CA1"].hist(ax=axs[0], density=True, histtype="step", range=[-30, 30], bins=60, cumulative=True,
-                                               column="initial shift", color=palette[0], label="CA1", linewidth=2)
-            sg_df[sg_df["area"] == "CA3"].hist(ax=axs[0], density=True, histtype="step", range=[-30, 30], bins=60, cumulative=True,
-                                               column="initial shift", color=palette[1], label="CA3", linewidth=2)
-            sg_df[sg_df["area"] == "CA1"].hist(ax=axs[1], density=True, histtype="step", range=[-1, 1], bins=20, cumulative=True,
-                                               column="log10(formation gain)", color=palette[0], label="CA1", linewidth=2)
-            sg_df[sg_df["area"] == "CA3"].hist(ax=axs[1], density=True, histtype="step", range=[-1, 1], bins=20, cumulative=True,
-                                               column="log10(formation gain)", color=palette[1], label="CA3", linewidth=2)
+            scale = 1  # poster 0.55
+            fig, axs = plt.subplots(2,1, figsize=(scale*4,scale*3.5))
+            sns.ecdfplot(data=sg_df, ax=axs[0], x="initial shift", hue="area", palette=palette)
+            sns.ecdfplot(data=sg_df, ax=axs[1], x="log10(formation gain)", hue="area", palette=palette)
+            #sg_df[sg_df["area"] == "CA1"].hist(ax=axs[0], density=True, histtype="step", range=[-30, 30], bins=60, cumulative=True,
+            #                                   column="initial shift", color=palette[0], label="CA1", linewidth=2)
+            #sg_df[sg_df["area"] == "CA3"].hist(ax=axs[0], density=True, histtype="step", range=[-30, 30], bins=60, cumulative=True,
+            #                                   column="initial shift", color=palette[1], label="CA3", linewidth=2)
+            #sg_df[sg_df["area"] == "CA1"].hist(ax=axs[1], density=True, histtype="step", range=[-1, 1], bins=20, cumulative=True,
+            #                                   column="log10(formation gain)", color=palette[0], label="CA1", linewidth=2)
+            #sg_df[sg_df["area"] == "CA3"].hist(ax=axs[1], density=True, histtype="step", range=[-1, 1], bins=20, cumulative=True,
+            #                                   column="log10(formation gain)", color=palette[1], label="CA3", linewidth=2)
             axs[1].set_xticks(np.arange(-1,1.1,0.5))
             axs[0].spines["top"].set_visible(False)
             axs[1].spines["top"].set_visible(False)
@@ -250,6 +256,11 @@ class Statistics_BothAreas:
             axs[1].grid(False)
             axs[0].axvline(x=0, c="k", linestyle="--", zorder=0)
             axs[1].axvline(x=0, c="k", linestyle="--", zorder=0)
+            if pop == "newly formed":
+                axs[0].set_xlim([-20,20])
+            else:
+                axs[0].set_xlim([-20,20])
+            axs[1].set_xlim([-1,1])
             #axs[0].set_title("")
             #axs[1].set_title("")
             plt.legend()
@@ -650,8 +661,8 @@ class Statistics_BothAreas:
             com_metric = "formation bin"
 
         histogram_binsize = 3
+        scale = 0.66
         for area in ["CA1", "CA3"]:
-            scale = 1
             fig, axs = plt.subplots(3,2, sharex=True, figsize=(scale*12,scale*6), sharey="row")
             palette = ["#00B0F0", "#F5B800"]
             corridors = [14, 15]
@@ -682,12 +693,12 @@ class Statistics_BothAreas:
                 sg_cor = sg_cor[(~sg_cor["initial shift"].isna()) & (~sg_cor["log10(formation gain)"].isna())]
                 if area == "CA1":
                     sns.lineplot(data=sg_cor, x=f"{com_metric} (binned, midpoints)", y="initial shift", hue="newly formed",
-                                 ax=axs[0, i_cor], estimator="mean", errorbar=('se', 1), palette=palette, legend=legend)
+                                 ax=axs[0, i_cor], estimator="mean", errorbar=('se', 1), palette=palette, legend=False)
                     sns.lineplot(data=sg_cor, x=f"{com_metric} (binned, midpoints)", y="log10(formation gain)", hue="newly formed",
                                  ax=axs[1, i_cor], estimator="mean", errorbar=('se', 1), palette=palette, legend=False)
                 else:
                     sns.scatterplot(data=sg_cor, x=com_metric, y="initial shift", hue="newly formed",
-                                 ax=axs[0, i_cor], palette=palette, legend=legend)
+                                 ax=axs[0, i_cor], palette=palette, legend=False)
                     sns.scatterplot(data=sg_cor, x=com_metric, y="log10(formation gain)", hue="newly formed",
                                  ax=axs[1, i_cor], palette=palette, legend=False)
 
@@ -704,7 +715,7 @@ class Statistics_BothAreas:
                 # ESTABLISHED vs NEWLY FORMED
                 if hist_categories == "ESNF":
                     sns.histplot(data=sg_cor, x=com_metric, hue="newly formed", binwidth=histogram_binsize, binrange=[0,75],
-                                 ax=axs[2, i_cor], palette=palette, legend=True, multiple="stack",
+                                 ax=axs[2, i_cor], palette=palette, legend=False, multiple="stack",
                                  edgecolor=None)
                 
                 ##############################
@@ -712,7 +723,7 @@ class Statistics_BothAreas:
                 elif hist_categories == "ALL":
                     categories_colors = [category.color for _, category in CATEGORIES.items()][1:]
                     sns.histplot(data=sg_cor, x=com_metric, hue="category", binwidth=histogram_binsize, binrange=[0,75],
-                                 ax=axs[2, i_cor], palette=categories_colors, legend=True, multiple="stack",
+                                 ax=axs[2, i_cor], palette=categories_colors, legend=False, multiple="stack",
                                  edgecolor=None)
 
                 ##############################
@@ -858,6 +869,37 @@ class Statistics_BothAreas:
         print(f"    prop. of NF: {np.round(len(shift_and_gain_ca3) / len(nf_ca3),2)}")
         print(f"    prop. of total: {np.round(len(shift_and_gain_ca3) / len(sg_ca3),2)}")
 
+    def plot_born_at_the_same_time(self):
+        fig, axs = plt.subplots(2,2)
+
+        for x, area in enumerate(["CA1", "CA3"]):
+            for y, corridor in enumerate([14, 15]):
+                pfs = self.pfs_df[self.pfs_df["area"] == area]
+                pfs = pfs[pfs["category"] != "unreliable"]
+                pfs14 = pfs[pfs["corridor"] == corridor]
+                pfs14_counts = pfs14.groupby(["animal id", "session id", "cell id"]).count()
+                pfs14_filt_idx = pfs14_counts[pfs14_counts["index"] >= 2].index
+                pfs14_mult = pfs14.set_index(["animal id", "session id", "cell id"]).loc[pfs14_filt_idx].reset_index()
+
+                pfs14_mult_NF = pfs14_mult[pfs14_mult["newly formed"]]
+                born_at_same_mask = pfs14_mult_NF.groupby(["animal id", "session id", "cell id"])["formation lap"].transform(lambda x: x.duplicated(keep=False))
+                pfs14_born_at_same = pfs14_mult_NF.loc[born_at_same_mask == True]
+                n_born_at_same = len(pfs14_born_at_same)
+
+                ns_born_at_same_shuffled = np.zeros(1000)
+                for i in tqdm.tqdm(list(range(1000))):
+                    with warnings.catch_warnings(action="ignore"):
+                        pfs14_mult_NF["formation lap shuffled"] = np.random.permutation(pfs14_mult_NF["formation lap"].values)
+                    born_at_same_mask_shuffled = pfs14_mult_NF.groupby(["animal id", "session id", "cell id"])["formation lap shuffled"].transform(lambda x: x.duplicated(keep=False))
+                    pfs14_born_at_same_shuffled = pfs14_mult_NF.loc[born_at_same_mask_shuffled == True]
+                    ns_born_at_same_shuffled[i] = len(pfs14_born_at_same_shuffled)
+
+                ax = axs[x,y]
+                sns.kdeplot(ns_born_at_same_shuffled, ax=ax, cut=0)
+                ax.axvline(n_born_at_same, c="r")
+        plt.show()
+
+
 if __name__ == "__main__":
     data_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
     output_root = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual\\"
@@ -872,16 +914,17 @@ if __name__ == "__main__":
                                  filter_overextended=filter_overextended)
     stats.load_data()
     stats.run_tests()
-    stats.plot_shift_gain_both_areas()
+    #stats.plot_shift_gain_both_areas()
     #stats.plot_shift_gain_for_each_animal()
     #for area in ["CA1", "CA3"]:
     #    for animal in tqdm.tqdm(ANIMALS[area]):
     #        stats.plot_spatial_distro(animal=animal, filter_overextended=False, pf_com=False)
     #        stats.plot_spatial_distro(animal=animal, filter_overextended=False, pf_com=True)
     #stats.plot_spatial_distro()
-    for hist_categories in ["ESNF", "ALL", "sNF"]:
-        stats.plot_spatial_distro(filter_overextended=filter_overextended, pf_com=False, hist_categories=hist_categories)
-        stats.plot_spatial_distro(filter_overextended=filter_overextended, pf_com=True, hist_categories=hist_categories)
+    #for hist_categories in ["ESNF"]: #["ESNF", "ALL", "sNF"]:
+    #    stats.plot_spatial_distro(filter_overextended=filter_overextended, pf_com=False, hist_categories=hist_categories)
+    #    stats.plot_spatial_distro(filter_overextended=filter_overextended, pf_com=True, hist_categories=hist_categories)
+    #stats.plot_born_at_the_same_time()
     #stats.plot_track_end()
     #stats.plot_track_end(filter_overextended=False)
     #stats.plot_overextended()

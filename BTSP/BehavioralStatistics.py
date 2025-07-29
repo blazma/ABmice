@@ -217,29 +217,52 @@ class BehaviorStatistics:
         plt.savefig(f"{self.output_root}/plot_CA1_v_CA3.svg")
         plt.close()
 
-if __name__ == "__main__":
-    # parse arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--area", required=True, choices=["CA1", "CA3"])
-    parser.add_argument("-dp", "--data-path", required=True)
-    parser.add_argument("-op", "--output-path", default=os.getcwd())
-    parser.add_argument("-x", "--extra-info", default="")  # don't provide _ in the beginning
-    args = parser.parse_args()
+    def plot_all_behavior_scores(self, extra_info_CA1, extra_info_CA3):
+        ### MS.Fig 1C
+        behav_CA1 = pd.read_pickle(f"{self.data_path}/behavior/CA1_{extra_info_CA1}/behavior_df_CA1.pickle").reset_index(drop=True)
+        behav_CA3 = pd.read_pickle(f"{self.data_path}/behavior/CA3_{extra_info_CA3}/behavior_df_CA3.pickle").reset_index(drop=True)
+        behav = pd.concat([behav_CA1, behav_CA3])  # merge dataframes
 
-    area = args.area
-    data_path = args.data_path
-    output_path = args.output_path
-    extra_info = args.extra_info
+        # calculate behavior score TODO: duplicate of the same function above
+        y_cols = ['area', 'animalID', 'sessionID', 'P-correct (14)', 'P-correct (15)', 'Speed index (14)', 'Speed index (15)',
+                  'Speed selectivity', 'Lick index (14)', 'Lick index (15)', 'Lick selectivity']
+        df = behav[y_cols].set_index(["area", "animalID", "sessionID"])
+        df[["Speed index (14)", "Speed index (15)", "Speed selectivity"]] = df[["Speed index (14)", "Speed index (15)", "Speed selectivity"]] / VSEL_NORMALIZATION
+        df = df.sum(axis=1).to_frame().rename(columns={0: "behavior score"})
+        behav = behav.set_index(["area", "animalID", "sessionID"]).join(df).reset_index()
+
+        fig, axs = plt.subplots(1,2, sharey=True, figsize=(3,4))
+        palette = ["#D3D3D3", "#4F4F4F"]
+        axs[0].axhline(4, c="r", linestyle="--")
+        axs[1].axhline(4, c="r", linestyle="--")
+        sns.swarmplot(behav, y="behavior score", hue="area", ax=axs[0], palette=palette, edgecolor="black", legend=False,
+                      linewidth=0.5)
+        sns.boxplot(behav, y="behavior score", hue="area", ax=axs[1], palette=palette)
+        axs[0].spines[['right', 'top', 'bottom']].set_visible(False)
+        axs[0].set_xticks([])
+        axs[1].set_axis_off()
+        plt.ylim([-0.1,8.1])
+        plt.tight_layout()
+        plt.savefig(f"{self.output_root}/plot_behavior_scores_all.png", dpi=500)
+        plt.close()
+
+if __name__ == "__main__":
+    area = "CA1"
+    data_path = f"C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual"
+    output_path = "C:\\Users\\martin\\home\\phd\\btsp_project\\analyses\\manual"
+    extra_info = "NFafter5Laps"
+    extra_info_CA1 = "NFafter5Laps"
+    extra_info_CA3 = "NFafter5Laps"
 
     # run analysis
     behav_stats = BehaviorStatistics(area, data_path, output_path, extra_info)
     behav_stats.calc_behavior_score()
-    behav_stats.plot_behavioral_metrics_for_each_animal()
+    #behav_stats.plot_behavioral_metrics_for_each_animal()
     #behav_stats.plot_behavioral_metrics_for_all_sessions()
     #behav_stats.plot_correlation_matrix()
-    behav_stats.export_to_excel()
+    #behav_stats.export_to_excel()
 
-    extra_info_CA1 = ""
-    extra_info_CA3 = ""
-    behav_stats.plot_CA1_v_CA3(extra_info_CA1, extra_info_CA3)
-
+    #extra_info_CA1 = ""
+    #extra_info_CA3 = ""
+    #behav_stats.plot_CA1_v_CA3(extra_info_CA1, extra_info_CA3)
+    behav_stats.plot_all_behavior_scores(extra_info_CA1, extra_info_CA3)

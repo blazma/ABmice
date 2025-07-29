@@ -1934,102 +1934,205 @@ class BtspStatistics:
             plt.savefig(f"{self.output_root}/pf_with_other_corridor/{filename}.pdf")
             plt.close()
 
-    def plot_pf_influence_on_other_corridor(self, RZonly=True, mean_or_max="max", log=False):
+    def plot_pf_influence_on_other_corridor(self, where_born="wholeTrack", where_compared="wholeTrack", mean_or_max="mean", SE=False):
+        if where_born not in ["wholeTrack", "nearRZ", "exceptRZ"]:
+            print("born parameter incorrect")
+            return
+        if where_compared not in ["wholeTrack", "nearRZ", "exceptRZ"]:
+            print("compared parameter incorrect")
+            return
+        if mean_or_max not in ["mean", "max"]:
+            print("mean_or_max parameter incorrect")
+            return
+
+        ### for debug purposes; these PFs have nice, obvious influence on the other corridor:
+        #selected_PFs = [
+        #    "srb131_211016_Cell253_Corr15",
+        #    "srb504_250123_Cell557_Corr15",
+        #    "srb504a_250131_Cell272_Corr15",
+        #    "srb504a_250205_Cell683_Corr14",
+        #    "srb504a_250210_Cell118_Corr15",
+        #    "srb504a_250211_Cell211_Corr14",
+        #    "KS029_110721_Cell315_Corr15",
+        #    "KS029_110721_Cell354_Corr15",
+        #    "KS029_110921_Cell69_Corr14",
+        #]
+
         tcs = self.tc_df.set_index(["sessionID", "cellid", "corridor"])
 
         # filter for cells with max PF count of 1 per corridor
+        df = self.pfs_df.groupby(["animal id", "session id", "cell id", "corridor"]).count()
+        idxs = df[df["index"] == 1].index.tolist()
+        pfs_1pCellpCorr = self.pfs_df.set_index(["animal id", "session id", "cell id", "corridor"]).loc[idxs].reset_index()
+
+        # filter for cells with max PF count of 1 (can't have PF in both corridors)
         df = self.pfs_df.groupby(["animal id", "session id", "cell id"]).count()
         idxs = df[df["index"] == 1].index.tolist()
-        pfs = self.pfs_df.set_index(["animal id", "session id", "cell id"]).loc[idxs].reset_index()
+        pfs_1pCell = self.pfs_df.set_index(["animal id", "session id", "cell id"]).loc[idxs].reset_index()
 
-        # filter for BTSP PFs
-        pfs = pfs[pfs["category"] == "btsp"]
+        pfs_dfs_list = {
+            "all pfs": self.pfs_df,
+            "1 PF / cell / corr.": pfs_1pCellpCorr,
+            "1 PF / cell": pfs_1pCell
+        }
+
         corr_order = [14, 15]
 
-        fig, axs = plt.subplots(2,1)
-        x = np.arange(-5,6,1)
-        peri_FL_rate_means_allPFs = []
-        peri_FL_rate_means_other_allPFs = []
-        print(f"PF count before filters: {len(pfs)}")
-        skipped = 0
-        count_nonRZ = 0
-        for i_pf, pf in pfs.iterrows():
-            category = pf["category"]
-            lb, ub = pf["lower bound"], pf["upper bound"]
-            fl, el = pf["formation lap"], pf["end lap"]
+        i_row = 0
+        fig, axs = plt.subplots(3,2, sharey="col")
+        for pfs_name, pfs_df in pfs_dfs_list.items():
+            #pfs_df = pfs_df[(pfs_df["category"] == "non-btsp") | (pfs_df["category"] == "btsp") | (pfs_df["category"] == "early")]
+            pfs_df = pfs_df[pfs_df["category"] != "unreliable"]
+            pfs_df = pfs_df.set_index(["animal id", "session id", "cell id", "corridor"])
+            for cat in ["non-btsp", "btsp"]:
+                periFL_rates_ALL = []
+                periFL_rates_other_ALL = []
+                for i_pf, pf in tqdm.tqdm(pfs_df.iterrows()):
+                    # filter only for btsp or non-btsp
+                    if pf["category"] != cat:
+                        continue
 
-            corr_of_pf = pf["corridor"]
-            corr_other = 14 if pf["corridor"] == 15 else 15
+                    animal, session, cell, corr_of_pf = i_pf
+                    lb, ub = pf["lower bound"], pf["upper bound"]
+                    fl, el = pf["formation lap"], pf["end lap"]
+                    corr_other = 14 if corr_of_pf == 15 else 15
 
-            # filter for RZ only
-            if RZonly:
-                RZ_lb, RZ_ub = self.reward_zones[corr_order.index(corr_of_pf)]
-                if pf["formation bin"] < RZ_lb-5 or pf["formation bin"] > RZ_ub+5:
-                    count_nonRZ += 1
-                    continue
-                RZ_other_lb, RZ_other_ub = self.reward_zones[corr_order.index(corr_other)]
+                    # filter out place fields that formed after the earliest sNF place field of cell
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+                        cell_df = pfs_df.loc[animal, session, cell]
+                        formation_laps_for_all_pfs_of_cell = cell_df.apply(lambda pf: pf["corridor laps"][pf["formation lap"]], axis=1)
+                        earliest_formation_lap = formation_laps_for_all_pfs_of_cell.min()
+                        #if earliest_formation_lap == pf["corridor laps"][fl] and len(cell_df) > 1:
+                        #    print(f"{session}_Cell{cell}_Corr{corr_of_pf}")
+                        if earliest_formation_lap != pf["corridor laps"][fl]:
+                            continue
 
-            tc_of_pf = tcs.loc[pf["session id"], pf["cell id"], corr_of_pf]["tc"]
-            tc_other = tcs.loc[pf["session id"], pf["cell id"], corr_other]["tc"]
+                    RZ_lb, RZ_ub = self.reward_zones[corr_order.index(corr_of_pf)]
+                    RZ_other_lb, RZ_other_ub = self.reward_zones[corr_order.index(corr_other)]
 
-            fl_of_pf = tc_of_pf.corridor_laps[fl]
-            fl_idx_other = np.where(tc_other.corridor_laps > fl_of_pf)[0][0]
-            fl_other = tc_other.corridor_laps[fl_idx_other]
+                    if where_born == "nearRZ":
+                        if pf["formation bin"] < RZ_lb - 5 or pf["formation bin"] > RZ_ub + 5:
+                            continue
+                    elif where_born == "exceptRZ":
+                        if pf["formation bin"] >= RZ_lb - 5 and pf["formation bin"] <= RZ_ub + 5:
+                            continue
+                    else:  # where_born == "wholeTrack"
+                        pass
 
-            RM_of_pf_norm = tc_of_pf.rate_matrix / np.nanmax(np.concatenate([tc_of_pf.rate_matrix, tc_other.rate_matrix],axis=1))
-            RM_other_norm = tc_other.rate_matrix / np.nanmax(np.concatenate([tc_of_pf.rate_matrix, tc_other.rate_matrix],axis=1))
+                    tc_of_pf = tcs.loc[session, cell, corr_of_pf]["tc"]
+                    tc_other = tcs.loc[session, cell, corr_other]["tc"]
 
-            mean_or_max_func = np.mean if mean_or_max == "mean" else np.max
-            peri_FL_rate_means = mean_or_max_func(RM_of_pf_norm[:,fl-5:fl+6],axis=0)
-            if RZonly:
-                peri_FL_rate_means_other = mean_or_max_func(RM_other_norm[RZ_other_lb-5:RZ_other_ub+5,fl_other-5:fl_other+6],axis=0)
-            else:
-                peri_FL_rate_means_other = mean_or_max_func(RM_other_norm[:,fl_other-5:fl_other+6],axis=0)
+                    try:
+                        fl_of_pf = tc_of_pf.corridor_laps[fl]
+                        fl_other = np.where(tc_other.corridor_laps > fl_of_pf)[0][0]
+                    except IndexError:
+                        #print(f"no lap found in other corridor after FL: {animal}_{session}_{cell}")
+                        continue
 
-            if len(peri_FL_rate_means) != 11 or len(peri_FL_rate_means_other) != 11:
-                skipped += 1
-                continue
+                    if fl_other < 5:
+                        continue  # we don't have enough datapoints, when we subtruct 5 from fl_other we get -1 so we can't calculate the mean (or max) of other RM
 
-            peri_FL_rate_means_allPFs.append(peri_FL_rate_means)
-            peri_FL_rate_means_other_allPFs.append(peri_FL_rate_means_other)
+                    max_activity_whole_cell = np.nanmax(np.concatenate([tc_of_pf.rate_matrix, tc_other.rate_matrix], axis=1))
+                    RM_of_pf_norm = tc_of_pf.rate_matrix / max_activity_whole_cell
+                    RM_other_norm = tc_other.rate_matrix / max_activity_whole_cell
 
-            if log:
-                axs[0].plot(x, np.log10(peri_FL_rate_means), c="k", alpha=0.01)
-                axs[1].plot(x, np.log10(peri_FL_rate_means_other), c="k", alpha=0.01)
-            else:
-                axs[0].plot(x, peri_FL_rate_means, c="k", alpha=0.03)
-                axs[1].plot(x, peri_FL_rate_means_other, c="k", alpha=0.03)
+                    mean_or_max_func = np.mean if mean_or_max == "mean" else np.max
 
-        print(f"nonRZ: {count_nonRZ}")
-        print(f"skipped: {skipped}")
-        peri_FL_rate_means_allPFs = np.array(peri_FL_rate_means_allPFs)
-        peri_FL_rate_means_other_allPFs = np.array(peri_FL_rate_means_other_allPFs)
-        if log:
-            axs[0].plot(x, np.log10(np.nanmean(peri_FL_rate_means_allPFs, axis=0)), c="r")
-            axs[1].plot(x, np.log10(np.nanmean(peri_FL_rate_means_other_allPFs, axis=0)), c="r")
-            axs[0].set_ylabel("log10 rate")
-            axs[1].set_ylabel("log10 rate")
-        else:
-            axs[0].plot(x, np.nanmean(peri_FL_rate_means_allPFs, axis=0), c="r")
-            axs[1].plot(x, np.nanmean(peri_FL_rate_means_other_allPFs, axis=0), c="r")
-            axs[0].set_ylabel("rate")
-            axs[1].set_ylabel("rate")
+                    periFL_rates = mean_or_max_func(RM_of_pf_norm[:, fl-5:fl+6], axis=0)
+                    if where_compared == "nearRZ":
+                        periFL_rates_other = mean_or_max_func(RM_other_norm[RZ_other_lb-5:RZ_other_ub+5, fl_other-5:fl_other+6], axis=0)
+                    elif where_compared == "exceptRZ":
+                        RM_exceptRZ_other = np.concatenate([RM_other_norm[:RZ_other_lb-5,  fl_other-5:fl_other+6],
+                                                            RM_other_norm[ RZ_other_ub+5:, fl_other-5:fl_other+6]], axis=0)
+                        periFL_rates_other = mean_or_max_func(RM_exceptRZ_other, axis=0)
+                    else:  # where_compared == "wholeTrack"
+                        periFL_rates_other = mean_or_max_func(RM_other_norm[:,fl_other-5:fl_other+6], axis=0)
+                        pass
 
-        nearRZ_title = "- near RZs" if RZonly else ""
-        plt.suptitle(f"{self.area} - {mean_or_max} of rates (norm.) - BTSP PFs only - max 1 PF / corridor {nearRZ_title}")
-        axs[0].set_xlabel("laps since FL in the corridor of PF formation")
-        axs[1].set_xlabel("laps since 1st lap in other corridor after PF formation")
+                    periFL_rates_ALL.append(periFL_rates)
+                    periFL_rates_other_ALL.append(periFL_rates_other)
 
-        axs[0].set_xticks(x, labels=x)
-        axs[1].set_xticks(x, labels=x)
+                periFL_rates_ALL = np.array(periFL_rates_ALL)
+                periFL_rates_other_ALL = np.array(periFL_rates_other_ALL)
 
+                colors = {
+                    "non-btsp": "#FF0000",
+                    "btsp": "#AA5EFF",
+                }
+                x = np.arange(-5, 6, 1)
+
+                mean_ALL = np.nanmean(periFL_rates_ALL, axis=0)
+                mean_other_ALL = np.nanmean(periFL_rates_other_ALL, axis=0)
+                std_ALL = np.nanstd(periFL_rates_ALL, axis=0)
+                std_other_ALL = np.nanstd(periFL_rates_other_ALL, axis=0)
+
+                if SE:
+                    std_ALL = std_ALL / np.sqrt(periFL_rates_ALL.shape[0])
+                    std_other_ALL = std_other_ALL / np.sqrt(periFL_rates_other_ALL.shape[0])
+                    alpha=0.2
+                else:
+                    alpha=0.1
+
+                axs[i_row,0].plot(x, mean_ALL, c=colors[cat])
+                axs[i_row,1].plot(x, mean_other_ALL, c=colors[cat])
+
+                axs[i_row,0].fill_between(x=x, y1=mean_ALL-std_ALL, y2=mean_ALL+std_ALL, alpha=alpha, color=colors[cat])
+                axs[i_row,1].fill_between(x=x, y1=mean_other_ALL-std_other_ALL, y2=mean_other_ALL+std_other_ALL, alpha=alpha, color=colors[cat])
+
+                axs[i_row,0].set_xticks(x)
+                axs[i_row,1].set_xticks(x)
+
+                axs[i_row,0].set_ylabel(pfs_name)
+                axs[i_row,0].set_ylim([0, 0.06])
+                axs[i_row,1].set_ylim([0, 0.06])
+                axs[i_row,0].set_xlim([-5,5])
+                axs[i_row,1].set_xlim([-5, 5])
+
+                y_text = {
+                    "btsp": 0.05,
+                    "non-btsp": 0.04
+                }
+                axs[i_row,0].annotate(f"{cat}={periFL_rates_ALL.shape[0]}", (-4.5, y_text[cat]), c=colors[cat])
+            i_row += 1
+        title = f"PF born: {where_born}, other corr: {where_compared}, {mean_or_max} rates"
+        plt.suptitle(title)
         plt.tight_layout()
-        nearRZ_filename = "_nearRZ" if RZonly else ""
-        log_filename = "_log" if log else ""
-        filename = f"otherCorridor_{mean_or_max}{nearRZ_filename}{log_filename}"
-        makedir_if_needed(f"{self.output_root}/otherCorridor")
-        plt.savefig(f"{self.output_root}/otherCorridor/{filename}.pdf")
+
+        suffix = ""
+        if SE:
+            suffix = f"{suffix}_SE"
+        plt.savefig(f"{self.output_root}/otherCorridor/Born{where_born}_Other{where_compared}_{mean_or_max}_onlyEarliest{suffix}.pdf")
         plt.close()
+
+    def plot_pf_influence_on_other_corridor_COMPARE(self, mean_nearRZ, mean_nearRZ_other, mean_exceptRZ, mean_exceptRZ_other,
+                                                          std_nearRZ, std_nearRZ_other, std_exceptRZ, std_exceptRZ_other):
+        fig, axs = plt.subplots(2,1)
+        x = np.arange(-5, 6, 1)
+
+        axs[0].plot(x, mean_nearRZ, c="green", label="near RZ")
+        axs[0].fill_between(x=x, y1=mean_nearRZ-std_nearRZ, y2=mean_nearRZ+std_nearRZ, alpha=0.1, color="green")
+        axs[0].plot(x, mean_exceptRZ, c="orange", label="except RZ")
+        axs[0].fill_between(x=x, y1=mean_exceptRZ-std_exceptRZ, y2=mean_exceptRZ+std_exceptRZ, alpha=0.1, color="orange")
+
+        axs[1].plot(x, mean_nearRZ_other, c="green")
+        axs[1].fill_between(x=x, y1=mean_nearRZ_other-std_nearRZ_other, y2=mean_nearRZ_other+std_nearRZ_other, alpha=0.1, color="green")
+        axs[1].plot(x, mean_exceptRZ_other, c="orange")
+        axs[1].fill_between(x=x, y1=mean_exceptRZ_other - std_exceptRZ_other, y2=mean_exceptRZ_other + std_exceptRZ_other, alpha=0.1, color="orange")
+
+        axs[0].set_ylim([0,0.07])
+        axs[1].set_ylim([0,0.07])
+        axs[0].set_xlim([-5,5])
+        axs[1].set_xlim([-5,5])
+        axs[0].set_xticks(x)
+        axs[1].set_xticks(x)
+
+        axs[0].set_xlabel("laps since FL in the corridor of PF formation")
+        axs[1].set_xlabel("laps since 1st lap after PF formation in the other corridor")
+
+        axs[0].legend()
+        plt.tight_layout()
+        plt.show()
 
     def plot_pf_influence_on_FL_counts_in_other_corridor(self, RZonly=True):
         tcs = self.tc_df.set_index(["sessionID", "cellid", "corridor"])
@@ -2052,8 +2155,6 @@ class BtspStatistics:
         for idx_pf, pf in pfs.iterrows():
             if len(pfs.loc[idx_pf].query("corridor == 15")) == 0 or len(pfs.loc[idx_pf].query("corridor == 14")) == 0:
                 continue
-
-
 
         for i_pf, pf in pfs.iterrows():
             category = pf["category"]
@@ -2078,7 +2179,6 @@ class BtspStatistics:
             fl_idx_other = np.where(tc_other.corridor_laps > fl_of_pf)[0][0]
             fl_other = tc_other.corridor_laps[fl_idx_other]
 
-            pass
 
     def calc_place_field_quality(self):
         for i_pf, pf in self.pfs_df.iterrows():
@@ -2956,11 +3056,13 @@ if __name__ == "__main__":
     #btsp_statistics.plot_ratemaps()
     #btsp_statistics.plot_rates_with_next_lap_other_corridor()
 
-    #for RZonly in [True, False]:
-    #    for mean_or_max in ["mean", "max"]:
-    #        for log in [True, False]:
-    #            btsp_statistics.plot_pf_influence_on_other_corridor(RZonly, mean_or_max, log)
-    btsp_statistics.plot_pf_influence_on_FL_counts_in_other_corridor(RZonly=False)
+    for where_born  in ["wholeTrack", "nearRZ", "exceptRZ"]:
+        for where_compared  in ["wholeTrack", "nearRZ", "exceptRZ"]:
+            print(where_born, where_compared)
+            btsp_statistics.plot_pf_influence_on_other_corridor(where_born, where_compared, SE=True)
+    #btsp_statistics.plot_pf_influence_on_other_corridor(RZonly=True, mean_or_max="max", log=False)
+    #btsp_statistics.plot_pf_influence_on_other_corridor(RZonly=False, mean_or_max="max", log=False)
+    #btsp_statistics.plot_pf_influence_on_FL_counts_in_other_corridor(RZonly=False)  # TODO: this is unfinished
     #btsp_statistics.calc_place_field_quality()
 
     #btsp_statistics.plot_formation_lap_dependence_of_newly_formed()
